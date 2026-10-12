@@ -1,4 +1,4 @@
-package webui
+package auth
 
 import (
 	"net/http"
@@ -29,7 +29,7 @@ func TestRequireToken(t *testing.T) {
 			req.Header.Set("Authorization", tt.header)
 		}
 		rec := httptest.NewRecorder()
-		requireToken(tt.token, ok).ServeHTTP(rec, req)
+		RequireToken(tt.token, ok).ServeHTTP(rec, req)
 		if rec.Code != tt.want {
 			t.Errorf("%s: got %d, want %d", tt.name, rec.Code, tt.want)
 		}

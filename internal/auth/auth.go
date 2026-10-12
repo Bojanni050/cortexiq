@@ -1,16 +1,17 @@
-package webui
+// Package auth provides the shared Bearer-token check used by the dashboard API
+// and the MCP server.
+package auth
 
 import (
 	"crypto/sha256"
 	"crypto/subtle"
-	"errors"
 	"net/http"
 	"strings"
 )
 
-// requireToken wraps next so every request must carry "Authorization: Bearer <token>".
+// RequireToken wraps next so every request must carry "Authorization: Bearer <token>".
 // An empty token disables authentication (the historical behaviour).
-func requireToken(token string, next http.Handler) http.Handler {
+func RequireToken(token string, next http.Handler) http.Handler {
 	if token == "" {
 		return next
 	}
@@ -21,7 +22,9 @@ func requireToken(token string, next http.Handler) http.Handler {
 		have := sha256.Sum256([]byte(got))
 		if !ok || subtle.ConstantTimeCompare(have[:], want[:]) != 1 {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="stash"`)
-			writeErr(w, http.StatusUnauthorized, errors.New("unauthorized: missing or invalid API token"))
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"unauthorized: missing or invalid API token"}` + "\n"))
 			return
 		}
 		next.ServeHTTP(w, r)

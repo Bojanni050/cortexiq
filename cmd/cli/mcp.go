@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/alash3al/stash/internal/auth"
 	"github.com/alash3al/stash/internal/bootstrap"
 	"github.com/alash3al/stash/internal/brain"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -735,11 +737,19 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 	bc := getBootstrap(cmd)
 	mcpServer := newMCPServer(bc)
-	sseServer := server.NewSSEServer(mcpServer)
 
 	host := cmd.String("host")
 	port := cmd.String("port")
 	addr := host + ":" + port
+
+	// The SSE server is mounted behind the same Bearer-token check as the
+	// dashboard API. An empty STASH_API_TOKEN leaves MCP open (as before).
+	httpSrv := &http.Server{Addr: addr}
+	sseServer := server.NewSSEServer(mcpServer, server.WithHTTPServer(httpSrv))
+	httpSrv.Handler = auth.RequireToken(bc.Config.APIToken, sseServer)
+	if bc.Config.APIToken == "" {
+		log.Println("WARNING: STASH_API_TOKEN is not set; the MCP server is unauthenticated")
+	}
 
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()

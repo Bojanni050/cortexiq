@@ -62,9 +62,13 @@ http://localhost:8080/sse
 
 A web dashboard is also served at `http://localhost:9090/ui` — browse and manage memories, goals, hypotheses, contradictions, and failures from your browser.
 
-To protect the dashboard API, set `STASH_API_TOKEN` in `.env`. Every `/api/v1` call then needs `Authorization: Bearer <token>`; the dashboard asks for the token on first use and remembers it in the browser. Leave it empty to keep the API open (the MCP endpoint and `/metrics` are not covered by this token).
+To protect Stash, set `STASH_API_TOKEN` in `.env`. It guards both the dashboard API (`/api/v1`) and the MCP server (`/sse`, `/message`): every request then needs `Authorization: Bearer <token>`. The dashboard asks for the token on first use and remembers it in the browser; MCP clients need to send the header (see below). Leave it empty to keep everything open. `/healthz`, `/readyz` and `/metrics` are not covered.
 
 Point any MCP-compatible client at that URL. Example configs:
+
+With `STASH_API_TOKEN` set, add the header to the client config, e.g. for Cursor:
+`"headers": {"Authorization": "Bearer <token>"}` next to `"url"`. For Claude Code:
+`claude mcp add --transport sse stash http://localhost:8080/sse --header "Authorization: Bearer <token>"`.
 
 **Cursor** — `~/.cursor/mcp.json`
 ```json

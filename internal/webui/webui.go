@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alash3al/stash/internal/auth"
 	"github.com/alash3al/stash/internal/brain"
 	"github.com/alash3al/stash/internal/models"
 )
@@ -50,7 +51,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/failures/", h.failureItem)
 	api.HandleFunc("/api/v1/causal-links", h.causalLinks)
 	api.HandleFunc("/api/v1/causal-links/", h.causalLinkItem)
-	mux.Handle("/api/v1/", requireToken(h.Token, api))
+	mux.Handle("/api/v1/", auth.RequireToken(h.Token, api))
 }
 
 func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request) {
