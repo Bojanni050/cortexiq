@@ -86,3 +86,9 @@ Chronological log of significant changes. Oldest → newest. Format per entry:
 - Findings: De Facts-pagina toonde Entity, Property en Value als drie losse kolommen (vaak leeg) en niets over geldigheid, namespace of relaties, terwijl die gegevens al in de API zitten.
 - Conclusions: Alleen frontend, net als bij Causal Links: geen API- of schemawijziging. Entity/Property/Value zijn samengevoegd tot één regel, geldigheid is een badge (active / expired / not yet valid, afgeleid van `valid_from`/`valid_until`) en uit `/causal-links` komt per feit het aantal oorzaken en gevolgen. De limiet ging van 100 naar 1000 zodat de pagina niet stil na 100 feiten stopt.
 - Actions: `internal/webui/static/index.html` (`renderFacts`: parallelle fetch van facts en causal-links, kolommen Fact / Detail / Namespace / Validity / Links / Confidence / Created); validated — `go build ./...` en syntaxcontrole van het inline script.
+
+## 2026-10-13 (Dashboard over de volle breedte)
+
+- Findings: Het dashboard was begrensd op 1560 px (`.app { max-width; margin: 0 auto }`) en tekstkolommen op 460 px, waardoor op brede schermen veel ruimte ongebruikt bleef en tabellen smal bleven.
+- Conclusions: De breedtebegrenzing van `.app` verwijderd in plaats van de container groter te maken, zodat de layout met het scherm meegroeit. Tekstkolommen (`td.wrap`) naar 720 px zodat lange feiten minder ver afbreken zonder dat één kolom de hele tabel opeet.
+- Actions: `internal/webui/static/index.html` (CSS regels `.app` en `td.wrap`); validated — `go build ./...`.
