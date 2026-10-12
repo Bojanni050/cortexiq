@@ -98,3 +98,9 @@ Chronological log of significant changes. Oldest → newest. Format per entry:
 - Findings: De Hypotheses-pagina toonde alleen tekst, status en plan, terwijl de API ook bronfeiten, methode, namespace, bevestigd feit en afwijzingsreden levert. Je zag dus niet waarop een hypothese rustte of hoe hij is afgelopen.
 - Conclusions: Alleen frontend, zoals bij Facts en Causal Links: feittekst voor `source_fact_ids` en `confirmed_fact_id` komt uit `/facts` (limiet 1000), met fallback "(fact not available)". De uitkomst staat onder de statusbadge zodat de kolom compact blijft.
 - Actions: `internal/webui/static/index.html` (`renderHypotheses`: kolommen Hypothesis / Based on / How to verify / Namespace+method / Status+outcome / Confidence / Updated; knoppen ongewijzigd); validated — `go build ./...` en syntaxcontrole van het inline script.
+
+## 2026-10-13 (Contradictions-pagina met bronfeiten en status)
+
+- Findings: De Contradictions-pagina toonde alleen entity, property en de twee waarden. Waar de oude en nieuwe waarde vandaan kwamen, in welke namespace en of een tegenstrijdigheid al was opgelost, bleef onzichtbaar, terwijl de API `old_fact_id`, `new_fact_id`, `resolved`, `resolution` en `method` meestuurt.
+- Conclusions: Alleen frontend, zoals bij de andere schermen: het bronfeit staat onder elke waarde (ID + tekst uit `/facts`), entity en property zijn één kolom en de status is een badge. De resolve-knop verdwijnt bij reeds opgeloste items omdat hij daar niets meer doet. Failures blijft ongewijzigd: die toont al de volledige tekst.
+- Actions: `internal/webui/static/index.html` (`renderContradictions`: kolommen About / Old / New / Namespace+method / Status / Confidence / Created); validated — `go build ./...` en syntaxcontrole van het inline script.

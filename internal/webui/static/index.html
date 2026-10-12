@@ -440,15 +440,29 @@ async function hypoReject(id) {
 }
 
 async function renderContradictions() {
-  const items = await apiList(`/contradictions?namespaces=${encodeURIComponent(state.ns)}&limit=1000`);
+  const ns = encodeURIComponent(state.ns);
+  const [items, facts] = await Promise.all([
+    apiList(`/contradictions?namespaces=${ns}&limit=1000`),
+    apiList(`/facts?namespaces=${ns}&limit=1000`),
+  ]);
+  const byId = new Map(facts.map(f => [f.id, f.content]));
+  // The value, plus the fact it came from so you can see where the conflict originates.
+  const side = (value, id) => `<div><b>${esc(value)}</b></div>` + (id
+    ? `<div class="muted"><span class="mono">#${id}</span> ${byId.has(id) ? esc(byId.get(id)) : '(fact not available)'}</div>` : '');
+  const state_ = c => c.resolved
+    ? `<span class="badge completed">resolved</span>${c.resolution ? `<div>${esc(c.resolution)}</div>` : ''}${c.resolved_at ? `<div class="muted">${ts(c.resolved_at)}</div>` : ''}`
+    : '<span class="badge pending">open</span>';
   document.getElementById('content').innerHTML = table(
-    ['Entity', 'Property', 'Old value', 'New value', 'Confidence', 'Created', ''],
+    ['About', 'Old', 'New', 'Namespace', 'Status', 'Confidence', 'Created', ''],
     items.map(c => `<tr>
-      <td>${esc(c.entity)}</td><td>${esc(c.property)}</td>
-      <td class="wrap">${esc(c.old_value)}</td><td class="wrap">${esc(c.new_value)}</td>
+      <td class="wrap"><b>${esc(c.entity)}</b><div class="muted">${esc(c.property)}</div></td>
+      <td class="wrap">${side(c.old_value, c.old_fact_id)}</td>
+      <td class="wrap">${side(c.new_value, c.new_fact_id)}</td>
+      <td class="mono">${esc(nsSlug(c.namespace_id))}${c.method ? `<div class="muted">${esc(c.method)}</div>` : ''}</td>
+      <td class="wrap">${state_(c)}</td>
       <td>${pct(c.confidence)}</td>
       <td class="muted">${ts(c.created_at)}</td>
-      <td class="row-actions"><button onclick="conResolve(${c.id})">resolve</button></td>
+      <td class="row-actions">${c.resolved ? '' : `<button onclick="conResolve(${c.id})">resolve</button>`}</td>
     </tr>`));
 }
 async function conResolve(id) {
