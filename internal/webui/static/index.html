@@ -204,10 +204,23 @@ function toast(msg, err) {
   clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500);
 }
 
-async function api(path, opts) {
-  const res = await fetch(API + path, opts && Object.assign(opts, {
-    headers: Object.assign({'Content-Type': 'application/json'}, (opts && opts.headers) || {})
+function authHeaders() {
+  let t = '';
+  try { t = localStorage.getItem('stash_token') || ''; } catch (e) {}
+  return t ? {'Authorization': 'Bearer ' + t} : {};
+}
+async function api(path, opts, retried) {
+  opts = opts || {};
+  const res = await fetch(API + path, Object.assign({}, opts, {
+    headers: Object.assign({'Content-Type': 'application/json'}, authHeaders(), opts.headers || {})
   }));
+  if (res.status === 401 && !retried) {
+    const t = prompt('This Stash server requires an API token (STASH_API_TOKEN):');
+    if (t) {
+      try { localStorage.setItem('stash_token', t.trim()); } catch (e) {}
+      return api(path, opts, true);
+    }
+  }
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new Error((body && body.error) || res.statusText);
   return body;

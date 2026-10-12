@@ -57,3 +57,15 @@ func TestEmbeddingOverridesAreReadWhenSet(t *testing.T) {
 		t.Fatalf("embedding overrides not read: %q / %q", cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey)
 	}
 }
+
+// STASH_API_TOKEN is optional: unset must parse cleanly (auth off), set is read.
+func TestAPITokenIsOptional(t *testing.T) {
+	setRequired(t)
+	if cfg := parseWithoutFile(t); cfg.APIToken != "" {
+		t.Fatalf("expected empty APIToken, got %q", cfg.APIToken)
+	}
+	t.Setenv("STASH_API_TOKEN", "s3cret")
+	if cfg := parseWithoutFile(t); cfg.APIToken != "s3cret" {
+		t.Fatalf("APIToken = %q, want s3cret", cfg.APIToken)
+	}
+}

@@ -23,6 +23,9 @@ var staticFS embed.FS
 // Handler serves the dashboard UI and the /api/v1 JSON endpoints.
 type Handler struct {
 	Brain *brain.Brain
+	// Token, when non-empty, is required as a Bearer token on every /api/v1 call.
+	// The static dashboard shell itself holds no data and stays public.
+	Token string
 }
 
 // Register mounts the UI and API routes on the given mux.
@@ -47,7 +50,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/failures/", h.failureItem)
 	api.HandleFunc("/api/v1/causal-links", h.causalLinks)
 	api.HandleFunc("/api/v1/causal-links/", h.causalLinkItem)
-	mux.Handle("/api/v1/", api)
+	mux.Handle("/api/v1/", requireToken(h.Token, api))
 }
 
 func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request) {

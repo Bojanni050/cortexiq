@@ -39,6 +39,9 @@ type Config struct {
 	ContextTTL time.Duration `env:"STASH_CONTEXT_TTL,required"`
 
 	// Server
+	// APIToken, when set, is required as a Bearer token on the dashboard API
+	// (/api/v1). Empty keeps the API open. `envDefault:""` keeps it optional.
+	APIToken  string `env:"STASH_API_TOKEN" envDefault:""`
 	HTTPAddr  string `env:"STASH_HTTP_ADDR,required"`
 	LogLevel  string `env:"STASH_LOG_LEVEL,required"`
 	LogFormat string `env:"STASH_LOG_FORMAT,required"`

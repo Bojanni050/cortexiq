@@ -62,6 +62,8 @@ http://localhost:8080/sse
 
 A web dashboard is also served at `http://localhost:9090/ui` — browse and manage memories, goals, hypotheses, contradictions, and failures from your browser.
 
+To protect the dashboard API, set `STASH_API_TOKEN` in `.env`. Every `/api/v1` call then needs `Authorization: Bearer <token>`; the dashboard asks for the token on first use and remembers it in the browser. Leave it empty to keep the API open (the MCP endpoint and `/metrics` are not covered by this token).
+
 Point any MCP-compatible client at that URL. Example configs:
 
 **Cursor** — `~/.cursor/mcp.json`
