@@ -472,14 +472,29 @@ async function conResolve(id) {
 }
 
 async function renderFailures() {
-  const items = await apiList(`/failures?namespaces=${encodeURIComponent(state.ns)}&limit=1000`);
+  const ns = encodeURIComponent(state.ns);
+  const [items, goals] = await Promise.all([
+    apiList(`/failures?namespaces=${ns}&limit=1000`),
+    apiList(`/goals?namespaces=${ns}&limit=1000`),
+  ]);
+  const goalById = new Map(goals.map(g => [g.id, g]));
+  // The goal this attempt belonged to, so the failure reads in context.
+  const goal = f => {
+    if (!f.goal_id) return '<span class="muted">—</span>';
+    const g = goalById.get(f.goal_id);
+    return g
+      ? `<div><span class="mono">#${g.id}</span> ${esc(g.content)}</div>${badge(g.status)}`
+      : `<span class="mono">#${f.goal_id}</span> <span class="muted">(goal not available)</span>`;
+  };
   document.getElementById('content').innerHTML = toolbar(
     `<button class="primary" onclick="failDialog()">+ Record failure</button>`) +
-    table(['What failed', 'Why', 'Lesson', 'Created', ''],
+    table(['What failed', 'Why', 'Lesson', 'Goal', 'Namespace', 'Created', ''],
       items.map(f => `<tr>
-        <td class="wrap">${esc(f.content)}</td>
+        <td class="wrap"><span class="mono">#${f.id}</span> ${esc(f.content)}</td>
         <td class="wrap">${esc(f.reason)}</td>
-        <td class="wrap">${esc(f.lesson)}</td>
+        <td class="wrap"><b>${esc(f.lesson)}</b></td>
+        <td class="wrap">${goal(f)}</td>
+        <td class="mono">${esc(nsSlug(f.namespace_id))}</td>
         <td class="muted">${ts(f.created_at)}</td>
         <td class="row-actions"><button class="danger" onclick="del('failures', ${f.id})">delete</button></td>
       </tr>`));

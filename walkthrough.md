@@ -104,3 +104,9 @@ Chronological log of significant changes. Oldest → newest. Format per entry:
 - Findings: De Contradictions-pagina toonde alleen entity, property en de twee waarden. Waar de oude en nieuwe waarde vandaan kwamen, in welke namespace en of een tegenstrijdigheid al was opgelost, bleef onzichtbaar, terwijl de API `old_fact_id`, `new_fact_id`, `resolved`, `resolution` en `method` meestuurt.
 - Conclusions: Alleen frontend, zoals bij de andere schermen: het bronfeit staat onder elke waarde (ID + tekst uit `/facts`), entity en property zijn één kolom en de status is een badge. De resolve-knop verdwijnt bij reeds opgeloste items omdat hij daar niets meer doet. Failures blijft ongewijzigd: die toont al de volledige tekst.
 - Actions: `internal/webui/static/index.html` (`renderContradictions`: kolommen About / Old / New / Namespace+method / Status / Confidence / Created); validated — `go build ./...` en syntaxcontrole van het inline script.
+
+## 2026-10-13 (Failures-pagina met doel en namespace)
+
+- Findings: De Failures-pagina toonde wat/waarom/les, maar niet bij welk doel de mislukking hoorde en in welke namespace, terwijl de API `goal_id` en `namespace_id` meestuurt. Daardoor stond de les los van de context.
+- Conclusions: Alleen frontend, consistent met de andere schermen: de doeltekst en -status komen uit `/goals` (limiet 1000), met fallback "(goal not available)". De les is vetgedrukt omdat die de reden is dat een failure wordt opgeslagen; ID, namespace en doel erbij maken hem terug te vinden.
+- Actions: `internal/webui/static/index.html` (`renderFailures`: kolommen What failed / Why / Lesson / Goal / Namespace / Created); validated — `go build ./...` en syntaxcontrole van het inline script.
