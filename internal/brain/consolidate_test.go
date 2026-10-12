@@ -1,18 +1,6 @@
 package brain
 
-import (
-	"testing"
-
-	"github.com/alash3al/stash/internal/models"
-)
-
-func eps(ids ...int64) []models.Episode {
-	out := make([]models.Episode, len(ids))
-	for i, id := range ids {
-		out[i] = models.Episode{ID: id}
-	}
-	return out
-}
+import "testing"
 
 func TestContiguousCheckpoint(t *testing.T) {
 	tests := []struct {
@@ -33,7 +21,7 @@ func TestContiguousCheckpoint(t *testing.T) {
 		for _, id := range tt.done {
 			done[id] = true
 		}
-		if got := contiguousCheckpoint(eps(tt.ids...), done, tt.current); got != tt.want {
+		if got := contiguousCheckpoint(tt.ids, done, tt.current); got != tt.want {
 			t.Errorf("%s: got %d, want %d", tt.name, got, tt.want)
 		}
 	}

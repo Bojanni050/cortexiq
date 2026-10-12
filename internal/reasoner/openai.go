@@ -93,6 +93,7 @@ type jsonFact struct {
 }
 
 type jsonRelationship struct {
+	FactID       int64   `json:"fact_id"`
 	From         string  `json:"from"`
 	RelationType string  `json:"relation_type"`
 	To           string  `json:"to"`
@@ -223,91 +224,89 @@ GOOD example (specific and synthesized):
 	return result, nil
 }
 
-// --- ReasonRelationships ---
+// --- ReasonRelationshipsBatch ---
 
-func (o *OpenAI) ReasonRelationships(ctx context.Context, factContent string) ([]*StructuredRelationship, error) {
-	if factContent == "" {
-		return nil, errors.New("reasoner: factContent must not be empty")
+func (o *OpenAI) ReasonRelationshipsBatch(ctx context.Context, facts []models.Fact) (map[int64][]*StructuredRelationship, error) {
+	contents := make(map[int64]string, len(facts))
+	var list strings.Builder
+	for _, f := range facts {
+		if f.Content == "" {
+			continue
+		}
+		contents[f.ID] = f.Content
+		fmt.Fprintf(&list, "[%d] %s\n", f.ID, f.Content)
+	}
+	if len(contents) == 0 {
+		return nil, errors.New("reasoner: facts must not be empty")
 	}
 
-	prompt := fmt.Sprintf(`Given this fact, extract all directly stated relationships.
+	prompt := fmt.Sprintf(`Given these facts, extract all directly stated relationships. Each fact starts with its id in square brackets.
 
-Fact: %s
-
+Facts:
+%s
 Output ONLY a JSON array of objects:
-[{"from": "subject entity", "relation_type": "lowercase_type", "to": "object entity", "confidence": 0.0}]
+[{"fact_id": 0, "from": "subject entity", "relation_type": "lowercase_type", "to": "object entity", "confidence": 0.0}]
 
 Rules:
-- Only extract relationships DIRECTLY stated in the Fact above.
+- "fact_id" must be the id of the fact the relationship is stated in. Treat every fact independently; never combine facts.
+- Only extract relationships DIRECTLY stated in that fact.
 - Do NOT infer transitive or implied relationships (e.g., if "Alice works at TechCorp in Paris", do NOT output Alice --located_in--> Paris).
-- "from" and "to" must be entity names mentioned verbatim in the Fact.
+- "from" and "to" must be entity names mentioned verbatim in that fact.
 - relation_type must be a simple lowercase identifier (e.g., works_at, manages, knows).
 - confidence must be between 0.7 and 1.0.
-- If no relationships are explicitly stated, output: []`, factContent)
+- If no relationships are explicitly stated in any fact, output: []`, list.String())
 
 	msgs := []openai.ChatCompletionMessageParamUnion{
 		openai.SystemMessage(systemPrompt),
 		openai.UserMessage(prompt),
 	}
 
-	var result []*StructuredRelationship
 	var valErr error
-
 	for attempt := 0; attempt < 2; attempt++ {
 		output, err := o.chat(ctx, msgs)
 		if err != nil {
 			return nil, err
 		}
-		raw := extractJSON(output)
 
 		var jrels []jsonRelationship
-		if err := json.Unmarshal([]byte(raw), &jrels); err != nil {
+		if err := json.Unmarshal([]byte(extractJSON(output)), &jrels); err != nil {
 			valErr = fmt.Errorf("parse json: %w", err)
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
 		}
+		return groundRelationships(jrels, contents), nil
+	}
+	return nil, valErr
+}
 
-		var validated []*StructuredRelationship
-		groundingFailed := false
-		for _, jr := range jrels {
-			if jr.From == "" || jr.RelationType == "" || jr.To == "" {
-				continue
-			}
-			if !stringsContains(factContent, jr.From) || !stringsContains(factContent, jr.To) {
-				groundingFailed = true
-				break
-			}
-			conf := jr.Confidence
-			if conf < 0.7 {
-				conf = 0.7
-			}
-			if conf > 1.0 {
-				conf = 1.0
-			}
-			validated = append(validated, &StructuredRelationship{
-				FromEntity:   jr.From,
-				RelationType: jr.RelationType,
-				ToEntity:     jr.To,
-				Confidence:   conf,
-			})
-		}
-
-		if groundingFailed {
-			valErr = errors.New("relationship entity not found in fact content")
-			msgs = append(msgs, openai.SystemMessage(retryWarning+" Entity names must appear verbatim in the fact."))
+// groundRelationships keeps only well-formed relationships that are attributed to a
+// known fact and whose entities appear verbatim in that fact's content. Anything
+// else is dropped individually, so one bad item does not cost the whole batch.
+func groundRelationships(jrels []jsonRelationship, contents map[int64]string) map[int64][]*StructuredRelationship {
+	out := make(map[int64][]*StructuredRelationship)
+	for _, jr := range jrels {
+		content, ok := contents[jr.FactID]
+		if !ok || jr.From == "" || jr.RelationType == "" || jr.To == "" {
 			continue
 		}
-
-		result = validated
-		valErr = nil
-		break
+		if !stringsContains(content, jr.From) || !stringsContains(content, jr.To) {
+			continue
+		}
+		conf := jr.Confidence
+		if conf < 0.7 {
+			conf = 0.7
+		}
+		if conf > 1.0 {
+			conf = 1.0
+		}
+		out[jr.FactID] = append(out[jr.FactID], &StructuredRelationship{
+			FromEntity:   jr.From,
+			RelationType: jr.RelationType,
+			ToEntity:     jr.To,
+			Confidence:   conf,
+		})
 	}
-
-	if valErr != nil {
-		return nil, valErr
-	}
-
-	return result, nil
+	return out
 }
 
 // --- ReasonPatterns ---

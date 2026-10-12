@@ -60,7 +60,11 @@ type Config struct {
 	ExpiryThreshold                float32
 	HypothesisAutoConfirmThreshold float32
 	HypothesisAutoRejectThreshold  float32
+	// RelationshipBatchSize is how many facts go into one relationship-extraction call.
+	RelationshipBatchSize int
 }
+
+const defaultRelationshipBatchSize = 5
 
 func DefaultConfig() Config {
 	return Config{
@@ -72,6 +76,7 @@ func DefaultConfig() Config {
 		ExpiryThreshold:                0.1,
 		HypothesisAutoConfirmThreshold: 0.9,
 		HypothesisAutoRejectThreshold:  0.9,
+		RelationshipBatchSize:          defaultRelationshipBatchSize,
 	}
 }
 

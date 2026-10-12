@@ -312,22 +312,26 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 	// Rows that failed to scan are missing from `episodes`; advancing past them
 	// would lose them, so only move the checkpoint when the fetch was clean.
 	if scanErrs == 0 {
-		cp.LastEpisodeID = contiguousCheckpoint(episodes, done, cp.LastEpisodeID)
+		ids := make([]int64, len(episodes))
+		for i, e := range episodes {
+			ids[i] = e.ID
+		}
+		cp.LastEpisodeID = contiguousCheckpoint(ids, done, cp.LastEpisodeID)
 	}
 	return
 }
 
-// contiguousCheckpoint returns the highest episode ID such that every episode up
-// to and including it is done. Episodes must be ordered by ID (as fetched).
-// If the first episode is not done, current is returned unchanged.
-func contiguousCheckpoint(episodes []models.Episode, done map[int64]bool, current int64) int64 {
+// contiguousCheckpoint returns the highest ID such that every ID up to and
+// including it is done. ids must be ordered ascending (as fetched).
+// If the first ID is not done, current is returned unchanged.
+func contiguousCheckpoint(ids []int64, done map[int64]bool, current int64) int64 {
 	next := current
-	for _, e := range episodes {
-		if !done[e.ID] {
+	for _, id := range ids {
+		if !done[id] {
 			break
 		}
-		if e.ID > next {
-			next = e.ID
+		if id > next {
+			next = id
 		}
 	}
 	return next
@@ -489,50 +493,70 @@ func (b *Brain) consolidateFactsToRelationships(ctx context.Context, nsID int64,
 		return
 	}
 
-	var maxID int64
-	for _, fact := range facts {
+	batchSize := b.config.RelationshipBatchSize
+	if batchSize <= 0 {
+		batchSize = defaultRelationshipBatchSize
+	}
+
+	// One LLM call per batch of facts instead of per fact. Facts are done per
+	// batch; the checkpoint only moves over a contiguous run of done facts so a
+	// failed batch is retried next run without blocking the ones before it.
+	done := make(map[int64]bool)
+	for start := 0; start < len(facts); start += batchSize {
 		if ctx.Err() != nil {
 			break
 		}
-		if fact.ID > maxID {
-			maxID = fact.ID
+		end := start + batchSize
+		if end > len(facts) {
+			end = len(facts)
 		}
+		batch := facts[start:end]
 
-		rels, err := b.reasoner.ReasonRelationships(ctx, fact.Content)
+		byFact, err := b.reasoner.ReasonRelationshipsBatch(ctx, batch)
 		llmCalls++
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("reason relationships fact %d: %v", fact.ID, err))
+			errs = append(errs, fmt.Sprintf("reason relationships facts %d-%d: %v", batch[0].ID, batch[len(batch)-1].ID, err))
 			continue
 		}
 
-		for _, rel := range rels {
-			if rel.FromEntity == "" || rel.RelationType == "" || rel.ToEntity == "" {
-				continue
-			}
+		batchOK := true
+		for _, fact := range batch {
+			for _, rel := range byFact[fact.ID] {
+				if rel.FromEntity == "" || rel.RelationType == "" || rel.ToEntity == "" {
+					continue
+				}
 
-			// Check for existing relationship from this fact
-			exists, _ := b.relationshipExists(ctx, nsID, rel.FromEntity, rel.RelationType, rel.ToEntity, fact.ID)
-			if exists {
-				continue
-			}
+				// Check for existing relationship from this fact
+				exists, _ := b.relationshipExists(ctx, nsID, rel.FromEntity, rel.RelationType, rel.ToEntity, fact.ID)
+				if exists {
+					continue
+				}
 
-			_, err := b.pool.Exec(ctx,
-				`INSERT INTO relationships (namespace_id, from_entity, relation_type, to_entity, confidence, source_fact_id)
-				 VALUES ($1, $2, $3, $4, $5, $6)`,
-				nsID, rel.FromEntity, rel.RelationType, rel.ToEntity, rel.Confidence, fact.ID,
-			)
-			if err != nil {
-				errs = append(errs, fmt.Sprintf("insert relationship: %v", err))
-				continue
+				_, err := b.pool.Exec(ctx,
+					`INSERT INTO relationships (namespace_id, from_entity, relation_type, to_entity, confidence, source_fact_id)
+					 VALUES ($1, $2, $3, $4, $5, $6)`,
+					nsID, rel.FromEntity, rel.RelationType, rel.ToEntity, rel.Confidence, fact.ID,
+				)
+				if err != nil {
+					errs = append(errs, fmt.Sprintf("insert relationship: %v", err))
+					batchOK = false
+					continue
+				}
+				count++
 			}
-			count++
+		}
+		if batchOK {
+			for _, f := range batch {
+				done[f.ID] = true
+			}
 		}
 	}
 
-	// Only advance checkpoint if no errors occurred (bullet-proof: prevents losing facts)
-	if len(errs) == 0 && maxID > cp.LastFactID {
-		cp.LastFactID = maxID
+	ids := make([]int64, len(facts))
+	for i, f := range facts {
+		ids[i] = f.ID
 	}
+	cp.LastFactID = contiguousCheckpoint(ids, done, cp.LastFactID)
 	return
 }
 

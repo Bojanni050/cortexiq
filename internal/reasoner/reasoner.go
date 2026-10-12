@@ -85,8 +85,10 @@ type Reasoner interface {
 	// ReasonStructured takes a list of text inputs and returns a structured fact.
 	ReasonStructured(ctx context.Context, texts []string) (*StructuredFact, error)
 
-	// ReasonRelationships takes a fact and extracts relationships between entities.
-	ReasonRelationships(ctx context.Context, factContent string) ([]*StructuredRelationship, error)
+	// ReasonRelationshipsBatch extracts relationships for several facts in one call.
+	// The result maps fact ID -> relationships; facts without any are absent.
+	// Every relationship is grounded in the content of the fact it is attributed to.
+	ReasonRelationshipsBatch(ctx context.Context, facts []models.Fact) (map[int64][]*StructuredRelationship, error)
 
 	// ReasonPatterns takes facts and relationships and extracts abstract patterns.
 	ReasonPatterns(ctx context.Context, facts []models.Fact, relationships []models.Relationship) ([]*StructuredPattern, error)

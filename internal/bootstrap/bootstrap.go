@@ -84,6 +84,7 @@ func New(ctx context.Context) (*Context, error) {
 		ExpiryThreshold:                cfg.ExpiryThreshold,
 		HypothesisAutoConfirmThreshold: cfg.HypothesisAutoConfirmThreshold,
 		HypothesisAutoRejectThreshold:  cfg.HypothesisAutoRejectThreshold,
+		RelationshipBatchSize:          cfg.RelationshipBatchSize,
 	})
 	if err != nil {
 		pool.Close()
