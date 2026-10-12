@@ -302,13 +302,18 @@ async function doRecall() {
 }
 
 async function renderEpisodes() {
-  const items = await apiList(`/episodes?namespaces=${encodeURIComponent(state.ns)}&limit=200`);
+  const items = await apiList(`/episodes?namespaces=${encodeURIComponent(state.ns)}&limit=1000`);
+  // Occurred = when it happened; show when it was stored too if that was noticeably later.
+  const when = e => {
+    const lag = new Date(e.created_at) - new Date(e.occurred_at);
+    return ts(e.occurred_at) + (lag > 60000 ? `<div class="muted">stored ${ts(e.created_at)}</div>` : '');
+  };
   document.getElementById('content').innerHTML = table(
-    ['Content', 'Namespace', 'Occurred', ''],
+    ['Episode', 'Namespace', 'When', ''],
     items.map(e => `<tr>
-      <td class="wrap">${esc(e.content)}</td>
+      <td class="wrap"><span class="mono">#${e.id}</span> ${esc(e.content)}</td>
       <td class="mono">${esc(nsSlug(e.namespace_id))}</td>
-      <td class="muted">${ts(e.occurred_at)}</td>
+      <td class="muted">${when(e)}</td>
       <td class="row-actions"><button class="danger" onclick="purge('episodes', ${e.id})">purge</button></td>
     </tr>`));
 }
@@ -357,14 +362,33 @@ async function renderFacts() {
 }
 
 async function renderGoals() {
-  const items = await apiList(`/goals?namespaces=${encodeURIComponent(state.ns)}&limit=1000`);
+  const ns = encodeURIComponent(state.ns);
+  const [items, failures] = await Promise.all([
+    apiList(`/goals?namespaces=${ns}&limit=1000`),
+    apiList(`/failures?namespaces=${ns}&limit=1000`),
+  ]);
+  const byId = new Map(items.map(g => [g.id, g]));
+  const subs = new Map(), fails = new Map();
+  for (const g of items) if (g.parent_id) subs.set(g.parent_id, (subs.get(g.parent_id) || 0) + 1);
+  for (const f of failures) if (f.goal_id) fails.set(f.goal_id, (fails.get(f.goal_id) || 0) + 1);
+  const goal = g => `<span class="mono">#${g.id}</span> ${esc(g.content)}` +
+    (g.parent_id ? `<div class="muted">part of ${byId.has(g.parent_id) ? `<span class="mono">#${g.parent_id}</span> ${esc(byId.get(g.parent_id).content)}` : `#${g.parent_id}`}</div>` : '') +
+    (g.notes ? `<div class="muted">${esc(g.notes)}</div>` : '');
+  const status = g => badge(g.status) +
+    (g.completed_at ? `<div class="muted">${ts(g.completed_at)}</div>` : g.abandoned_at ? `<div class="muted">${ts(g.abandoned_at)}</div>` : '');
+  const related = g => {
+    const s = subs.get(g.id) || 0, f = fails.get(g.id) || 0;
+    return s || f ? `<span class="muted">${s} subgoal${s === 1 ? '' : 's'} · ${f} failure${f === 1 ? '' : 's'}</span>` : '<span class="muted">—</span>';
+  };
   document.getElementById('content').innerHTML = toolbar(
     `<button class="primary" onclick="goalDialog()">+ New goal</button>`) +
-    table(['Content', 'Status', 'Priority', 'Created', ''],
+    table(['Goal', 'Status', 'Priority', 'Related', 'Namespace', 'Created', ''],
       items.map(g => `<tr>
-        <td class="wrap">${esc(g.content)}</td>
-        <td>${badge(g.status)}</td>
-        <td>${esc(g.priority)}</td>
+        <td class="wrap">${goal(g)}</td>
+        <td>${status(g)}</td>
+        <td>${pct(Number(g.priority) / 10)}<div class="muted">${esc(g.priority)} / 10</div></td>
+        <td>${related(g)}</td>
+        <td class="mono">${esc(nsSlug(g.namespace_id))}</td>
         <td class="muted">${ts(g.created_at)}</td>
         <td class="row-actions">
           <button onclick="goalComplete(${g.id})">complete</button>
@@ -541,13 +565,30 @@ async function renderLinks() {
 }
 
 async function renderNamespaces() {
-  const items = await apiList('/namespaces?limit=1000');
+  const [items, ...lists] = await Promise.all([
+    apiList('/namespaces?limit=1000'),
+    ...['episodes', 'facts', 'goals', 'hypotheses', 'failures'].map(k => apiList(`/${k}?namespaces=${encodeURIComponent('/')}&limit=1000`)),
+  ]);
+  const kinds = ['episodes', 'facts', 'goals', 'hypotheses', 'failures'];
+  // Direct item counts per namespace (the API returns everything under "/").
+  const counts = new Map(items.map(n => [n.id, {}]));
+  lists.forEach((list, i) => list.forEach(x => {
+    const c = counts.get(x.namespace_id); if (c) c[kinds[i]] = (c[kinds[i]] || 0) + 1;
+  }));
+  const capped = lists.map(l => l.length >= 1000);
+  const cell = (n, i) => {
+    const v = counts.get(n.id)[kinds[i]] || 0;
+    return v ? `${v}${capped[i] ? '+' : ''}` : '<span class="muted">—</span>';
+  };
+  const slugs = [...items].sort((a, b) => a.slug.localeCompare(b.slug));
+  const depth = n => n.slug.split('/').filter(Boolean).length - 1;
   document.getElementById('content').innerHTML = toolbar(
     `<button class="primary" onclick="nsDialog()">+ New namespace</button>`) +
-    table(['Slug', 'Name', 'Description', 'Created'],
-      items.map(n => `<tr>
-        <td class="mono">${esc(n.slug)}</td><td>${esc(n.name)}</td>
+    table(['Namespace', 'Description', 'Episodes', 'Facts', 'Goals', 'Hypotheses', 'Failures', 'Created'],
+      slugs.map(n => `<tr>
+        <td style="padding-left:${16 + depth(n) * 18}px"><b>${esc(n.name || n.slug)}</b><div class="mono">${esc(n.slug)}</div></td>
         <td class="wrap muted">${esc(n.description)}</td>
+        ${kinds.map((_, i) => `<td>${cell(n, i)}</td>`).join('')}
         <td class="muted">${ts(n.created_at)}</td>
       </tr>`));
 }

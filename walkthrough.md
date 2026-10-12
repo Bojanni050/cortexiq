@@ -110,3 +110,9 @@ Chronological log of significant changes. Oldest → newest. Format per entry:
 - Findings: De Failures-pagina toonde wat/waarom/les, maar niet bij welk doel de mislukking hoorde en in welke namespace, terwijl de API `goal_id` en `namespace_id` meestuurt. Daardoor stond de les los van de context.
 - Conclusions: Alleen frontend, consistent met de andere schermen: de doeltekst en -status komen uit `/goals` (limiet 1000), met fallback "(goal not available)". De les is vetgedrukt omdat die de reden is dat een failure wordt opgeslagen; ID, namespace en doel erbij maken hem terug te vinden.
 - Actions: `internal/webui/static/index.html` (`renderFailures`: kolommen What failed / Why / Lesson / Goal / Namespace / Created); validated — `go build ./...` en syntaxcontrole van het inline script.
+
+## 2026-10-13 (Episodes-, Goals- en Namespaces-pagina met context)
+
+- Findings: Episodes toonde geen ID en niet wanneer iets is opgeslagen, Goals toonde geen bovenliggend doel, notities of gerelateerde failures en Priority was een kaal getal, en Namespaces toonde alleen slug/naam/omschrijving zonder dat je zag wat erin zit.
+- Conclusions: Alleen frontend, consistent met de andere schermen. Goals: ouder-doel, notities, voltooid-/afgebroken-datum, prioriteit als balk (x / 10) en aantallen subgoals en failures komen uit `/goals` en `/failures`. Namespaces: de aantallen per soort (episodes, facts, goals, hypotheses, failures) worden client-side geteld uit één lijst per soort onder `/`, zodat het 5 requests blijven in plaats van 5 per namespace; bij 1000 items staat er een `+` omdat de lijst dan is afgekapt. De boom is ingesprongen op basis van de slug. Episodes: limiet 200 → 1000.
+- Actions: `internal/webui/static/index.html` (`renderEpisodes`, `renderGoals`, `renderNamespaces`); validated — `go build ./...` en syntaxcontrole van het inline script.
