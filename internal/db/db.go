@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"log"
 	"strconv"
 	"time"
 
@@ -39,7 +40,11 @@ func Open(ctx context.Context, dsn string, expectedModel string, vectorDim int) 
 		return nil, fmt.Errorf("pgxpool.NewWithConfig: %w", err)
 	}
 
-	if err := pool.Ping(ctx); err != nil {
+	// Retry only the connection itself: a database that is still starting (or
+	// briefly unreachable) should not make the container exit and fall into
+	// Docker's growing restart backoff. Migration and config errors below still
+	// fail fast.
+	if err := pingWithRetry(ctx, pool.Ping, connectRetryWindow, connectRetryInitial, connectRetryMax); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("pgxpool.Ping: %w", err)
 	}
@@ -130,6 +135,38 @@ func Open(ctx context.Context, dsn string, expectedModel string, vectorDim int) 
 	}
 
 	return pool, nil
+}
+
+const (
+	connectRetryWindow  = 2 * time.Minute
+	connectRetryInitial = 1 * time.Second
+	connectRetryMax     = 10 * time.Second
+)
+
+// pingWithRetry calls ping until it succeeds, the window elapses or ctx is
+// cancelled, doubling the wait between attempts up to max. It returns the last
+// ping error when it gives up.
+func pingWithRetry(ctx context.Context, ping func(context.Context) error, window, initial, max time.Duration) error {
+	deadline := time.Now().Add(window)
+	delay := initial
+	for attempt := 1; ; attempt++ {
+		err := ping(ctx)
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil || time.Now().Add(delay).After(deadline) {
+			return err
+		}
+		log.Printf("database not reachable (attempt %d), retrying in %s: %v", attempt, delay, err)
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(delay):
+		}
+		if delay *= 2; delay > max {
+			delay = max
+		}
+	}
 }
 
 // validateDimensionLock ensures the vector dimension stored in the database matches the config.

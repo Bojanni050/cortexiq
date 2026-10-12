@@ -105,7 +105,8 @@ td.wrap { max-width: 720px; white-space: pre-wrap; word-break: break-word; }
 .badge.active, .badge.confirmed { background: rgba(52,211,153,.12); color: var(--green); }
 .badge.completed { background: rgba(96,165,250,.12); color: var(--blue); }
 .badge.abandoned, .badge.rejected { background: rgba(248,113,113,.12); color: var(--red); }
-.badge.pending { background: rgba(251,191,36,.12); color: var(--yellow); }
+.badge.pending, .badge.proposed { background: rgba(251,191,36,.12); color: var(--yellow); }
+.badge.testing { background: rgba(96,165,250,.12); color: var(--blue); }
 .conf { display: inline-flex; align-items: center; gap: 8px; min-width: 88px; }
 .conf i { flex: 1; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
 .conf i b { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
@@ -448,8 +449,8 @@ async function renderHypotheses() {
       <td>${pct(h.confidence)}</td>
       <td class="muted">${ts(h.updated_at)}</td>
       <td class="row-actions">
-        <button onclick="hypoConfirm(${h.id})">confirm</button>
-        <button onclick="hypoReject(${h.id})">reject</button>
+        ${h.status === 'confirmed' || h.status === 'rejected' ? '' : `<button onclick="hypoConfirm(${h.id})">confirm</button>
+        <button onclick="hypoReject(${h.id})">reject</button>`}
         <button class="danger" onclick="del('hypotheses', ${h.id})">delete</button>
       </td>
     </tr>`));
