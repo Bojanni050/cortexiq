@@ -92,3 +92,9 @@ Chronological log of significant changes. Oldest → newest. Format per entry:
 - Findings: Het dashboard was begrensd op 1560 px (`.app { max-width; margin: 0 auto }`) en tekstkolommen op 460 px, waardoor op brede schermen veel ruimte ongebruikt bleef en tabellen smal bleven.
 - Conclusions: De breedtebegrenzing van `.app` verwijderd in plaats van de container groter te maken, zodat de layout met het scherm meegroeit. Tekstkolommen (`td.wrap`) naar 720 px zodat lange feiten minder ver afbreken zonder dat één kolom de hele tabel opeet.
 - Actions: `internal/webui/static/index.html` (CSS regels `.app` en `td.wrap`); validated — `go build ./...`.
+
+## 2026-10-13 (Hypotheses-pagina met herkomst en uitkomst)
+
+- Findings: De Hypotheses-pagina toonde alleen tekst, status en plan, terwijl de API ook bronfeiten, methode, namespace, bevestigd feit en afwijzingsreden levert. Je zag dus niet waarop een hypothese rustte of hoe hij is afgelopen.
+- Conclusions: Alleen frontend, zoals bij Facts en Causal Links: feittekst voor `source_fact_ids` en `confirmed_fact_id` komt uit `/facts` (limiet 1000), met fallback "(fact not available)". De uitkomst staat onder de statusbadge zodat de kolom compact blijft.
+- Actions: `internal/webui/static/index.html` (`renderHypotheses`: kolommen Hypothesis / Based on / How to verify / Namespace+method / Status+outcome / Confidence / Updated; knoppen ongewijzigd); validated — `go build ./...` en syntaxcontrole van het inline script.

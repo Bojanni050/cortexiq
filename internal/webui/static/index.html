@@ -397,14 +397,31 @@ async function goalAbandon(id) {
 }
 
 async function renderHypotheses() {
-  const items = await apiList(`/hypotheses?namespaces=${encodeURIComponent(state.ns)}&limit=1000`);
+  const ns = encodeURIComponent(state.ns);
+  const [items, facts] = await Promise.all([
+    apiList(`/hypotheses?namespaces=${ns}&limit=1000`),
+    apiList(`/facts?namespaces=${ns}&limit=1000`),
+  ]);
+  const byId = new Map(facts.map(f => [f.id, f.content]));
+  const factLine = id => `<div><span class="mono">#${id}</span> ${byId.has(id) ? esc(byId.get(id)) : '<span class="muted">(fact not available)</span>'}</div>`;
+  // What the hypothesis is based on, and how it ended (if it did).
+  const basis = h => (h.source_fact_ids || []).length
+    ? h.source_fact_ids.map(factLine).join('') : '<span class="muted">—</span>';
+  const outcome = h => {
+    if (h.confirmed_fact_id) return `<div class="muted">${ts(h.confirmed_at)} → became fact</div>${factLine(h.confirmed_fact_id)}`;
+    if (h.rejection_reason) return `<div class="muted">${ts(h.rejected_at)}</div><div>${esc(h.rejection_reason)}</div>`;
+    if (h.tested_at) return `<div class="muted">tested ${ts(h.tested_at)}</div>`;
+    return '';
+  };
   document.getElementById('content').innerHTML = table(
-    ['Content', 'Status', 'Confidence', 'Plan', 'Updated', ''],
+    ['Hypothesis', 'Based on', 'How to verify', 'Namespace', 'Status', 'Confidence', 'Updated', ''],
     items.map(h => `<tr>
-      <td class="wrap">${esc(h.content)}</td>
-      <td>${badge(h.status)}</td>
-      <td>${pct(h.confidence)}</td>
+      <td class="wrap"><span class="mono">#${h.id}</span> ${esc(h.content)}</td>
+      <td class="wrap">${basis(h)}</td>
       <td class="wrap muted">${esc(h.verification_plan)}</td>
+      <td class="mono">${esc(nsSlug(h.namespace_id))}${h.method ? `<div class="muted">${esc(h.method)}</div>` : ''}</td>
+      <td class="wrap">${badge(h.status)}${outcome(h)}</td>
+      <td>${pct(h.confidence)}</td>
       <td class="muted">${ts(h.updated_at)}</td>
       <td class="row-actions">
         <button onclick="hypoConfirm(${h.id})">confirm</button>
