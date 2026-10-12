@@ -80,3 +80,9 @@ Chronological log of significant changes. Oldest → newest. Format per entry:
 - Findings: Het scherm Causal Links in het dashboard toonde alleen `#<id>` van cause- en effect-feit, waardoor je niets kon aflezen zonder elk ID op te zoeken.
 - Conclusions: Alleen in de frontend opgelost door naast `/causal-links` ook `/facts` op te halen en de feittekst per ID te tonen, in plaats van het API-model of de SQL aan te passen. Zo blijft de MCP-tool `list_causal_links` ongewijzigd. Een feit dat niet in de lijst zit (verwijderd of buiten de limiet van 1000) valt terug op het ID met "(fact not available)".
 - Actions: `internal/webui/static/index.html` (`renderLinks`: parallelle fetch, ID→tekst-map, kolommen Cause / → / Effect); validated — `go build ./...`, `go vet ./internal/webui/` en een syntaxcontrole van het inline script.
+
+## 2026-10-13 (Facts-pagina met context in plaats van losse kolommen)
+
+- Findings: De Facts-pagina toonde Entity, Property en Value als drie losse kolommen (vaak leeg) en niets over geldigheid, namespace of relaties, terwijl die gegevens al in de API zitten.
+- Conclusions: Alleen frontend, net als bij Causal Links: geen API- of schemawijziging. Entity/Property/Value zijn samengevoegd tot één regel, geldigheid is een badge (active / expired / not yet valid, afgeleid van `valid_from`/`valid_until`) en uit `/causal-links` komt per feit het aantal oorzaken en gevolgen. De limiet ging van 100 naar 1000 zodat de pagina niet stil na 100 feiten stopt.
+- Actions: `internal/webui/static/index.html` (`renderFacts`: parallelle fetch van facts en causal-links, kolommen Fact / Detail / Namespace / Validity / Links / Confidence / Created); validated — `go build ./...` en syntaxcontrole van het inline script.

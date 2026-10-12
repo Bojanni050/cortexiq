@@ -314,12 +314,41 @@ async function renderEpisodes() {
 }
 
 async function renderFacts() {
-  const items = await apiList(`/facts?namespaces=${encodeURIComponent(state.ns)}&limit=100`);
+  const ns = encodeURIComponent(state.ns);
+  const [items, links] = await Promise.all([
+    apiList(`/facts?namespaces=${ns}&limit=1000`),
+    apiList(`/causal-links?namespaces=${ns}&limit=1000`),
+  ]);
+  // How many causal links point to / from each fact.
+  const causes = new Map(), effects = new Map();
+  for (const l of links) {
+    effects.set(l.cause_fact_id, (effects.get(l.cause_fact_id) || 0) + 1);
+    causes.set(l.effect_fact_id, (causes.get(l.effect_fact_id) || 0) + 1);
+  }
+  const now = Date.now();
+  const status = f => f.valid_until && new Date(f.valid_until) < now ? 'abandoned'
+    : f.valid_from && new Date(f.valid_from) > now ? 'pending' : 'active';
+  const label = { abandoned: 'expired', pending: 'not yet valid', active: 'active' };
+  const validity = f => {
+    const s = status(f);
+    const range = f.valid_from || f.valid_until
+      ? `<div class="muted">${f.valid_from ? ts(f.valid_from) : '…'} → ${f.valid_until ? ts(f.valid_until) : 'open'}</div>` : '';
+    return `<span class="badge ${s}">${label[s]}</span>${range}`;
+  };
+  const structured = f => f.entity || f.property || f.value
+    ? `<b>${esc(f.entity)}</b> · ${esc(f.property)} → ${esc(f.value)}` : '<span class="muted">—</span>';
+  const relations = f => {
+    const c = causes.get(f.id) || 0, e = effects.get(f.id) || 0;
+    return c || e ? `<span class="muted">${c} cause${c === 1 ? '' : 's'} · ${e} effect${e === 1 ? '' : 's'}</span>` : '<span class="muted">—</span>';
+  };
   document.getElementById('content').innerHTML = table(
-    ['Content', 'Entity', 'Property', 'Value', 'Confidence', 'Created', ''],
+    ['Fact', 'Detail', 'Namespace', 'Validity', 'Links', 'Confidence', 'Created', ''],
     items.map(f => `<tr>
-      <td class="wrap">${esc(f.content)}</td>
-      <td>${esc(f.entity)}</td><td>${esc(f.property)}</td><td>${esc(f.value)}</td>
+      <td class="wrap"><span class="mono">#${f.id}</span> ${esc(f.content)}</td>
+      <td class="wrap">${structured(f)}</td>
+      <td class="mono">${esc(nsSlug(f.namespace_id))}</td>
+      <td>${validity(f)}</td>
+      <td>${relations(f)}</td>
       <td>${pct(f.confidence)}</td>
       <td class="muted">${ts(f.created_at)}</td>
       <td class="row-actions"><button class="danger" onclick="purge('facts', ${f.id})">purge</button></td>
