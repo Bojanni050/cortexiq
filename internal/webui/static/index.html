@@ -443,11 +443,22 @@ async function failCreate() {
 }
 
 async function renderLinks() {
-  const items = await apiList(`/causal-links?namespaces=${encodeURIComponent(state.ns)}&limit=1000`);
+  const ns = encodeURIComponent(state.ns);
+  const [items, facts] = await Promise.all([
+    apiList(`/causal-links?namespaces=${ns}&limit=1000`),
+    apiList(`/facts?namespaces=${ns}&limit=1000`),
+  ]);
+  const byId = new Map(facts.map(f => [f.id, f.content]));
+  // Show the fact text; fall back to the bare id for facts that are no longer listed.
+  const fact = id => byId.has(id)
+    ? `<span class="mono">#${id}</span> ${esc(byId.get(id))}`
+    : `<span class="mono">#${id}</span> <span class="muted">(fact not available)</span>`;
   document.getElementById('content').innerHTML = table(
-    ['Cause fact', 'Effect fact', 'Confidence', 'Method', 'Created'],
+    ['Cause', '', 'Effect', 'Confidence', 'Method', 'Created'],
     items.map(l => `<tr>
-      <td class="mono">#${l.cause_fact_id}</td><td class="mono">#${l.effect_fact_id}</td>
+      <td class="wrap">${fact(l.cause_fact_id)}</td>
+      <td class="muted">→</td>
+      <td class="wrap">${fact(l.effect_fact_id)}</td>
       <td>${pct(l.confidence)}</td>
       <td class="muted">${esc(l.method)}</td>
       <td class="muted">${ts(l.created_at)}</td>
