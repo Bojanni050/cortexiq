@@ -180,6 +180,7 @@ type ConsolidationProgress struct {
 	LastFailureID          int64      `db:"last_failure_id"`
 	LastFailureEpisodeID   int64      `db:"last_failure_episode_id"`
 	LastHypothesisFactID   int64      `db:"last_hypothesis_fact_id"`
+	LastCausalFactID       int64      `db:"last_causal_fact_id"`
 	LastDecayRun           *time.Time `db:"last_decay_run"`
 	LastRun                *time.Time `db:"last_run"`
 	UpdatedAt              time.Time  `db:"updated_at"`

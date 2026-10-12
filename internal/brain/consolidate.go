@@ -2,12 +2,14 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"time"
 
 	"github.com/alash3al/stash/internal/models"
 	"github.com/alash3al/stash/internal/observability"
+	"github.com/jackc/pgx/v5"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -211,18 +213,20 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 	// Cluster by vector similarity
 	clusters := b.clusterEpisodes(episodes)
 
-	var maxID int64
-	processed := make(map[int64]bool)
+	// done holds episodes whose cluster was fully handled. The checkpoint only
+	// advances over a contiguous run of done episodes, so a failed cluster is
+	// retried next run without blocking (or re-processing) everything before it.
+	done := make(map[int64]bool)
+	markDone := func(cluster []models.Episode) {
+		for _, e := range cluster {
+			done[e.ID] = true
+		}
+	}
+	scanErrs := len(errs)
 
 	for _, cluster := range clusters {
 		if ctx.Err() != nil {
 			break
-		}
-
-		for _, e := range cluster {
-			if e.ID > maxID {
-				maxID = e.ID
-			}
 		}
 
 		var texts []string
@@ -240,9 +244,7 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 		}
 
 		if sf.Summary == "" {
-			for _, e := range cluster {
-				processed[e.ID] = true
-			}
+			markDone(cluster)
 			continue
 		}
 
@@ -254,16 +256,15 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 		}
 
 		// Check for duplicate fact
-		dup, err := b.factExistsByVector(ctx, nsID, vec)
+		dupID, dup, err := b.factExistsByVector(ctx, nsID, vec)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("check duplicate: %v", err))
 			continue
 		}
 		if dup {
 			deduped++
-			for _, e := range cluster {
-				processed[e.ID] = true
-			}
+			b.reinforceFact(ctx, dupID, episodeIDs)
+			markDone(cluster)
 			continue
 		}
 
@@ -305,16 +306,31 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 		contradictionsFound += cd
 		contradictionsAutoResolved += ca
 
-		for _, e := range cluster {
-			processed[e.ID] = true
-		}
+		markDone(cluster)
 	}
 
-	// Only advance checkpoint if no errors occurred (bullet-proof: prevents losing episodes)
-	if len(errs) == 0 && maxID > cp.LastEpisodeID {
-		cp.LastEpisodeID = maxID
+	// Rows that failed to scan are missing from `episodes`; advancing past them
+	// would lose them, so only move the checkpoint when the fetch was clean.
+	if scanErrs == 0 {
+		cp.LastEpisodeID = contiguousCheckpoint(episodes, done, cp.LastEpisodeID)
 	}
 	return
+}
+
+// contiguousCheckpoint returns the highest episode ID such that every episode up
+// to and including it is done. Episodes must be ordered by ID (as fetched).
+// If the first episode is not done, current is returned unchanged.
+func contiguousCheckpoint(episodes []models.Episode, done map[int64]bool, current int64) int64 {
+	next := current
+	for _, e := range episodes {
+		if !done[e.ID] {
+			break
+		}
+		if e.ID > next {
+			next = e.ID
+		}
+	}
+	return next
 }
 
 func (b *Brain) clusterEpisodes(episodes []models.Episode) [][]models.Episode {
@@ -360,20 +376,47 @@ func (b *Brain) clusterEpisodes(episodes []models.Episode) [][]models.Episode {
 	return clusters
 }
 
-func (b *Brain) factExistsByVector(ctx context.Context, nsID int64, vec []float32) (bool, error) {
+// factExistsByVector finds the closest active fact and reports whether it is
+// similar enough to count as a duplicate. Superseded/expired facts
+// (valid_until set) are ignored so a re-observed value is not swallowed by them.
+func (b *Brain) factExistsByVector(ctx context.Context, nsID int64, vec []float32) (int64, bool, error) {
 	var id int64
 	var score float32
 	err := b.pool.QueryRow(ctx,
 		`SELECT id, 1 - (embedding <=> $2) AS score FROM facts
-		 WHERE namespace_id = $1 AND deleted_at IS NULL AND embedding IS NOT NULL
+		 WHERE namespace_id = $1 AND deleted_at IS NULL AND valid_until IS NULL AND embedding IS NOT NULL
 		 ORDER BY embedding <=> $2 LIMIT 1`,
 		nsID, pgvector.NewVector(vec),
 	).Scan(&id, &score)
 	if err != nil {
-		return false, nil
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, false, nil
+		}
+		return 0, false, err
 	}
-	return score >= float32(b.config.DedupThreshold), nil
+	return id, score >= float32(b.config.DedupThreshold), nil
 }
+
+// reinforceFact records that an existing fact was observed again: it resets the
+// decay clock, nudges confidence towards 1 and links the new episodes as sources.
+// Best effort — a failure here must not fail consolidation.
+func (b *Brain) reinforceFact(ctx context.Context, factID int64, episodeIDs []int64) {
+	_, _ = b.pool.Exec(ctx,
+		`UPDATE facts SET confidence = LEAST(1.0, confidence + (1 - confidence) * $2), updated_at = now()
+		 WHERE id = $1`,
+		factID, reinforceStep,
+	)
+	for _, eid := range episodeIDs {
+		_, _ = b.pool.Exec(ctx,
+			"INSERT INTO fact_sources (fact_id, episode_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+			factID, eid,
+		)
+	}
+}
+
+// reinforceStep is the fraction of the remaining confidence gap closed each time
+// an existing fact is observed again.
+const reinforceStep = 0.2
 
 func calculateConfidence(observationCount int, hasStructuredFields bool) float32 {
 	if observationCount == 0 {
@@ -510,7 +553,7 @@ func (b *Brain) relationshipExists(ctx context.Context, nsID int64, from, relTyp
 // --- Stage 3.5: Facts -> Causal Links ---
 
 func (b *Brain) consolidateFactsToCausalLinks(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (count, llmCalls int, errs []string) {
-	sql, args, err := b.queries.FetchFacts(nsID, cp.LastFactID, 30)
+	sql, args, err := b.queries.FetchFacts(nsID, cp.LastCausalFactID, 30)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("build fetch facts for causal: %v", err))
 		return
@@ -545,6 +588,16 @@ func (b *Brain) consolidateFactsToCausalLinks(ctx context.Context, nsID int64, c
 	found, detectErrs := b.DetectCausalLinks(ctx, nsID, facts)
 	count = found
 	errs = append(errs, detectErrs...)
+
+	// Own checkpoint: sharing LastFactID with the relationships stage meant that
+	// stage had already advanced it, so this stage saw (almost) no new facts.
+	if len(detectErrs) == 0 {
+		for _, f := range facts {
+			if f.ID > cp.LastCausalFactID {
+				cp.LastCausalFactID = f.ID
+			}
+		}
+	}
 	return
 }
 
@@ -654,7 +707,7 @@ func (b *Brain) consolidateToPatterns(ctx context.Context, nsID int64, cp *model
 		// If no source IDs provided, use all facts/rels as sources
 		sourceFactIDs := p.SourceFactIDs
 		sourceRelIDs := p.SourceRelIDs
-		if len(sourceFactIDs) == 0 || len(sourceRelIDs) == 0 {
+		if len(sourceFactIDs) == 0 && len(sourceRelIDs) == 0 {
 			sourceFactIDs = make([]int64, len(facts))
 			for i, f := range facts {
 				sourceFactIDs[i] = f.ID
