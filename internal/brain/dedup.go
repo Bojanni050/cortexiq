@@ -79,35 +79,31 @@ func (b *Brain) findDuplicate(ctx context.Context, nsID int64, vec []float32, su
 	return 0, false, 0, nil
 }
 
-// namespaceSubject describes what a namespace is about ("Stash — self-hosted ..."),
-// so a synthesized fact can name its project instead of saying "the system". It is
-// only context for the LLM; it returns "" when the namespace has nothing useful.
+// namespaceSubject names what a namespace is about ("Stash"), so a synthesized fact
+// can name its project instead of saying "the system". It is only context for the
+// LLM. It is deliberately just the NAME: a description is free text, and models
+// turned statements from it into "facts" that no episode ever stated.
 func (b *Brain) namespaceSubject(ctx context.Context, nsID int64) string {
-	var slug, name, desc string
+	var slug, name string
 	if err := b.pool.QueryRow(ctx,
-		"SELECT slug, name, description FROM namespaces WHERE id = $1", nsID,
-	).Scan(&slug, &name, &desc); err != nil {
+		"SELECT slug, name FROM namespaces WHERE id = $1", nsID,
+	).Scan(&slug, &name); err != nil {
 		return ""
 	}
-	return formatSubject(slug, name, desc)
+	return formatSubject(slug, name)
 }
 
-func formatSubject(slug, name, desc string) string {
-	name, desc = strings.TrimSpace(name), strings.TrimSpace(desc)
-	if name == "" || name == slug {
-		name = ""
-	}
-	switch {
-	case name != "" && desc != "":
-		return name + " — " + desc
-	case name != "":
+// formatSubject returns the namespace name, or, when the name is just the slug (or
+// empty), the last path segment of the slug. The root namespace has no subject.
+func formatSubject(slug, name string) string {
+	name = strings.TrimSpace(name)
+	if name != "" && name != slug {
 		return name
-	case desc != "":
-		return desc
-	case slug != "" && slug != "/":
-		return slug
 	}
-	return ""
+	if i := strings.LastIndex(slug, "/"); i >= 0 {
+		return slug[i+1:]
+	}
+	return slug
 }
 
 // --- Cleaning up existing duplicates ---

@@ -85,9 +85,9 @@ type Reasoner interface {
 	// ReasonStructured synthesizes the facts that the given texts state. Each distinct
 	// claim or topic becomes its own fact, so a note about two things yields two facts
 	// instead of losing one. It returns no facts when the texts hold nothing durable.
-	// subject describes what the texts are about (e.g. the namespace name and
-	// description); it is used only to name the subject in the summaries, so every
-	// fact is understandable on its own. It may be empty.
+	// subject names what the texts are about (the namespace name, never free text); it
+	// is used only to name the subject in the summaries, so every fact is
+	// understandable on its own. It may be empty.
 	ReasonStructured(ctx context.Context, texts []string, subject string) ([]*StructuredFact, error)
 
 	// ReasonSameFact reports whether candidate adds nothing to existing: a rewording

@@ -75,11 +75,11 @@ func TestIntegrationDissimilarFactSkipsReview(t *testing.T) {
 	}
 }
 
-// The namespace name and description reach the fact synthesis, so facts can name
-// their project.
+// The namespace NAME (not its description) reaches the fact synthesis, so facts can
+// name their project without absorbing free text from the description.
 func TestIntegrationSynthesisReceivesNamespaceSubject(t *testing.T) {
 	e := newEnv(t, nil)
-	if _, err := e.b.CreateNamespace(e.ctx, e.ns, "Zebra Project", "Tracks zebra migration"); err != nil {
+	if _, err := e.b.CreateNamespace(e.ctx, e.ns, "Zebra Project", "hosting staat in /projects/elsewhere"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.b.Remember(e.ctx, e.ns, "it now supports the new route", nil); err != nil {
@@ -88,7 +88,7 @@ func TestIntegrationSynthesisReceivesNamespaceSubject(t *testing.T) {
 	if _, err := e.b.ConsolidateByID(e.ctx, e.nsID); err != nil {
 		t.Fatal(err)
 	}
-	if len(e.r.subjects) != 1 || e.r.subjects[0] != "Zebra Project — Tracks zebra migration" {
+	if len(e.r.subjects) != 1 || e.r.subjects[0] != "Zebra Project" {
 		t.Errorf("subjects = %q", e.r.subjects)
 	}
 }

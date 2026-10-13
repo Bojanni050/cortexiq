@@ -73,16 +73,17 @@ func TestReinforcedConfidence(t *testing.T) {
 }
 
 func TestFormatSubject(t *testing.T) {
-	tests := []struct{ slug, name, desc, want string }{
-		{"/projects/stash", "Stash", "Go memory server", "Stash — Go memory server"},
-		{"/projects/stash", "/projects/stash", "Go memory server", "Go memory server"},
-		{"/projects/stash", "Stash", "", "Stash"},
-		{"/projects/stash", "/projects/stash", "", "/projects/stash"},
-		{"/", "/", "", ""},
+	tests := []struct{ slug, name, want string }{
+		{"/projects/stash", "Stash", "Stash"},
+		{"/projects/stash", "  Stash (codebase)  ", "Stash (codebase)"},
+		{"/projects/stash", "/projects/stash", "stash"}, // name is just the slug: use the last segment
+		{"/projects/stash", "", "stash"},
+		{"/clients/white-vision", "White Vision (klant)", "White Vision (klant)"},
+		{"/", "/", ""},
 	}
 	for _, tt := range tests {
-		if got := formatSubject(tt.slug, tt.name, tt.desc); got != tt.want {
-			t.Errorf("formatSubject(%q,%q,%q) = %q, want %q", tt.slug, tt.name, tt.desc, got, tt.want)
+		if got := formatSubject(tt.slug, tt.name); got != tt.want {
+			t.Errorf("formatSubject(%q,%q) = %q, want %q", tt.slug, tt.name, got, tt.want)
 		}
 	}
 }
