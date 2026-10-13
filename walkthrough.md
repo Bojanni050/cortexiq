@@ -93,6 +93,12 @@ Chronological log of significant changes. Oldest → newest. Format per entry:
 - Conclusions: Add retention and an optional off-box copy to the backup script, and ship systemd units plus an installer so the schedule is reproducible rather than a hand-typed cron line. Document a restore drill, because an untested backup is only a hope.
 - Actions: `scripts/backup-prod.sh` now prunes dumps older than `BACKUP_RETENTION_DAYS` (default 7) and optionally rsyncs to `BACKUP_REMOTE`; added `deploy/stash-backup.service`, `deploy/stash-backup.timer`, `scripts/install-backup-timer.sh`, and `docs/BACKUP.md`; linked from `README.md`. Validated with `bash -n`.
 
+## 2026-10-14 (Backup scheduling: fix pipe, track units)
+
+- Findings: Running the real path exposed two deployment bugs that `bash -n` could not. (1) Verifying the dump with `cat dump | docker compose exec ... pg_restore --list` aborted the script with exit 141 under `set -o pipefail`, because `cat` received SIGPIPE. (2) The systemd units were silently untracked: the broad `stash-*` gitignore rule matched `deploy/stash-backup.{service,timer}`.
+- Conclusions: Copy the dump into the container and read it by path rather than piping it in, and add explicit gitignore exceptions for the units. Verify by running the actual path (script, then the systemd service), not just a syntax check.
+- Actions: `backup-prod.sh` and `restore-prod.sh` now use `docker compose cp`; added `!deploy/stash-backup.{service,timer}` to `.gitignore`; committed and pulled the units; installed the timer on the VPS and ran `stash-backup.service`, which reported `Result=success` and a verified backup in the journal.
+
 ## 2026-10-09 (Guard reasoner output cost: max_tokens + optional JSON mode)
 
 - Findings: LiteLLM usage data showed the `stash` key spending ~$4.62 in total, almost entirely on 2026-10-08 ($4.13): ~10.3M completion tokens versus 1.9M prompt tokens across 3,769 requests — about 2,745 output tokens per call, for responses that should be sub-200-token JSON. Root cause: the configured model was a reasoning-style model and the reasoner sent no `max_tokens`, so nothing capped the output.
