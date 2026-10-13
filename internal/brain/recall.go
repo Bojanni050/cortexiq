@@ -142,7 +142,30 @@ func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, l
 		results = results[:limit]
 	}
 
+	b.touchRecalledFacts(ctx, results)
+
 	return results, nil
+}
+
+// touchRecalledFacts records that facts were returned by recall. Decay treats a
+// recalled fact as recently seen, so frequently used knowledge does not fade.
+// Confidence is deliberately untouched: being asked about is not new evidence.
+// Best effort — a failure here must never fail the recall itself.
+func (b *Brain) touchRecalledFacts(ctx context.Context, results []RecallResult) {
+	var ids []int64
+	for _, r := range results {
+		if r.Type == "fact" {
+			ids = append(ids, r.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	_, _ = b.pool.Exec(ctx,
+		`UPDATE facts SET last_recalled_at = now(), recall_count = recall_count + 1
+		 WHERE id = ANY($1)`,
+		ids,
+	)
 }
 
 // runRecall executes one recall query and scans its rows. kind is "fact" or

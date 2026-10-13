@@ -12,7 +12,9 @@ type DecayResult struct {
 }
 
 // DecayConfidence reduces confidence of facts not re-observed within the configured window.
-// Facts below the expiry threshold are soft-deleted. This is pure SQL — no LLM calls.
+// A fact counts as "recently seen" when it was updated or recalled inside the window, so
+// knowledge that is actually used does not fade. Facts below the expiry threshold are
+// expired (valid_until set). This is pure SQL — no LLM calls.
 func (b *Brain) DecayConfidence(ctx context.Context, nsID int64) (DecayResult, error) {
 	if b.config.DecayFactor <= 0 || b.config.DecayFactor >= 1 {
 		return DecayResult{}, nil
@@ -23,7 +25,7 @@ func (b *Brain) DecayConfidence(ctx context.Context, nsID int64) (DecayResult, e
 	decayTag, err := b.pool.Exec(ctx,
 		`UPDATE facts SET confidence = confidence * $3, updated_at = now()
 		 WHERE namespace_id = $1 AND deleted_at IS NULL AND valid_until IS NULL
-		 AND updated_at < now() - $2::interval`,
+		 AND GREATEST(updated_at, COALESCE(last_recalled_at, updated_at)) < now() - $2::interval`,
 		nsID, b.config.Window.String(), b.config.DecayFactor,
 	)
 	if err != nil {

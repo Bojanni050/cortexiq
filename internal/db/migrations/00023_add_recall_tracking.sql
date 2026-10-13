@@ -1,0 +1,3 @@
+-- +goose Up
+ALTER TABLE facts ADD COLUMN last_recalled_at TIMESTAMPTZ NULL;
+ALTER TABLE facts ADD COLUMN recall_count INTEGER NOT NULL DEFAULT 0;
