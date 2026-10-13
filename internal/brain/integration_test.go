@@ -256,6 +256,24 @@ func TestIntegrationKeywordSearchSplitsUrlsAndPaths(t *testing.T) {
 	}
 }
 
+func TestIntegrationRecallDropsIrrelevantResults(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.MinRecallSimilarity = 0.5 })
+	relevant := e.insertFact(t, "kubernetes cluster upgrade planned", nil)
+
+	res, err := e.b.Recall(e.ctx, []string{e.ns}, "kubernetes cluster upgrade", 5)
+	if err != nil || len(res) == 0 || res[0].ID != relevant {
+		t.Fatalf("relevant query lost its result: %+v err=%v", res, err)
+	}
+
+	res, err = e.b.Recall(e.ctx, []string{e.ns}, "banana pancake recipe", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 0 {
+		t.Errorf("irrelevant query should return nothing, got %+v", res)
+	}
+}
+
 func TestIntegrationRecallIsCountedAndDelaysDecay(t *testing.T) {
 	e := newEnv(t, nil)
 	used := e.insertFact(t, "kubernetes cluster upgrade planned", nil)

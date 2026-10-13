@@ -64,6 +64,9 @@ type Config struct {
 	RelationshipBatchSize int
 	// HybridRecall adds full-text search to recall and fuses it with the vector ranking.
 	HybridRecall bool
+	// MinRecallSimilarity is the minimum cosine similarity for a result that was only
+	// found by the vector search. 0 disables the cutoff. Model dependent.
+	MinRecallSimilarity float32
 }
 
 const defaultRelationshipBatchSize = 5

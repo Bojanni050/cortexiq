@@ -100,7 +100,7 @@ func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, l
 			return nil, fmt.Errorf("keyword query facts: %w", err)
 		}
 	}
-	results := fuse(factVec, factKw, limit, kwQuery != "")
+	results := fuse(factVec, factKw, limit, kwQuery != "", b.config.MinRecallSimilarity)
 
 	// Search episodes for remaining slots
 	if episodeLimit := limit - len(results); episodeLimit > 0 {
@@ -130,7 +130,7 @@ func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, l
 				return nil, fmt.Errorf("keyword query episodes: %w", err)
 			}
 		}
-		results = append(results, fuse(epVec, epKw, episodeLimit, kwQuery != "")...)
+		results = append(results, fuse(epVec, epKw, episodeLimit, kwQuery != "", b.config.MinRecallSimilarity)...)
 	}
 
 	// Sort all results by score descending
@@ -204,13 +204,13 @@ func (b *Brain) runRecall(ctx context.Context, sql string, args []any, kind stri
 // non-hybrid recall behaving exactly as before. When hybrid is true scores are
 // always on the fused 0..1 scale, even if the keyword search found nothing, so
 // the scale does not depend on the query.
-func fuse(vec, kw []RecallResult, limit int, hybrid bool) []RecallResult {
+func fuse(vec, kw []RecallResult, limit int, hybrid bool, minSimilarity float32) []RecallResult {
 	if !hybrid {
 		for i := range vec {
 			vec[i].Similarity = vec[i].Score
 			vec[i].Match = "vector"
 		}
-		return truncate(vec, limit)
+		return truncate(relevant(vec, minSimilarity), limit)
 	}
 
 	type entry struct {
@@ -252,7 +252,24 @@ func fuse(vec, kw []RecallResult, limit int, hybrid bool) []RecallResult {
 		out = append(out, e.res)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
-	return truncate(out, limit)
+	return truncate(relevant(out, minSimilarity), limit)
+}
+
+// relevant drops results that are only a weak semantic match. A result confirmed
+// by the keyword search ("keyword" or "hybrid") always stays; a vector-only result
+// must reach minSimilarity (cosine). The cutoff is model dependent, so 0 (or less)
+// disables it. Without it recall always returns the top N, relevant or not.
+func relevant(rs []RecallResult, minSimilarity float32) []RecallResult {
+	if minSimilarity <= 0 {
+		return rs
+	}
+	out := rs[:0:0]
+	for _, r := range rs {
+		if r.Match != "vector" || r.Similarity >= minSimilarity {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func truncate(rs []RecallResult, limit int) []RecallResult {

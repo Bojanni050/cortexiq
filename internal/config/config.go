@@ -53,6 +53,11 @@ type Config struct {
 	ConsolidationWindow              string  `env:"STASH_CONSOLIDATION_WINDOW" envDefault:"168h"`
 	// HybridRecall adds full-text search to recall (fused with the vector ranking).
 	HybridRecall bool `env:"STASH_HYBRID_RECALL" envDefault:"true"`
+	// RecallMinSimilarity drops vector-only recall results below this cosine
+	// similarity (results confirmed by keyword search always stay). 0 = off. The
+	// right value depends on the embedding model: measure relevant vs irrelevant
+	// queries first (bge-m3 separates around 0.40).
+	RecallMinSimilarity float32 `env:"STASH_RECALL_MIN_SIMILARITY" envDefault:"0"`
 	// RelationshipBatchSize facts are sent per relationship-extraction LLM call.
 	// Keep it modest: the reply must fit in STASH_REASONER_MAX_TOKENS.
 	RelationshipBatchSize          int     `env:"STASH_RELATIONSHIP_BATCH_SIZE" envDefault:"5"`

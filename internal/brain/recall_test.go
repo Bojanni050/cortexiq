@@ -51,7 +51,7 @@ func ids(rs []RecallResult) []int64 {
 }
 
 func TestFuseNonHybridKeepsVectorOrderAndScore(t *testing.T) {
-	got := fuse(rr(3, 1, 2), nil, 2, false)
+	got := fuse(rr(3, 1, 2), nil, 2, false, 0)
 	if !reflect.DeepEqual(ids(got), []int64{3, 1}) {
 		t.Fatalf("ids = %v", ids(got))
 	}
@@ -62,7 +62,7 @@ func TestFuseNonHybridKeepsVectorOrderAndScore(t *testing.T) {
 
 func TestFuseHybridRewardsAgreement(t *testing.T) {
 	// 5 is top of the vector list only; 7 is 2nd in vector and top in keyword.
-	got := fuse(rr(5, 7), rr(7, 9), 10, true)
+	got := fuse(rr(5, 7), rr(7, 9), 10, true, 0)
 	if got[0].ID != 7 || got[0].Match != "hybrid" {
 		t.Fatalf("expected 7 first as hybrid, got %+v", got[0])
 	}
@@ -83,14 +83,46 @@ func TestFuseHybridRewardsAgreement(t *testing.T) {
 }
 
 func TestFuseHybridScaleIndependentOfKeywordHits(t *testing.T) {
-	got := fuse(rr(1), nil, 5, true)
+	got := fuse(rr(1), nil, 5, true, 0)
 	if got[0].Score >= 0.9 || got[0].Match != "vector" {
 		t.Errorf("hybrid with no keyword hits should use the fused scale, got %+v", got[0])
 	}
 }
 
 func TestFuseLimit(t *testing.T) {
-	if got := fuse(rr(1, 2, 3), rr(4, 5, 6), 4, true); len(got) != 4 {
+	if got := fuse(rr(1, 2, 3), rr(4, 5, 6), 4, true, 0); len(got) != 4 {
 		t.Errorf("len = %d, want 4", len(got))
+	}
+}
+
+func TestRelevantKeepsKeywordConfirmedAndStrongVectorHits(t *testing.T) {
+	// rr() gives similarities 0.9, 0.8, 0.7 for ids 1, 2, 3 (vector list) and
+	// 0.9, 0.8 for ids 7, 8 (keyword list; their score is a text rank, not cosine).
+	got := fuse(rr(1, 2, 3), rr(3, 8), 10, true, 0.75)
+	have := map[int64]string{}
+	for _, r := range got {
+		have[r.ID] = r.Match
+	}
+	if have[1] != "vector" || have[2] != "vector" {
+		t.Errorf("strong vector hits must stay: %v", have)
+	}
+	if have[3] != "hybrid" {
+		t.Errorf("id 3 is below the cutoff but keyword-confirmed, so it must stay as hybrid: %v", have)
+	}
+	if have[8] != "keyword" {
+		t.Errorf("keyword-only hit must stay: %v", have)
+	}
+}
+
+func TestRelevantDropsWeakVectorOnlyHits(t *testing.T) {
+	weak := []RecallResult{{ID: 1, Score: 0.35}, {ID: 2, Score: 0.30}}
+	if got := fuse(weak, nil, 10, true, 0.4); len(got) != 0 {
+		t.Errorf("weak vector-only hits should be dropped, got %+v", got)
+	}
+	if got := fuse(weak, nil, 10, false, 0.4); len(got) != 0 {
+		t.Errorf("cutoff must also apply without hybrid, got %+v", got)
+	}
+	if got := fuse(weak, nil, 10, true, 0); len(got) != 2 {
+		t.Errorf("cutoff 0 must disable filtering, got %d", len(got))
 	}
 }
