@@ -64,10 +64,22 @@ func (fakeEmbedder) Embed(_ context.Context, text string) ([]float32, error) {
 type fakeReasoner struct {
 	mu          sync.Mutex
 	causalCalls [][]int64 // fact IDs passed to each ReasonCausalLinks call
+	subjects    []string  // subject passed to each ReasonStructured call
+	sameAnswer  bool      // what ReasonSameFact answers
+	sameCalls   int
 }
 
-func (r *fakeReasoner) ReasonStructured(_ context.Context, texts []string) (*reasoner.StructuredFact, error) {
+func (r *fakeReasoner) ReasonStructured(_ context.Context, texts []string, subject string) (*reasoner.StructuredFact, error) {
+	r.mu.Lock()
+	r.subjects = append(r.subjects, subject)
+	r.mu.Unlock()
 	return &reasoner.StructuredFact{Summary: texts[0]}, nil
+}
+func (r *fakeReasoner) ReasonSameFact(context.Context, string, string) (bool, error) {
+	r.mu.Lock()
+	r.sameCalls++
+	r.mu.Unlock()
+	return r.sameAnswer, nil
 }
 func (r *fakeReasoner) ReasonRelationshipsBatch(context.Context, []models.Fact) (map[int64][]*reasoner.StructuredRelationship, error) {
 	return nil, nil

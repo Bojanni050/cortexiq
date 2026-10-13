@@ -83,7 +83,15 @@ type HypothesisEvidenceResult struct {
 // Reasoner synthesizes structured reasoning over text input.
 type Reasoner interface {
 	// ReasonStructured takes a list of text inputs and returns a structured fact.
-	ReasonStructured(ctx context.Context, texts []string) (*StructuredFact, error)
+	// subject describes what the texts are about (e.g. the namespace name and
+	// description); it is used only to name the subject in the summary, so the fact
+	// is understandable on its own. It may be empty.
+	ReasonStructured(ctx context.Context, texts []string, subject string) (*StructuredFact, error)
+
+	// ReasonSameFact reports whether candidate adds nothing to existing: a rewording
+	// or translation of the same information is "same"; a different or extra value,
+	// date, number, name or detail is not.
+	ReasonSameFact(ctx context.Context, existing, candidate string) (bool, error)
 
 	// ReasonRelationshipsBatch extracts relationships for several facts in one call.
 	// The result maps fact ID -> relationships; facts without any are absent.

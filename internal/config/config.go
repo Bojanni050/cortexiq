@@ -50,7 +50,10 @@ type Config struct {
 	ConsolidationBatchSize           int     `env:"STASH_CONSOLIDATION_BATCH_SIZE" envDefault:"100"`
 	ConsolidationSimilarityThreshold float64 `env:"STASH_CONSOLIDATION_SIMILARITY_THRESHOLD" envDefault:"0.85"`
 	ConsolidationDedupThreshold      float64 `env:"STASH_CONSOLIDATION_DEDUP_THRESHOLD" envDefault:"0.85"`
-	ConsolidationWindow              string  `env:"STASH_CONSOLIDATION_WINDOW" envDefault:"168h"`
+	// From this similarity up to the dedup threshold the LLM decides whether a new
+	// fact is a rewording/translation of its nearest neighbour (0 = off).
+	ConsolidationDedupReviewThreshold float64 `env:"STASH_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD" envDefault:"0.80"`
+	ConsolidationWindow               string  `env:"STASH_CONSOLIDATION_WINDOW" envDefault:"168h"`
 	// HybridRecall adds full-text search to recall (fused with the vector ranking).
 	HybridRecall bool `env:"STASH_HYBRID_RECALL" envDefault:"true"`
 	// RecallMinSimilarity drops vector-only recall results below this cosine

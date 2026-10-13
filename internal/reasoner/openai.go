@@ -142,16 +142,62 @@ type jsonHypothesisEvidence struct {
 	NewConfidence float32 `json:"new_confidence"`
 }
 
-// --- ReasonStructured ---
+// --- ReasonSameFact ---
 
-func (o *OpenAI) ReasonStructured(ctx context.Context, texts []string) (*StructuredFact, error) {
-	if len(texts) == 0 {
-		return nil, errors.New("reasoner: texts must not be empty")
+func (o *OpenAI) ReasonSameFact(ctx context.Context, existing, candidate string) (bool, error) {
+	if strings.TrimSpace(existing) == "" || strings.TrimSpace(candidate) == "" {
+		return false, errors.New("reasoner: both facts must not be empty")
 	}
 
-	eventsList := strings.Join(texts, "\n- ")
-	prompt := fmt.Sprintf(`Given these events, synthesize a single structured fact.
+	prompt := fmt.Sprintf(`Existing fact: %s
 
+New fact: %s
+
+Does the New fact contain any information that is not already in the Existing fact?
+- A rewording, a different phrasing or a translation of the same information is NOT new information.
+- A different or additional value, date, number, name, version, reason or detail IS new information.
+
+Output ONLY this JSON: {"same": true} when the New fact adds nothing, otherwise {"same": false}.`, existing, candidate)
+
+	msgs := []openai.ChatCompletionMessageParamUnion{
+		openai.SystemMessage(systemPrompt),
+		openai.UserMessage(prompt),
+	}
+
+	var valErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		output, err := o.chat(ctx, msgs)
+		if err != nil {
+			return false, err
+		}
+		var resp struct {
+			Same *bool `json:"same"`
+		}
+		if err := json.Unmarshal([]byte(extractJSON(output)), &resp); err != nil || resp.Same == nil {
+			valErr = errors.New("parse same-fact response")
+			msgs = append(msgs, openai.SystemMessage(retryWarning))
+			continue
+		}
+		return *resp.Same, nil
+	}
+	return false, valErr
+}
+
+// structuredPrompt builds the fact-synthesis prompt. subject, when set, is context
+// for naming the project/area only; facts must still come from the Events.
+func structuredPrompt(texts []string, subject string) string {
+	eventsList := strings.Join(texts, "\n- ")
+
+	subjectBlock := ""
+	if s := strings.TrimSpace(subject); s != "" {
+		subjectBlock = fmt.Sprintf(`
+Subject context (what the Events belong to): %s
+Use it ONLY to name the project or area in the summary. Never take facts from it.
+`, s)
+	}
+
+	return fmt.Sprintf(`Given these events, synthesize a single structured fact.
+%s
 Events:
 - %s
 
@@ -160,6 +206,8 @@ Output ONLY this exact JSON structure:
 
 Rules:
 - The summary MUST synthesize the Events into a specific, detailed statement.
+- The summary MUST be understandable on its own, without the Events and without knowing the conversation: name the project, product or subject explicitly (e.g. "Stash", "Chronicle-Gaia"). Never use "the system", "the plugin", "the app", "it" or "this" as the subject.
+- If the Events contain no durable information worth remembering (small talk, a status update without outcome, an action without subject or result, a bare question), output {"entity": null, "property": null, "value": null, "summary": null}.
 - Do NOT echo, quote, or closely paraphrase any single Event. Rewrite in your own words.
 - Remove first-person markers ("I", "my", "we") — state facts about subjects, not the narrator.
 - All values MUST come ONLY from the Events. Do not add outside details.
@@ -174,8 +222,21 @@ BAD example (vague — DO NOT do this):
 BAD example (verbatim copy — DO NOT do this):
 {"entity": "I", "property": "currently_testing", "value": "the Stash memory system", "summary": "I am currently testing the Stash memory system."}
 
+BAD example (not self-contained — DO NOT do this):
+{"entity": "plugin", "property": "option", "value": "pastReference", "summary": "The plugin gained a pastReference option that enables recall."}
+
 GOOD example (specific and synthesized):
-{"entity": "Stash", "property": "database", "value": "PostgreSQL with pgvector", "summary": "Stash uses PostgreSQL with pgvector extension for vector storage and HNSW indexes."}`, eventsList)
+{"entity": "Stash", "property": "database", "value": "PostgreSQL with pgvector", "summary": "Stash uses PostgreSQL with pgvector extension for vector storage and HNSW indexes."}`, subjectBlock, eventsList)
+}
+
+// --- ReasonStructured ---
+
+func (o *OpenAI) ReasonStructured(ctx context.Context, texts []string, subject string) (*StructuredFact, error) {
+	if len(texts) == 0 {
+		return nil, errors.New("reasoner: texts must not be empty")
+	}
+
+	prompt := structuredPrompt(texts, subject)
 
 	msgs := []openai.ChatCompletionMessageParamUnion{
 		openai.SystemMessage(systemPrompt),

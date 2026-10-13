@@ -1,6 +1,9 @@
 package reasoner
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestGroundRelationships(t *testing.T) {
 	contents := map[int64]string{
@@ -29,5 +32,28 @@ func TestGroundRelationships(t *testing.T) {
 	}
 	if _, ok := got[99]; ok {
 		t.Error("relationship for unknown fact must be dropped")
+	}
+}
+
+func TestStructuredPromptSubjectAndSelfContainedRules(t *testing.T) {
+	with := structuredPrompt([]string{"it now supports X"}, "Stash — Go memory server")
+	for _, want := range []string{
+		"Subject context (what the Events belong to): Stash — Go memory server",
+		"Use it ONLY to name the project",
+		"understandable on its own",
+		`"summary": null`,
+		"- it now supports X",
+	} {
+		if !strings.Contains(with, want) {
+			t.Errorf("prompt is missing %q", want)
+		}
+	}
+
+	without := structuredPrompt([]string{"x"}, "  ")
+	if strings.Contains(without, "Subject context") {
+		t.Error("an empty subject must not add a subject block")
+	}
+	if !strings.Contains(without, "understandable on its own") {
+		t.Error("self-contained rule must be present without a subject too")
 	}
 }

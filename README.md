@@ -28,6 +28,16 @@ That's it. Postgres + pgvector, migrations, MCP server with background consolida
 
 **Fully local (no cloud API):** [Ollama setup guide](docs/LOCAL_OLLAMA.md) — host Ollama + Docker Compose, private embeddings and reasoner.
 
+## Cleaning up duplicate facts
+
+Rewordings and translations of the same fact can pile up. New duplicates are caught during consolidation (see `STASH_CONSOLIDATION_DEDUP_*` in `.env.example`). To clean up existing ones:
+
+```bash
+stash dedupe                       # dry run: shows what would be merged
+stash dedupe --review              # also let the LLM judge borderline pairs
+stash dedupe --apply               # merge: the best-supported fact survives, the rest are soft-deleted
+```
+
 ## Backup, export and import
 
 ```bash

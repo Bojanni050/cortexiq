@@ -2,14 +2,12 @@ package brain
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"time"
 
 	"github.com/alash3al/stash/internal/models"
 	"github.com/alash3al/stash/internal/observability"
-	"github.com/jackc/pgx/v5"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -224,6 +222,8 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 	}
 	scanErrs := len(errs)
 
+	subject := b.namespaceSubject(ctx, nsID)
+
 	for _, cluster := range clusters {
 		if ctx.Err() != nil {
 			break
@@ -236,7 +236,7 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 			episodeIDs = append(episodeIDs, e.ID)
 		}
 
-		sf, err := b.reasoner.ReasonStructured(ctx, texts)
+		sf, err := b.reasoner.ReasonStructured(ctx, texts, subject)
 		llmCalls++
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("reason structured: %v", err))
@@ -256,7 +256,8 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 		}
 
 		// Check for duplicate fact
-		dupID, dup, err := b.factExistsByVector(ctx, nsID, vec)
+		dupID, dup, reviewCalls, err := b.findDuplicate(ctx, nsID, vec, sf.Summary)
+		llmCalls += reviewCalls
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("check duplicate: %v", err))
 			continue
@@ -378,27 +379,6 @@ func (b *Brain) clusterEpisodes(episodes []models.Episode) [][]models.Episode {
 	}
 
 	return clusters
-}
-
-// factExistsByVector finds the closest active fact and reports whether it is
-// similar enough to count as a duplicate. Superseded/expired facts
-// (valid_until set) are ignored so a re-observed value is not swallowed by them.
-func (b *Brain) factExistsByVector(ctx context.Context, nsID int64, vec []float32) (int64, bool, error) {
-	var id int64
-	var score float32
-	err := b.pool.QueryRow(ctx,
-		`SELECT id, 1 - (embedding <=> $2) AS score FROM facts
-		 WHERE namespace_id = $1 AND deleted_at IS NULL AND valid_until IS NULL AND embedding IS NOT NULL
-		 ORDER BY embedding <=> $2 LIMIT 1`,
-		nsID, pgvector.NewVector(vec),
-	).Scan(&id, &score)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, false, nil
-		}
-		return 0, false, err
-	}
-	return id, score >= float32(b.config.DedupThreshold), nil
 }
 
 // reinforceFact records that an existing fact was observed again: it resets the

@@ -167,6 +167,18 @@ func main() {
 				},
 			},
 			{
+				Name:   "dedupe",
+				Usage:  "Merge duplicate facts (dry-run unless --apply)",
+				Action: dedupeCmd,
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to clean (each includes descendants; default /)"},
+					&cli.FloatFlag{Name: "threshold", Usage: "Merge facts at or above this cosine similarity (default: STASH_CONSOLIDATION_DEDUP_THRESHOLD)"},
+					&cli.BoolFlag{Name: "review", Usage: "Let the LLM review pairs between the review threshold and --threshold"},
+					&cli.IntFlag{Name: "max-reviews", Value: 100, Usage: "Maximum LLM review calls"},
+					&cli.BoolFlag{Name: "apply", Usage: "Write the merge (without it nothing is changed)"},
+				},
+			},
+			{
 				Name:  "consolidate",
 				Usage: "Consolidate memories",
 				Commands: []*cli.Command{

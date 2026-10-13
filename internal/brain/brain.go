@@ -52,9 +52,12 @@ func (p Pagination) Sanitize() Pagination {
 }
 
 type Config struct {
-	BatchSize                      int
-	SimilarityThreshold            float64
-	DedupThreshold                 float64
+	BatchSize           int
+	SimilarityThreshold float64
+	DedupThreshold      float64
+	// DedupReviewThreshold: from this similarity up to DedupThreshold a new fact is
+	// compared by the LLM with its nearest neighbour. 0 disables the review.
+	DedupReviewThreshold           float64
 	Window                         time.Duration
 	DecayFactor                    float64
 	ExpiryThreshold                float32
@@ -76,6 +79,7 @@ func DefaultConfig() Config {
 		BatchSize:                      100,
 		SimilarityThreshold:            0.85,
 		DedupThreshold:                 0.85,
+		DedupReviewThreshold:           0.80,
 		Window:                         7 * 24 * time.Hour,
 		DecayFactor:                    0.95,
 		ExpiryThreshold:                0.1,
