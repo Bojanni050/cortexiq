@@ -69,11 +69,20 @@ type fakeReasoner struct {
 	sameCalls   int
 }
 
-func (r *fakeReasoner) ReasonStructured(_ context.Context, texts []string, subject string) (*reasoner.StructuredFact, error) {
+// ReasonStructured fakes the synthesis: the text is split on " || " into one fact
+// per part, and the text "NOFACT" yields no facts at all.
+func (r *fakeReasoner) ReasonStructured(_ context.Context, texts []string, subject string) ([]*reasoner.StructuredFact, error) {
 	r.mu.Lock()
 	r.subjects = append(r.subjects, subject)
 	r.mu.Unlock()
-	return &reasoner.StructuredFact{Summary: texts[0]}, nil
+	if texts[0] == "NOFACT" {
+		return nil, nil
+	}
+	var facts []*reasoner.StructuredFact
+	for _, part := range strings.Split(texts[0], " || ") {
+		facts = append(facts, &reasoner.StructuredFact{Summary: part})
+	}
+	return facts, nil
 }
 func (r *fakeReasoner) ReasonSameFact(context.Context, string, string) (bool, error) {
 	r.mu.Lock()

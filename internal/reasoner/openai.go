@@ -183,6 +183,10 @@ Output ONLY this JSON: {"same": true} when the New fact adds nothing, otherwise 
 	return false, valErr
 }
 
+// maxFactsPerCall bounds how many facts one synthesis call may return, which also
+// bounds the output tokens (and cost) per call.
+const maxFactsPerCall = 6
+
 // structuredPrompt builds the fact-synthesis prompt. subject, when set, is context
 // for naming the project/area only; facts must still come from the Events.
 func structuredPrompt(texts []string, subject string) string {
@@ -192,97 +196,139 @@ func structuredPrompt(texts []string, subject string) string {
 	if s := strings.TrimSpace(subject); s != "" {
 		subjectBlock = fmt.Sprintf(`
 Subject context (what the Events belong to): %s
-Use it ONLY to name the project or area in the summary. Never take facts from it.
+Use it ONLY to name the project or area in the summaries. Never take facts from it.
 `, s)
 	}
 
-	return fmt.Sprintf(`Given these events, synthesize a single structured fact.
+	return fmt.Sprintf(`Given these events, extract the durable facts they state.
 %s
 Events:
 - %s
 
-Output ONLY this exact JSON structure:
-{"entity": "string or null", "property": "string or null", "value": "string or null", "summary": "string or null"}
+Output ONLY a JSON array. Each element is one fact:
+[{"entity": "string or null", "property": "string or null", "value": "string or null", "summary": "string"}]
 
 Rules:
-- The summary MUST synthesize the Events into a specific, detailed statement.
-- The summary MUST be understandable on its own, without the Events and without knowing the conversation: name the project, product or subject explicitly (e.g. "Stash", "Chronicle-Gaia"). Never use "the system", "the plugin", "the app", "it" or "this" as the subject.
-- If the Events contain no durable information worth remembering (small talk, a status update without outcome, an action without subject or result, a bare question), output {"entity": null, "property": null, "value": null, "summary": null}.
-- Do NOT echo, quote, or closely paraphrase any single Event. Rewrite in your own words.
+- Output ONE fact for EACH distinct claim or topic in the Events. Two topics in the Events means two facts. Never merge separate topics into one fact, and never drop one.
+- Do NOT split a single claim into pieces, and do not repeat the same information in two facts. At most %d facts.
+- Every summary MUST be understandable on its own, without the Events and without knowing the conversation: name the project, product or subject explicitly (e.g. "Stash", "Chronicle-Gaia"). Never use "the system", "the plugin", "the app", "it" or "this" as the subject.
+- If the Events contain no durable information worth remembering (small talk, a status update without outcome, an action without subject or result, a bare question), output an empty array: []
+- Every summary MUST be specific and detailed. Do NOT echo, quote, or closely paraphrase a single Event sentence; rewrite in your own words.
 - Remove first-person markers ("I", "my", "we") — state facts about subjects, not the narrator.
 - All values MUST come ONLY from the Events. Do not add outside details.
-- If any field is not explicitly stated in the Events, use null.
-- PRESERVE specifics: proper nouns, library names, version numbers, file paths, technical terms, and quantities.
+- If a field is not explicitly stated in the Events, use null for entity, property or value.
+- PRESERVE specifics: proper nouns, library names, version numbers, file paths, commands, ports, configuration names, technical terms, and quantities.
 - Do NOT replace specifics with vague words like "various", "components", "functionalities", "features", "certain".
 - The entity should be the most specific subject (e.g., "pgxpool" not "the system").
 
 BAD example (vague — DO NOT do this):
-{"entity": "Stash", "property": "components", "value": "various functionalities", "summary": "Stash comprises various components for different functionalities."}
+[{"entity": "Stash", "property": "components", "value": "various functionalities", "summary": "Stash comprises various components for different functionalities."}]
 
 BAD example (verbatim copy — DO NOT do this):
-{"entity": "I", "property": "currently_testing", "value": "the Stash memory system", "summary": "I am currently testing the Stash memory system."}
+[{"entity": "I", "property": "currently_testing", "value": "the Stash memory system", "summary": "I am currently testing the Stash memory system."}]
 
 BAD example (not self-contained — DO NOT do this):
-{"entity": "plugin", "property": "option", "value": "pastReference", "summary": "The plugin gained a pastReference option that enables recall."}
+[{"entity": "plugin", "property": "option", "value": "pastReference", "summary": "The plugin gained a pastReference option that enables recall."}]
 
-GOOD example (specific and synthesized):
-{"entity": "Stash", "property": "database", "value": "PostgreSQL with pgvector", "summary": "Stash uses PostgreSQL with pgvector extension for vector storage and HNSW indexes."}`, subjectBlock, eventsList)
+GOOD example (two topics in the Events become two specific facts):
+[{"entity": "Stash", "property": "database", "value": "PostgreSQL with pgvector", "summary": "Stash uses PostgreSQL with pgvector extension for vector storage and HNSW indexes."},
+ {"entity": "Stash", "property": "consolidation interval", "value": "5 minutes", "summary": "Stash runs background consolidation every 5 minutes with at most 100 episodes per run."}]`, subjectBlock, eventsList, maxFactsPerCall)
+}
+
+// parseStructuredFacts reads the model output into facts. It accepts the requested
+// JSON array and, leniently, a single JSON object (the old format, which models
+// sometimes still produce). Facts without a summary are dropped (that is how a model
+// says "nothing durable here"), identical summaries are collapsed, and the result is
+// capped at maxFactsPerCall.
+func parseStructuredFacts(output string) ([]*StructuredFact, error) {
+	raw := extractJSON(output)
+
+	var jfs []jsonFact
+	switch {
+	case strings.HasPrefix(raw, "["):
+		if err := json.Unmarshal([]byte(raw), &jfs); err != nil {
+			return nil, fmt.Errorf("parse json: %w", err)
+		}
+	case strings.HasPrefix(raw, "{"):
+		var one jsonFact
+		if err := json.Unmarshal([]byte(raw), &one); err != nil {
+			return nil, fmt.Errorf("parse json: %w", err)
+		}
+		jfs = []jsonFact{one}
+	default:
+		return nil, errors.New("parse json: no JSON array or object in the response")
+	}
+
+	var facts []*StructuredFact
+	seen := map[string]bool{}
+	for _, jf := range jfs {
+		sf := &StructuredFact{
+			Entity:   ptrStr(jf.Entity),
+			Property: ptrStr(jf.Property),
+			Value:    ptrStr(jf.Value),
+			Summary:  strings.TrimSpace(ptrStr(jf.Summary)),
+		}
+		key := strings.ToLower(sf.Summary)
+		if sf.Summary == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		facts = append(facts, sf)
+		if len(facts) == maxFactsPerCall {
+			break
+		}
+	}
+	return facts, nil
 }
 
 // --- ReasonStructured ---
 
-func (o *OpenAI) ReasonStructured(ctx context.Context, texts []string, subject string) (*StructuredFact, error) {
+func (o *OpenAI) ReasonStructured(ctx context.Context, texts []string, subject string) ([]*StructuredFact, error) {
 	if len(texts) == 0 {
 		return nil, errors.New("reasoner: texts must not be empty")
 	}
 
-	prompt := structuredPrompt(texts, subject)
-
 	msgs := []openai.ChatCompletionMessageParamUnion{
 		openai.SystemMessage(systemPrompt),
-		openai.UserMessage(prompt),
+		openai.UserMessage(structuredPrompt(texts, subject)),
 	}
 
-	var result *StructuredFact
+	const attempts = 2
 	var valErr error
-
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := 0; attempt < attempts; attempt++ {
 		output, err := o.chat(ctx, msgs)
 		if err != nil {
 			return nil, err
 		}
-		raw := extractJSON(output)
 
-		var jf jsonFact
-		if err := json.Unmarshal([]byte(raw), &jf); err != nil {
-			valErr = fmt.Errorf("parse json: %w", err)
+		facts, err := parseStructuredFacts(output)
+		if err != nil {
+			valErr = err
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
 		}
 
-		result = &StructuredFact{
-			Entity:   ptrStr(jf.Entity),
-			Property: ptrStr(jf.Property),
-			Value:    ptrStr(jf.Value),
-			Summary:  ptrStr(jf.Summary),
+		// Grounding: no fact may be a (near-)verbatim copy of a source text. On the
+		// last attempt keep the facts that pass instead of losing all of them.
+		var good []*StructuredFact
+		var groundErr error
+		for _, sf := range facts {
+			if err := validateFactGrounding(sf, texts); err != nil {
+				groundErr = err
+				continue
+			}
+			good = append(good, sf)
 		}
-
-		if err := validateFactGrounding(result, texts); err != nil {
-			valErr = fmt.Errorf("grounding validation: %w", err)
-			msgs = append(msgs, openai.SystemMessage(retryWarning+" "+err.Error()))
-			result = nil
-			continue
+		if groundErr == nil {
+			return good, nil
 		}
-
-		valErr = nil
-		break
+		if attempt == attempts-1 && len(good) > 0 {
+			return good, nil
+		}
+		valErr = fmt.Errorf("grounding validation: %w", groundErr)
+		msgs = append(msgs, openai.SystemMessage(retryWarning+" "+groundErr.Error()))
 	}
-
-	if valErr != nil {
-		return nil, valErr
-	}
-
-	return result, nil
+	return nil, valErr
 }
 
 // --- ReasonRelationshipsBatch ---

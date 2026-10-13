@@ -8,6 +8,7 @@ import (
 
 	"github.com/alash3al/stash/internal/models"
 	"github.com/alash3al/stash/internal/observability"
+	"github.com/alash3al/stash/internal/reasoner"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -236,78 +237,36 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 			episodeIDs = append(episodeIDs, e.ID)
 		}
 
-		sf, err := b.reasoner.ReasonStructured(ctx, texts, subject)
+		facts, err := b.reasoner.ReasonStructured(ctx, texts, subject)
 		llmCalls++
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("reason structured: %v", err))
 			continue
 		}
 
-		if sf.Summary == "" {
+		// A cluster is done only when every one of its facts was handled; with no
+		// facts (nothing durable in the episodes) it is done right away.
+		clusterOK := true
+		for _, sf := range facts {
+			r, err := b.storeFact(ctx, nsID, sf, episodeIDs)
+			llmCalls += r.llmCalls
+			if err != nil {
+				errs = append(errs, err.Error())
+				clusterOK = false
+				continue
+			}
+			if r.created {
+				created++
+			}
+			if r.deduped {
+				deduped++
+			}
+			contradictionsFound += r.contradictions
+			contradictionsAutoResolved += r.autoResolved
+		}
+		if clusterOK {
 			markDone(cluster)
-			continue
 		}
-
-		// Embed the fact content
-		vec, err := b.embedder.Embed(ctx, sf.Summary)
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("embed fact: %v", err))
-			continue
-		}
-
-		// Check for duplicate fact
-		dupID, dup, reviewCalls, err := b.findDuplicate(ctx, nsID, vec, sf.Summary)
-		llmCalls += reviewCalls
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("check duplicate: %v", err))
-			continue
-		}
-		if dup {
-			deduped++
-			b.reinforceFact(ctx, dupID, episodeIDs)
-			markDone(cluster)
-			continue
-		}
-
-		confidence := calculateConfidence(len(cluster), sf.Entity != "" && sf.Property != "")
-		now := time.Now().UTC()
-
-		var factID int64
-		err = b.pool.QueryRow(ctx,
-			`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, entity, property, value, valid_from)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-			nsID, sf.Summary, pgvector.NewVector(vec), b.embedder.Model(), confidence,
-			strPtrOrNull(sf.Entity), strPtrOrNull(sf.Property), strPtrOrNull(sf.Value), now,
-		).Scan(&factID)
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("insert fact: %v", err))
-			continue
-		}
-		created++
-
-		// Insert fact_sources
-		for _, eid := range episodeIDs {
-			_, _ = b.pool.Exec(ctx,
-				"INSERT INTO fact_sources (fact_id, episode_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-				factID, eid,
-			)
-		}
-
-		// Stage 4: Contradiction detection
-		newFact := &models.Fact{
-			ID:          factID,
-			NamespaceID: nsID,
-			Content:     sf.Summary,
-			Confidence:  confidence,
-			Entity:      strPtrOrNull(sf.Entity),
-			Property:    strPtrOrNull(sf.Property),
-			Value:       strPtrOrNull(sf.Value),
-		}
-		cd, ca, _ := b.DetectContradictions(ctx, nsID, newFact)
-		contradictionsFound += cd
-		contradictionsAutoResolved += ca
-
-		markDone(cluster)
 	}
 
 	// Rows that failed to scan are missing from `episodes`; advancing past them
@@ -379,6 +338,72 @@ func (b *Brain) clusterEpisodes(episodes []models.Episode) [][]models.Episode {
 	}
 
 	return clusters
+}
+
+// storeResult describes what storeFact did with one synthesized fact.
+type storeResult struct {
+	created, deduped bool
+	contradictions   int
+	autoResolved     int
+	llmCalls         int
+}
+
+// storeFact embeds one synthesized fact and either folds it into an existing
+// duplicate (reinforcing that one) or inserts it, links its source episodes and
+// checks it for contradictions.
+func (b *Brain) storeFact(ctx context.Context, nsID int64, sf *reasoner.StructuredFact, episodeIDs []int64) (storeResult, error) {
+	var r storeResult
+
+	vec, err := b.embedder.Embed(ctx, sf.Summary)
+	if err != nil {
+		return r, fmt.Errorf("embed fact: %w", err)
+	}
+
+	dupID, dup, reviewCalls, err := b.findDuplicate(ctx, nsID, vec, sf.Summary)
+	r.llmCalls += reviewCalls
+	if err != nil {
+		return r, fmt.Errorf("check duplicate: %w", err)
+	}
+	if dup {
+		b.reinforceFact(ctx, dupID, episodeIDs)
+		r.deduped = true
+		return r, nil
+	}
+
+	confidence := calculateConfidence(len(episodeIDs), sf.Entity != "" && sf.Property != "")
+	now := time.Now().UTC()
+
+	var factID int64
+	err = b.pool.QueryRow(ctx,
+		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, entity, property, value, valid_from)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+		nsID, sf.Summary, pgvector.NewVector(vec), b.embedder.Model(), confidence,
+		strPtrOrNull(sf.Entity), strPtrOrNull(sf.Property), strPtrOrNull(sf.Value), now,
+	).Scan(&factID)
+	if err != nil {
+		return r, fmt.Errorf("insert fact: %w", err)
+	}
+	r.created = true
+
+	for _, eid := range episodeIDs {
+		_, _ = b.pool.Exec(ctx,
+			"INSERT INTO fact_sources (fact_id, episode_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+			factID, eid,
+		)
+	}
+
+	// Stage 4: Contradiction detection
+	newFact := &models.Fact{
+		ID:          factID,
+		NamespaceID: nsID,
+		Content:     sf.Summary,
+		Confidence:  confidence,
+		Entity:      strPtrOrNull(sf.Entity),
+		Property:    strPtrOrNull(sf.Property),
+		Value:       strPtrOrNull(sf.Value),
+	}
+	r.contradictions, r.autoResolved, _ = b.DetectContradictions(ctx, nsID, newFact)
+	return r, nil
 }
 
 // reinforceFact records that an existing fact was observed again: it resets the

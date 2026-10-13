@@ -41,7 +41,7 @@ func TestStructuredPromptSubjectAndSelfContainedRules(t *testing.T) {
 		"Subject context (what the Events belong to): Stash — Go memory server",
 		"Use it ONLY to name the project",
 		"understandable on its own",
-		`"summary": null`,
+		"output an empty array: []",
 		"- it now supports X",
 	} {
 		if !strings.Contains(with, want) {
