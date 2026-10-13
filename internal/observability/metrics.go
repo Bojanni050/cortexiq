@@ -83,6 +83,30 @@ var (
 	)
 )
 
+var reasonerStages = []string{
+	"same_fact",
+	"structured",
+	"relationships",
+	"patterns",
+	"contradiction",
+	"causal_links",
+	"goal_progress",
+	"failure_patterns",
+	"hypothesis_evidence",
+}
+
+func init() {
+	// Materialise zero-valued series so dashboards show the complete reasoner
+	// metric set before the first consolidation request is made.
+	for _, stage := range reasonerStages {
+		for _, status := range []string{"success", "error"} {
+			reasonerRequests.WithLabelValues(stage, status)
+		}
+		reasonerPromptTokens.WithLabelValues(stage)
+		reasonerCompletionTokens.WithLabelValues(stage)
+	}
+}
+
 // Observation carries the metrics that should be exported for a run.
 type Observation struct {
 	Namespace          string

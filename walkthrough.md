@@ -63,6 +63,12 @@ Chronological log of significant changes. Oldest → newest. Format per entry:
 - Conclusions: Add a token-protected `/api/v1/metrics` endpoint that gathers the registered Prometheus families and normalises counters, gauges, untyped values, histograms, and summaries into metric samples. Add a dedicated Metrics tab rather than scraping `/metrics` in browser JavaScript; this keeps authentication and formatting on the server side.
 - Actions: Added `internal/webui/metrics.go`, registered `/api/v1/metrics`, and added the Metrics tab to the embedded dashboard. The tab shows all metric samples, labels, help text, metric type, and summary tiles for reasoner prompt/completion tokens. Validated with `go build ./...`, `go vet ./...`, and `go test ./...`.
 
+## 2026-10-13 (Materialise zero-valued reasoner metrics)
+
+- Findings: The dashboard endpoint showed no `reasoner_*` rows until the first LLM request, because Prometheus `CounterVec` series are lazily created when labels are first used. This made the new metrics appear to be missing on a fresh deployment.
+- Conclusions: Pre-register every reasoner stage with `success` and `error` request labels, plus prompt/completion token series, at process startup. Zero-valued metrics are more useful operationally than an empty dashboard and do not change accounting.
+- Actions: Added startup registration for all nine reasoner stages in `internal/observability/metrics.go`. The Metrics tab now shows the complete reasoner metric set with zero values before the first consolidation call.
+
 ## 2026-10-09 (Guard reasoner output cost: max_tokens + optional JSON mode)
 
 - Findings: LiteLLM usage data showed the `stash` key spending ~$4.62 in total, almost entirely on 2026-10-08 ($4.13): ~10.3M completion tokens versus 1.9M prompt tokens across 3,769 requests — about 2,745 output tokens per call, for responses that should be sub-200-token JSON. Root cause: the configured model was a reasoning-style model and the reasoner sent no `max_tokens`, so nothing capped the output.
