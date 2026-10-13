@@ -63,6 +63,24 @@ var (
 			Help: "Number of errors encountered during consolidation",
 		}, []string{"namespace"},
 	)
+	reasonerRequests = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "reasoner_requests_total",
+			Help: "Total number of reasoner API requests, including retries",
+		}, []string{"stage", "status"},
+	)
+	reasonerPromptTokens = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "reasoner_prompt_tokens_total",
+			Help: "Prompt tokens reported by reasoner API responses",
+		}, []string{"stage"},
+	)
+	reasonerCompletionTokens = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "reasoner_completion_tokens_total",
+			Help: "Completion tokens reported by reasoner API responses",
+		}, []string{"stage"},
+	)
 )
 
 // Observation carries the metrics that should be exported for a run.
@@ -93,4 +111,23 @@ func RecordConsolidation(obs Observation) {
 	llmCalls.WithLabelValues(obs.Namespace).Add(float64(obs.LLMCalls))
 	duration.WithLabelValues(obs.Namespace).Observe(obs.Duration.Seconds())
 	errorsTotal.WithLabelValues(obs.Namespace).Add(float64(obs.Errors))
+}
+
+// RecordReasonerCall records one actual provider request. Failed requests are
+// counted too, so retry storms are visible instead of looking like silence.
+func RecordReasonerCall(stage string, promptTokens, completionTokens int64, success bool) {
+	if stage == "" {
+		stage = "unknown"
+	}
+	status := "success"
+	if !success {
+		status = "error"
+	}
+	reasonerRequests.WithLabelValues(stage, status).Inc()
+	if promptTokens > 0 {
+		reasonerPromptTokens.WithLabelValues(stage).Add(float64(promptTokens))
+	}
+	if completionTokens > 0 {
+		reasonerCompletionTokens.WithLabelValues(stage).Add(float64(completionTokens))
+	}
 }

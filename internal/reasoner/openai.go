@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/alash3al/stash/internal/models"
+	"github.com/alash3al/stash/internal/observability"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/shared"
@@ -60,7 +61,7 @@ func NewOpenAI(baseURL, apiKey, model string, maxTokens int, jsonMode bool) (*Op
 // max_tokens is only sent when greater than zero, so "unlimited" truly omits the
 // field (sending 0 would request zero output). Native JSON output is requested
 // only when jsonMode is enabled, since provider/model support varies.
-func (o *OpenAI) chat(ctx context.Context, msgs []openai.ChatCompletionMessageParamUnion) (string, error) {
+func (o *OpenAI) chat(ctx context.Context, stage string, msgs []openai.ChatCompletionMessageParamUnion) (string, error) {
 	params := openai.ChatCompletionNewParams{
 		Model:    o.model,
 		Messages: msgs,
@@ -75,11 +76,14 @@ func (o *OpenAI) chat(ctx context.Context, msgs []openai.ChatCompletionMessagePa
 
 	resp, err := o.client.Chat.Completions.New(ctx, params)
 	if err != nil {
+		observability.RecordReasonerCall(stage, 0, 0, false)
 		return "", fmt.Errorf("chat.completions call failed: %w", err)
 	}
 	if len(resp.Choices) == 0 {
+		observability.RecordReasonerCall(stage, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, false)
 		return "", errors.New("reasoner: no response from LLM")
 	}
+	observability.RecordReasonerCall(stage, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, true)
 	return strings.TrimSpace(resp.Choices[0].Message.Content), nil
 }
 
@@ -166,7 +170,7 @@ Output ONLY this JSON: {"same": true} when the New fact adds nothing, otherwise 
 
 	var valErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		output, err := o.chat(ctx, msgs)
+		output, err := o.chat(ctx, "same_fact", msgs)
 		if err != nil {
 			return false, err
 		}
@@ -296,7 +300,7 @@ func (o *OpenAI) ReasonStructured(ctx context.Context, texts []string, subject s
 	const attempts = 2
 	var valErr error
 	for attempt := 0; attempt < attempts; attempt++ {
-		output, err := o.chat(ctx, msgs)
+		output, err := o.chat(ctx, "structured", msgs)
 		if err != nil {
 			return nil, err
 		}
@@ -370,7 +374,7 @@ Rules:
 
 	var valErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		output, err := o.chat(ctx, msgs)
+		output, err := o.chat(ctx, "relationships", msgs)
 		if err != nil {
 			return nil, err
 		}
@@ -469,7 +473,7 @@ Rules:
 	var valErr error
 
 	for attempt := 0; attempt < 2; attempt++ {
-		output, err := o.chat(ctx, msgs)
+		output, err := o.chat(ctx, "patterns", msgs)
 		if err != nil {
 			return nil, err
 		}
@@ -563,7 +567,7 @@ Rules:
 	}
 
 	for attempt := 0; attempt < 2; attempt++ {
-		output, err := o.chat(ctx, msgs)
+		output, err := o.chat(ctx, "contradiction", msgs)
 		if err != nil {
 			return nil, err
 		}
@@ -644,7 +648,7 @@ Rules:
 	var valErr error
 
 	for attempt := 0; attempt < 2; attempt++ {
-		output, err := o.chat(ctx, msgs)
+		output, err := o.chat(ctx, "causal_links", msgs)
 		if err != nil {
 			return nil, err
 		}
@@ -753,7 +757,7 @@ Rules:
 	var valErr error
 
 	for attempt := 0; attempt < 2; attempt++ {
-		output, err := o.chat(ctx, msgs)
+		output, err := o.chat(ctx, "goal_progress", msgs)
 		if err != nil {
 			return nil, err
 		}
@@ -869,7 +873,7 @@ Rules for pattern extraction (higher-order):
 	var valErr error
 
 	for attempt := 0; attempt < 2; attempt++ {
-		output, err := o.chat(ctx, msgs)
+		output, err := o.chat(ctx, "failure_patterns", msgs)
 		if err != nil {
 			return nil, err
 		}
@@ -1003,7 +1007,7 @@ Rules:
 	var valErr error
 
 	for attempt := 0; attempt < 2; attempt++ {
-		output, err := o.chat(ctx, msgs)
+		output, err := o.chat(ctx, "hypothesis_evidence", msgs)
 		if err != nil {
 			return nil, err
 		}

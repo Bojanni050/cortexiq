@@ -63,7 +63,10 @@ type Config struct {
 	RecallMinSimilarity float32 `env:"STASH_RECALL_MIN_SIMILARITY" envDefault:"0"`
 	// RelationshipBatchSize facts are sent per relationship-extraction LLM call.
 	// Keep it modest: the reply must fit in STASH_REASONER_MAX_TOKENS.
-	RelationshipBatchSize          int     `env:"STASH_RELATIONSHIP_BATCH_SIZE" envDefault:"5"`
+	RelationshipBatchSize int `env:"STASH_RELATIONSHIP_BATCH_SIZE" envDefault:"5"`
+	// MaxLLMCallsPerRun hard-limits reasoner API calls in one namespace
+	// consolidation. 0 disables the limit.
+	MaxLLMCallsPerRun              int     `env:"STASH_MAX_LLM_CALLS_PER_RUN" envDefault:"0"`
 	DecayFactor                    float64 `env:"STASH_DECAY_FACTOR" envDefault:"0.95"`
 	ExpiryThreshold                float32 `env:"STASH_EXPIRY_THRESHOLD" envDefault:"0.1"`
 	HypothesisAutoConfirmThreshold float32 `env:"STASH_HYPOTHESIS_AUTO_CONFIRM_THRESHOLD" envDefault:"0.9"`

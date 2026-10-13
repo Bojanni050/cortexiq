@@ -86,6 +86,7 @@ func New(ctx context.Context) (*Context, error) {
 		HypothesisAutoConfirmThreshold: cfg.HypothesisAutoConfirmThreshold,
 		HypothesisAutoRejectThreshold:  cfg.HypothesisAutoRejectThreshold,
 		RelationshipBatchSize:          cfg.RelationshipBatchSize,
+		MaxLLMCallsPerRun:              cfg.MaxLLMCallsPerRun,
 		HybridRecall:                   cfg.HybridRecall,
 		MinRecallSimilarity:            cfg.RecallMinSimilarity,
 	})

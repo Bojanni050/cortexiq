@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/alash3al/stash/internal/models"
@@ -34,6 +35,7 @@ type ConsolidationResult struct {
 	FactsDecayed               int           `json:"facts_decayed"`
 	FactsExpired               int           `json:"facts_expired"`
 	LLMCalls                   int           `json:"llm_calls"`
+	LLMCallsLimited            bool          `json:"llm_calls_limited"`
 	Errors                     []string      `json:"errors,omitempty"`
 }
 
@@ -61,6 +63,7 @@ func (b *Brain) Consolidate(ctx context.Context, namespaceSlug string) (Consolid
 // 8. Confidence Decay                     (pure-SQL, no LLM)
 func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationResult, error) {
 	start := time.Now()
+	ctx = withLLMBudget(ctx, b.config.MaxLLMCallsPerRun)
 
 	var namespaceSlug string
 	_ = b.pool.QueryRow(ctx, "SELECT slug FROM namespaces WHERE id = $1", nsID).Scan(&namespaceSlug)
@@ -73,7 +76,7 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 	}
 
 	// Stage 1: Episodes -> Facts (+ Stage 4: Contradiction detection)
-	if ctx.Err() == nil {
+	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
 		factsCreated, factsDeduped, episodesRead, llmCalls, contFound, contAuto, errs := b.consolidateEpisodesToFacts(ctx, nsID, cp)
 		result.FactsCreated = factsCreated
 		result.FactsDeduplicated = factsDeduped
@@ -85,7 +88,7 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 	}
 
 	// Stage 2: Facts -> Relationships
-	if ctx.Err() == nil {
+	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
 		relCount, llmCalls, errs := b.consolidateFactsToRelationships(ctx, nsID, cp)
 		result.RelationshipsFound = relCount
 		result.LLMCalls += llmCalls
@@ -93,7 +96,7 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 	}
 
 	// Stage 3.5: Facts -> Causal Links
-	if ctx.Err() == nil {
+	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
 		causalCount, llmCalls, errs := b.consolidateFactsToCausalLinks(ctx, nsID, cp)
 		result.CausalLinksFound = causalCount
 		result.LLMCalls += llmCalls
@@ -101,7 +104,7 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 	}
 
 	// Stage 6: Goal Progress Inference
-	if ctx.Err() == nil {
+	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
 		annotated, suggestedComplete, llmCalls, errs := b.consolidateGoalProgress(ctx, nsID, cp)
 		result.GoalsAnnotated = annotated
 		result.GoalsSuggestedComplete = suggestedComplete
@@ -110,7 +113,7 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 	}
 
 	// Stage 7: Failure Pattern Detection
-	if ctx.Err() == nil {
+	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
 		repeats, patterns, llmCalls, errs := b.consolidateFailurePatterns(ctx, nsID, cp)
 		result.FailureRepeatsDetected = repeats
 		result.FailurePatternsFound = patterns
@@ -119,7 +122,7 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 	}
 
 	// Stage 3: Facts + Relationships -> Patterns
-	if ctx.Err() == nil {
+	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
 		patCount, llmCalls, errs := b.consolidateToPatterns(ctx, nsID, cp)
 		result.PatternsFound = patCount
 		result.LLMCalls += llmCalls
@@ -127,7 +130,7 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 	}
 
 	// Stage 8: Hypothesis Evidence Scanning
-	if ctx.Err() == nil {
+	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
 		autoConfirmed, autoRejected, updated, llmCalls, errs := b.consolidateHypothesisEvidence(ctx, nsID, cp)
 		result.HypothesesAutoConfirmed = autoConfirmed
 		result.HypothesesAutoRejected = autoRejected
@@ -159,6 +162,15 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 	}
 
 	result.Duration = time.Since(start)
+	if llmBudgetExhausted(ctx) {
+		result.LLMCallsLimited = true
+	}
+	for _, e := range result.Errors {
+		if strings.Contains(e, "reasoner call budget exhausted") {
+			result.LLMCallsLimited = true
+			break
+		}
+	}
 	observability.RecordConsolidation(observability.Observation{
 		Namespace:          namespaceSlug,
 		EventsRead:         result.EpisodesRead,

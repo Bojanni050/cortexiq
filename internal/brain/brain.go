@@ -65,6 +65,9 @@ type Config struct {
 	HypothesisAutoRejectThreshold  float32
 	// RelationshipBatchSize is how many facts go into one relationship-extraction call.
 	RelationshipBatchSize int
+	// MaxLLMCallsPerRun hard-limits reasoner calls during one consolidation run.
+	// Zero disables the limit.
+	MaxLLMCallsPerRun int
 	// HybridRecall adds full-text search to recall and fuses it with the vector ranking.
 	HybridRecall bool
 	// MinRecallSimilarity is the minimum cosine similarity for a result that was only
@@ -114,7 +117,7 @@ func New(pool *pgxpool.Pool, e embedder.Embedder, r reasoner.Reasoner, q *querie
 	return &Brain{
 		pool:     pool,
 		embedder: e,
-		reasoner: r,
+		reasoner: budgetReasoner{inner: r},
 		queries:  q,
 		config:   cfg,
 	}, nil

@@ -13,6 +13,11 @@ docker compose -f docker-compose.prod.yml up -d --build
 The explicit file is important: the default compose file is the local-development
 variant and uses different ports and database defaults.
 
+For cost protection, set `STASH_MAX_LLM_CALLS_PER_RUN=50` in the production `.env`.
+It limits reasoner calls for one namespace consolidation; `0` means unlimited.
+Prometheus exposes `reasoner_requests_total`, `reasoner_prompt_tokens_total`,
+and `reasoner_completion_tokens_total`, each labelled by pipeline stage.
+
 ## 1. Verify Stash is running
 
 ```bash
