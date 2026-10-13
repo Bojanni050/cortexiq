@@ -66,3 +66,15 @@ jobs:
         env:
           STASH_TEST_DSN: postgres://stash:stash@localhost:5432/stash_test?sslmode=disable
         run: go test ./...
+
+      # Guard: the integration tests skip themselves without a database, which
+      # would silently turn them into no-ops. Fail if any of them was skipped.
+      - name: Integration tests ran (not skipped)
+        env:
+          STASH_TEST_DSN: postgres://stash:stash@localhost:5432/stash_test?sslmode=disable
+        run: |
+          go test -count=1 -v -run Integration ./internal/brain/ | tee integration.log
+          if grep -q -- '--- SKIP' integration.log; then
+            echo "Integration tests were skipped"; exit 1
+          fi
+          grep -c -- '--- PASS: TestIntegration' integration.log
