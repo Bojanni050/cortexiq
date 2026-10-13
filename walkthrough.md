@@ -57,6 +57,12 @@ Chronological log of significant changes. Oldest → newest. Format per entry:
 - Conclusions: Use native Postgres custom-format dumps for full backup/restore, with an explicit destructive confirmation for restore. Add a synthetic-namespace evaluation procedure rather than making model quality an informal judgment from production memories.
 - Actions: Added `scripts/backup-prod.sh` and `scripts/restore-prod.sh`, with table-of-contents and SHA-256 verification. Added `docs/QUALITY_EVALUATION.md` with an isolated test workflow, scoring rubric, acceptance targets, and Prometheus metrics to record. Linked both from `README.md`. Scripts are intended to run on the VPS; no live restore was executed.
 
+## 2026-10-13 (Show all runtime metrics in the dashboard)
+
+- Findings: Prometheus metrics were available at `/metrics`, but the Stash UI had no way to inspect them. Operators had to leave the dashboard and read the raw Prometheus exposition format, which made the new LLM cost metrics difficult to use.
+- Conclusions: Add a token-protected `/api/v1/metrics` endpoint that gathers the registered Prometheus families and normalises counters, gauges, untyped values, histograms, and summaries into metric samples. Add a dedicated Metrics tab rather than scraping `/metrics` in browser JavaScript; this keeps authentication and formatting on the server side.
+- Actions: Added `internal/webui/metrics.go`, registered `/api/v1/metrics`, and added the Metrics tab to the embedded dashboard. The tab shows all metric samples, labels, help text, metric type, and summary tiles for reasoner prompt/completion tokens. Validated with `go build ./...`, `go vet ./...`, and `go test ./...`.
+
 ## 2026-10-09 (Guard reasoner output cost: max_tokens + optional JSON mode)
 
 - Findings: LiteLLM usage data showed the `stash` key spending ~$4.62 in total, almost entirely on 2026-10-08 ($4.13): ~10.3M completion tokens versus 1.9M prompt tokens across 3,769 requests — about 2,745 output tokens per call, for responses that should be sub-200-token JSON. Root cause: the configured model was a reasoning-style model and the reasoner sent no `max_tokens`, so nothing capped the output.

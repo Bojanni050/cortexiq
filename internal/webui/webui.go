@@ -51,6 +51,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/failures/", h.failureItem)
 	api.HandleFunc("/api/v1/causal-links", h.causalLinks)
 	api.HandleFunc("/api/v1/causal-links/", h.causalLinkItem)
+	api.HandleFunc("/api/v1/metrics", h.metrics)
 	mux.Handle("/api/v1/", auth.RequireToken(h.Token, api))
 }
 

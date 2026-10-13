@@ -176,6 +176,7 @@ const icons = {
   failures: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
   links: '<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>',
   namespaces: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  metrics: '<path d="M4 19V5M4 19h16"/><path d="m7 15 3-4 3 2 5-7"/>',
 };
 const svg = k => `<svg viewBox="0 0 24 24">${icons[k]}</svg>`;
 
@@ -190,6 +191,7 @@ const tabs = [
   ['failures', 'Failures', 'What went wrong, and what was learned'],
   ['links', 'Causal Links', 'Cause and effect between facts'],
   ['namespaces', 'Namespaces', 'How memory is organised'],
+  ['metrics', 'Metrics', 'Runtime, consolidation and LLM usage metrics'],
 ];
 const nav = document.getElementById('nav');
 tabs.forEach(([id, label]) => {
@@ -593,6 +595,29 @@ async function renderNamespaces() {
         <td class="muted">${ts(n.created_at)}</td>
       </tr>`));
 }
+async function renderMetrics() {
+  const body = await api('/metrics');
+  const items = (body && body.metrics) || [];
+  const byName = new Map();
+  for (const m of items) byName.set(m.name, (byName.get(m.name) || 0) + 1);
+  const reasoner = items.filter(m => m.name.startsWith('reasoner_'));
+  const prompt = reasoner.filter(m => m.name === 'reasoner_prompt_tokens_total').reduce((n, m) => n + Number(m.value || 0), 0);
+  const completion = reasoner.filter(m => m.name === 'reasoner_completion_tokens_total').reduce((n, m) => n + Number(m.value || 0), 0);
+  document.getElementById('content').innerHTML =
+    `<div class="stats">
+      ${stat('metrics', 'var(--accent)', items.length, 'Metric samples')}
+      ${stat('metrics', 'var(--blue)', byName.size, 'Metric families')}
+      ${stat('metrics', 'var(--yellow)', prompt.toLocaleString(), 'Reasoner prompt tokens')}
+      ${stat('metrics', 'var(--red)', completion.toLocaleString(), 'Reasoner completion tokens')}
+    </div>` +
+    `<div class="card"><h3>All metrics <span class="muted">${esc(ts(body.updated_at))}</span></h3>` +
+    table(['Metric', 'Type', 'Labels', 'Value'], items.map(m => `<tr>
+      <td><b>${esc(m.name)}</b>${m.help ? `<div class="muted">${esc(m.help)}</div>` : ''}</td>
+      <td class="muted">${esc(m.type)}</td>
+      <td class="mono">${esc(Object.entries(m.labels || {}).map(([k, v]) => `${k}=${v}`).join(', '))}</td>
+      <td class="mono">${Number(m.value).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
+    </tr>`)) + '</div>';
+}
 async function nsDialog() {
   const d = document.getElementById('dlg');
   d.innerHTML = `<h3>New namespace</h3>
@@ -622,7 +647,7 @@ function dlgClose() { document.getElementById('dlg').close(); }
 
 const renderers = { overview: renderOverview, episodes: renderEpisodes, recall: renderRecall, facts: renderFacts,
   goals: renderGoals, hypotheses: renderHypotheses, contradictions: renderContradictions,
-  failures: renderFailures, links: renderLinks, namespaces: renderNamespaces };
+  failures: renderFailures, links: renderLinks, namespaces: renderNamespaces, metrics: renderMetrics };
 
 async function refresh() {
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === state.tab));
