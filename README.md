@@ -48,6 +48,17 @@ stash import backup.jsonl                        # re-embeds with the configured
 
 Embeddings are not exported, so a file can be imported into an instance that uses a different embedding model. Importing is idempotent (same namespace + content is skipped). Use `--types episode` or `--types fact` to avoid importing both kinds — imported episodes are consolidated again, which can create duplicate facts that consolidation then merges.
 
+For a complete production backup, use the Postgres scripts on the VPS:
+
+```bash
+/opt/stash/scripts/backup-prod.sh
+/opt/stash/scripts/restore-prod.sh /opt/stash/backups/stash-<timestamp>.dump --confirm
+```
+
+The restore command is destructive and requires `--confirm`. See
+[`docs/QUALITY_EVALUATION.md`](docs/QUALITY_EVALUATION.md) before changing the
+reasoner model or consolidation settings.
+
 ## Atlas Cloud
 
 > [Atlas Cloud](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=stash) is a full-modal AI inference platform that gives developers a single AI API to access video generation, image generation, and LLM APIs. Instead of managing multiple vendor integrations, you connect once and get unified access to 300+ curated models across all modalities.

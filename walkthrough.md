@@ -51,6 +51,12 @@ Chronological log of significant changes. Oldest → newest. Format per entry:
 - Conclusions: Deploy the current `main` using the production compose file, not the local compose. Set the live per-consolidation reasoner budget to 50 calls: conservative enough to prevent a backlog from creating a large burst, while allowing a normal namespace run to complete.
 - Actions: On `/opt/stash`, fast-forwarded to `main`, built `stash:local`, added `STASH_MAX_LLM_CALLS_PER_RUN=50` to the secret-bearing production `.env`, and recreated only `stash` and `stash-ui` (Postgres remained running). Both containers are healthy; dashboard `/ui` and `/healthz` return 200. Metrics will appear after the next reasoner call.
 
+## 2026-10-13 (Add full backup and quality evaluation workflow)
+
+- Findings: JSONL export/import is portable and useful for migration, but it excludes embeddings and operational tables, so it is not a complete disaster-recovery backup. Model changes also lacked a repeatable quality rubric isolated from real memory.
+- Conclusions: Use native Postgres custom-format dumps for full backup/restore, with an explicit destructive confirmation for restore. Add a synthetic-namespace evaluation procedure rather than making model quality an informal judgment from production memories.
+- Actions: Added `scripts/backup-prod.sh` and `scripts/restore-prod.sh`, with table-of-contents and SHA-256 verification. Added `docs/QUALITY_EVALUATION.md` with an isolated test workflow, scoring rubric, acceptance targets, and Prometheus metrics to record. Linked both from `README.md`. Scripts are intended to run on the VPS; no live restore was executed.
+
 ## 2026-10-09 (Guard reasoner output cost: max_tokens + optional JSON mode)
 
 - Findings: LiteLLM usage data showed the `stash` key spending ~$4.62 in total, almost entirely on 2026-10-08 ($4.13): ~10.3M completion tokens versus 1.9M prompt tokens across 3,769 requests — about 2,745 output tokens per call, for responses that should be sub-200-token JSON. Root cause: the configured model was a reasoning-style model and the reasoner sent no `max_tokens`, so nothing capped the output.
