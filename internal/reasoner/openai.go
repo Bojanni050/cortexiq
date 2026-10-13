@@ -76,14 +76,14 @@ func (o *OpenAI) chat(ctx context.Context, stage string, msgs []openai.ChatCompl
 
 	resp, err := o.client.Chat.Completions.New(ctx, params)
 	if err != nil {
-		observability.RecordReasonerCall(stage, 0, 0, false)
+		observability.RecordReasonerCall(stage, o.model, 0, 0, false)
 		return "", fmt.Errorf("chat.completions call failed: %w", err)
 	}
 	if len(resp.Choices) == 0 {
-		observability.RecordReasonerCall(stage, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, false)
+		observability.RecordReasonerCall(stage, o.model, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, false)
 		return "", errors.New("reasoner: no response from LLM")
 	}
-	observability.RecordReasonerCall(stage, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, true)
+	observability.RecordReasonerCall(stage, o.model, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, true)
 	return strings.TrimSpace(resp.Choices[0].Message.Content), nil
 }
 

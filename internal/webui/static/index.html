@@ -601,15 +601,33 @@ async function renderMetrics() {
   const byName = new Map();
   for (const m of items) byName.set(m.name, (byName.get(m.name) || 0) + 1);
   const reasoner = items.filter(m => m.name.startsWith('reasoner_'));
-  const prompt = reasoner.filter(m => m.name === 'reasoner_prompt_tokens_total').reduce((n, m) => n + Number(m.value || 0), 0);
-  const completion = reasoner.filter(m => m.name === 'reasoner_completion_tokens_total').reduce((n, m) => n + Number(m.value || 0), 0);
+  const sum = name => reasoner.filter(m => m.name === name).reduce((n, m) => n + Number(m.value || 0), 0);
+  const prompt = sum('reasoner_prompt_tokens_total');
+  const completion = sum('reasoner_completion_tokens_total');
+  const cost = sum('reasoner_cost_total');
+  const unpriced = sum('reasoner_unpriced_calls_total');
+  // Estimated cost per stage, from the reasoner_cost_total series.
+  const byStage = new Map();
+  for (const m of reasoner) {
+    if (m.name !== 'reasoner_cost_total') continue;
+    const stage = (m.labels && m.labels.stage) || 'unknown';
+    byStage.set(stage, (byStage.get(stage) || 0) + Number(m.value || 0));
+  }
+  const money = n => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  const costRows = [...byStage.entries()].sort((a, b) => b[1] - a[1])
+    .map(([stage, v]) => `<tr><td class="mono">${esc(stage)}</td><td class="mono">${money(v)}</td></tr>`);
+  const hint = unpriced > 0
+    ? `<div class="muted">${unpriced.toLocaleString()} call(s) used a model without a configured price — set STASH_MODEL_PRICES to price them.</div>` : '';
   document.getElementById('content').innerHTML =
     `<div class="stats">
+      ${stat('metrics', 'var(--green)', money(cost), 'Estimated reasoner cost')}
+      ${stat('metrics', 'var(--red)', unpriced.toLocaleString(), 'Unpriced reasoner calls')}
       ${stat('metrics', 'var(--accent)', items.length, 'Metric samples')}
       ${stat('metrics', 'var(--blue)', byName.size, 'Metric families')}
       ${stat('metrics', 'var(--yellow)', prompt.toLocaleString(), 'Reasoner prompt tokens')}
       ${stat('metrics', 'var(--red)', completion.toLocaleString(), 'Reasoner completion tokens')}
     </div>` +
+    (costRows.length ? `<div class="card"><h3>Estimated cost by stage ${hint ? '' : ''}</h3>${hint}<div class="tablewrap"><table><thead><tr><th>Stage</th><th>Cost (configured unit)</th></tr></thead><tbody>${costRows.join('')}</tbody></table></div></div>` : '') +
     `<div class="card"><h3>All metrics <span class="muted">${esc(ts(body.updated_at))}</span></h3>` +
     table(['Metric', 'Type', 'Labels', 'Value'], items.map(m => `<tr>
       <td><b>${esc(m.name)}</b>${m.help ? `<div class="muted">${esc(m.help)}</div>` : ''}</td>

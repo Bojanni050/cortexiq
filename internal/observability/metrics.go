@@ -139,9 +139,12 @@ func RecordConsolidation(obs Observation) {
 
 // RecordReasonerCall records one actual provider request. Failed requests are
 // counted too, so retry storms are visible instead of looking like silence.
-func RecordReasonerCall(stage string, promptTokens, completionTokens int64, success bool) {
+func RecordReasonerCall(stage, model string, promptTokens, completionTokens int64, success bool) {
 	if stage == "" {
 		stage = "unknown"
+	}
+	if model == "" {
+		model = "unknown"
 	}
 	status := "success"
 	if !success {
@@ -153,5 +156,10 @@ func RecordReasonerCall(stage string, promptTokens, completionTokens int64, succ
 	}
 	if completionTokens > 0 {
 		reasonerCompletionTokens.WithLabelValues(stage).Add(float64(completionTokens))
+	}
+	// Only price requests that reported usage; failures without usage are not
+	// cost-bearing and would otherwise inflate the unpriced counter.
+	if promptTokens+completionTokens > 0 {
+		recordReasonerCost(stage, model, promptTokens, completionTokens)
 	}
 }

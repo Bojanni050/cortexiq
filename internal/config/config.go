@@ -27,6 +27,10 @@ type Config struct {
 	ReasonerMaxTokens int  `env:"STASH_REASONER_MAX_TOKENS" envDefault:"1024"`
 	ReasonerJSONMode  bool `env:"STASH_REASONER_JSON_MODE" envDefault:"false"`
 
+	// ModelPrices feeds the cost estimate: "model=input:output,..." per million
+	// tokens. Empty disables cost accounting; token metrics still work.
+	ModelPrices string `env:"STASH_MODEL_PRICES" envDefault:""`
+
 	// Optional overrides so embeddings can use a different endpoint (e.g. a local
 	// Ollama) than the reasoner. Fall back to the OpenAI settings above when empty.
 	// The `envDefault:""` is what keeps them optional: config parsing runs with

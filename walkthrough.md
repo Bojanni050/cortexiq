@@ -69,6 +69,12 @@ Chronological log of significant changes. Oldest → newest. Format per entry:
 - Conclusions: Pre-register every reasoner stage with `success` and `error` request labels, plus prompt/completion token series, at process startup. Zero-valued metrics are more useful operationally than an empty dashboard and do not change accounting.
 - Actions: Added startup registration for all nine reasoner stages in `internal/observability/metrics.go`. The Metrics tab now shows the complete reasoner metric set with zero values before the first consolidation call.
 
+## 2026-10-13 (Estimated LLM cost in metrics and dashboard)
+
+- Findings: Token counters per reasoner stage existed, but nothing translated them into money, so answering "what is Stash spending" still required manual arithmetic against a provider dashboard.
+- Conclusions: Add an optional price table (per million tokens) and derive cost at the same boundary where token usage is recorded. Keep it opt-in: with no prices configured, token metrics still work and calls stay visible as unpriced instead of being silently counted as free. Prices live in environment config, not code, because they are provider- and deployment-specific.
+- Actions: Added `STASH_MODEL_PRICES` (`model=input:output,...`, per million tokens) to config and both compose templates. Added `internal/observability/pricing.go` with a parser, a guarded price table, and `recordReasonerCost`; added `reasoner_cost_total{stage,model}` and `reasoner_unpriced_calls_total{stage,model}`. `RecordReasonerCall` now takes the model. Bootstrap parses the table at startup and fails fast on malformed input. The dashboard Metrics tab shows an estimated-cost tile and a cost-per-stage table. Unit tests cover parsing, pricing, and unpriced counting. Validated with `gofmt`, `go build ./...`, `go vet ./...`, and `go test ./...`.
+
 ## 2026-10-09 (Guard reasoner output cost: max_tokens + optional JSON mode)
 
 - Findings: LiteLLM usage data showed the `stash` key spending ~$4.62 in total, almost entirely on 2026-10-08 ($4.13): ~10.3M completion tokens versus 1.9M prompt tokens across 3,769 requests — about 2,745 output tokens per call, for responses that should be sub-200-token JSON. Root cause: the configured model was a reasoning-style model and the reasoner sent no `max_tokens`, so nothing capped the output.

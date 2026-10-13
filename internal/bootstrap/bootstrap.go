@@ -12,6 +12,7 @@ import (
 	"github.com/alash3al/stash/internal/config"
 	"github.com/alash3al/stash/internal/db"
 	"github.com/alash3al/stash/internal/embedder"
+	"github.com/alash3al/stash/internal/observability"
 	"github.com/alash3al/stash/internal/queries"
 	"github.com/alash3al/stash/internal/reasoner"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -61,6 +62,15 @@ func New(ctx context.Context) (*Context, error) {
 	if err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("build reasoner: %w", err)
+	}
+
+	if cfg.ModelPrices != "" {
+		modelPrices, err := observability.ParsePrices(cfg.ModelPrices)
+		if err != nil {
+			pool.Close()
+			return nil, fmt.Errorf("model prices: %w", err)
+		}
+		observability.SetModelPrices(modelPrices)
 	}
 
 	q, err := queries.New()
