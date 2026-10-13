@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -19,6 +21,7 @@ import (
 	"github.com/alash3al/stash/internal/auth"
 	"github.com/alash3al/stash/internal/bootstrap"
 	"github.com/alash3al/stash/internal/brain"
+	"github.com/alash3al/stash/internal/scope"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/urfave/cli/v3"
@@ -734,6 +737,55 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 	return mcpServer
 }
 
+// readOnlyTools are the MCP tools a read-only token may call. Everything else
+// (remember, consolidate, create_*, delete_*, ...) is rejected before it reaches
+// the server.
+var readOnlyTools = map[string]bool{
+	"recall":              true,
+	"query_facts":         true,
+	"query_relationships": true,
+	"list_namespaces":     true,
+	"list_goals":          true,
+	"list_hypotheses":     true,
+	"list_contradictions": true,
+	"list_failures":       true,
+	"list_causal_links":   true,
+	"get_context":         true,
+	"trace_causal_chain":  true,
+}
+
+// readOnlyMCP rejects tools/call requests for mutating tools when the token is
+// read-only. The MCP transport is POST-based, so the tool name is read from the
+// JSON-RPC body; other methods (initialize, tools/list, ping) are read-only.
+func readOnlyMCP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !scope.ReadOnly(r.Context()) || r.Method != http.MethodPost {
+			next.ServeHTTP(w, r)
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		var msg struct {
+			Method string `json:"method"`
+			Params struct {
+				Name string `json:"name"`
+			} `json:"params"`
+		}
+		_ = json.Unmarshal(body, &msg)
+		if msg.Method == "tools/call" && !readOnlyTools[msg.Params.Name] {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"error":"read-only token: tool not allowed"}` + "\n"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 	bc := getBootstrap(cmd)
 	mcpServer := newMCPServer(bc)
@@ -743,12 +795,12 @@ func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 	addr := host + ":" + port
 
 	// The SSE server is mounted behind the same Bearer-token check as the
-	// dashboard API. An empty STASH_API_TOKEN leaves MCP open (as before).
+	// dashboard API. An empty token set leaves MCP open (as before).
 	httpSrv := &http.Server{Addr: addr}
 	sseServer := server.NewSSEServer(mcpServer, server.WithHTTPServer(httpSrv))
-	httpSrv.Handler = auth.RequireToken(bc.Config.APIToken, sseServer)
-	if bc.Config.APIToken == "" {
-		log.Println("WARNING: STASH_API_TOKEN is not set; the MCP server is unauthenticated")
+	httpSrv.Handler = auth.Require(bc.Auth, readOnlyMCP(sseServer))
+	if !bc.Auth.Enabled() {
+		log.Println("WARNING: no API token configured; the MCP server is unauthenticated")
 	}
 
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)

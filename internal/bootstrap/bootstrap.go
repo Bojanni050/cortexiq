@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alash3al/stash/internal/auth"
 	"github.com/alash3al/stash/internal/brain"
 	"github.com/alash3al/stash/internal/config"
 	"github.com/alash3al/stash/internal/db"
@@ -24,6 +25,7 @@ type Context struct {
 	Brain  *brain.Brain
 	Pool   *pgxpool.Pool
 	Logger *slog.Logger
+	Auth   *auth.Set
 }
 
 // MustNew panics on bootstrap failure.
@@ -43,6 +45,11 @@ func New(ctx context.Context) (*Context, error) {
 	}
 
 	logger := buildLogger(cfg)
+
+	tokenSet, err := auth.ParseSet(cfg.APITokens, cfg.APIToken)
+	if err != nil {
+		return nil, fmt.Errorf("api tokens: %w", err)
+	}
 
 	pool, err := db.Open(ctx, cfg.StoreDSN, cfg.EmbeddingModel, cfg.VectorDim)
 	if err != nil {
@@ -110,6 +117,7 @@ func New(ctx context.Context) (*Context, error) {
 		Brain:  br,
 		Pool:   pool,
 		Logger: logger,
+		Auth:   tokenSet,
 	}, nil
 }
 

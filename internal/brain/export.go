@@ -166,6 +166,9 @@ func (b *Brain) Export(ctx context.Context, w io.Writer, namespaces []string, ty
 // them again; importing both episodes and facts can therefore produce duplicate
 // facts that consolidation then deduplicates. Use Types to import only one kind.
 func (b *Brain) Import(ctx context.Context, r io.Reader, opts ImportOptions) (ImportResult, error) {
+	if err := requireWrite(ctx); err != nil {
+		return ImportResult{}, err
+	}
 	var res ImportResult
 	want, err := wantedTypes(opts.Types)
 	if err != nil {

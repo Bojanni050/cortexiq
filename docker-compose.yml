@@ -39,6 +39,7 @@ services:
       STASH_CONTEXT_TTL: 1h
       STASH_HTTP_ADDR: :9090
       STASH_API_TOKEN: ${STASH_API_TOKEN:-}
+      STASH_API_TOKENS: ${STASH_API_TOKENS:-}
       STASH_LOG_LEVEL: info
       STASH_LOG_FORMAT: text
       # Optional consolidation configs

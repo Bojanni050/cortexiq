@@ -16,6 +16,7 @@ import (
 	"github.com/alash3al/stash/internal/auth"
 	"github.com/alash3al/stash/internal/brain"
 	"github.com/alash3al/stash/internal/models"
+	"github.com/alash3al/stash/internal/scope"
 )
 
 //go:embed static/index.html
@@ -24,9 +25,10 @@ var staticFS embed.FS
 // Handler serves the dashboard UI and the /api/v1 JSON endpoints.
 type Handler struct {
 	Brain *brain.Brain
-	// Token, when non-empty, is required as a Bearer token on every /api/v1 call.
-	// The static dashboard shell itself holds no data and stays public.
-	Token string
+	// Auth, when enabled, requires a Bearer token on every /api/v1 call and
+	// carries the token's scope and namespace allowlist. The static dashboard
+	// shell itself holds no data and stays public.
+	Auth *auth.Set
 }
 
 // Register mounts the UI and API routes on the given mux.
@@ -53,7 +55,30 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/causal-links/", h.causalLinkItem)
 	api.HandleFunc("/api/v1/runs", h.runs)
 	api.HandleFunc("/api/v1/metrics", h.metrics)
-	mux.Handle("/api/v1/", auth.RequireToken(h.Token, api))
+	mux.Handle("/api/v1/", auth.Require(h.Auth, readOnlyWeb(api)))
+}
+
+// readOnlyWeb blocks writes for read-only tokens. GET and HEAD are reads, and
+// the dashboard's POST /api/v1/recall is a read as well.
+func readOnlyWeb(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if scope.ReadOnly(r.Context()) && !isReadRequest(r) {
+			writeErr(w, http.StatusForbidden, brain.ErrReadOnly)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isReadRequest(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		return true
+	case http.MethodPost:
+		return strings.TrimSuffix(r.URL.Path, "/") == "/api/v1/recall"
+	default:
+		return false
+	}
 }
 
 func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +121,8 @@ func errStatus(err error) int {
 		errors.Is(err, brain.ErrContradictionNotFound),
 		errors.Is(err, brain.ErrCausalLinkNotFound):
 		return http.StatusBadRequest
+	case errors.Is(err, brain.ErrForbidden), errors.Is(err, brain.ErrReadOnly):
+		return http.StatusForbidden
 	default:
 		return http.StatusInternalServerError
 	}

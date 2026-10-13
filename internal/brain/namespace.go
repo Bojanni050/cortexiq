@@ -12,7 +12,13 @@ import (
 // CreateNamespace creates a new namespace with the given slug, name, and description.
 // Parent namespaces are auto-created with slug as name if they don't exist.
 func (b *Brain) CreateNamespace(ctx context.Context, slug, name, description string) (int64, error) {
+	if err := requireWrite(ctx); err != nil {
+		return 0, err
+	}
 	if err := validatePath(slug); err != nil {
+		return 0, err
+	}
+	if err := checkReadAllowed(ctx, slug); err != nil {
 		return 0, err
 	}
 
@@ -72,6 +78,10 @@ func (b *Brain) GetNamespace(ctx context.Context, slug string) (*models.Namespac
 // Each path matches itself and all descendants.
 func (b *Brain) ListNamespaces(ctx context.Context, slugs []string, page Pagination) ([]models.Namespace, error) {
 	page = page.Sanitize()
+	slugs, err := withAllowedSlugs(ctx, slugs)
+	if err != nil {
+		return nil, err
+	}
 
 	if len(slugs) == 0 {
 		rows, err := b.pool.Query(ctx,

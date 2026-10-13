@@ -63,9 +63,12 @@ func (b *Brain) SaveConsolidationRun(ctx context.Context, nsID int64, res Consol
 // list returns runs across all namespaces.
 func (b *Brain) ListConsolidationRuns(ctx context.Context, namespaceSlugs []string, page Pagination) ([]models.ConsolidationRun, error) {
 	page = page.Sanitize()
+	namespaceSlugs, err := withAllowedSlugs(ctx, namespaceSlugs)
+	if err != nil {
+		return nil, err
+	}
 
 	var rows pgx.Rows
-	var err error
 	if len(namespaceSlugs) == 0 {
 		rows, err = b.pool.Query(ctx,
 			`SELECT `+runColumns+` FROM consolidation_runs ORDER BY started_at DESC LIMIT $1 OFFSET $2`,

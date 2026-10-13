@@ -45,7 +45,11 @@ type Config struct {
 	// Server
 	// APIToken, when set, is required as a Bearer token on the dashboard API
 	// (/api/v1). Empty keeps the API open. `envDefault:""` keeps it optional.
-	APIToken  string `env:"STASH_API_TOKEN" envDefault:""`
+	APIToken string `env:"STASH_API_TOKEN" envDefault:""`
+	// APITokens is a JSON array of {name, token, scope, namespaces}. When set it
+	// replaces APIToken and lets each caller be scoped (ro/rw, namespace
+	// allowlist).
+	APITokens string `env:"STASH_API_TOKENS" envDefault:""`
 	HTTPAddr  string `env:"STASH_HTTP_ADDR,required"`
 	LogLevel  string `env:"STASH_LOG_LEVEL,required"`
 	LogFormat string `env:"STASH_LOG_FORMAT,required"`

@@ -96,6 +96,29 @@ A web dashboard is also served at `http://localhost:9090/ui` — browse and mana
 
 To protect Stash, set `STASH_API_TOKEN` in `.env`. It guards both the dashboard API (`/api/v1`) and the MCP server (`/sse`, `/message`): every request then needs `Authorization: Bearer <token>`. The dashboard asks for the token on first use and remembers it in the browser; MCP clients need to send the header (see below). Leave it empty to keep everything open. `/healthz`, `/readyz` and `/metrics` are not covered.
 
+### Scoped tokens
+
+For several callers, use `STASH_API_TOKENS` instead: a JSON array where each
+token can be read-only and/or restricted to a namespace subtree. It replaces
+`STASH_API_TOKEN` when set.
+
+```json
+[
+  {"name": "dashboard", "token": "<hex>", "scope": "rw"},
+  {"name": "agent", "token": "<hex>", "scope": "ro", "namespaces": ["/projects", "/user"]}
+]
+```
+
+- `scope`: `rw` (default) or `ro`. Read-only tokens may only run read operations;
+  the dashboard allows `GET`/`HEAD` and `POST /api/v1/recall`, and the MCP server
+  allows only read tools (`recall`, `query_*`, `list_*`, `get_context`,
+  `trace_causal_chain`).
+- `namespaces`: allowlist of namespace paths. A token may only see and touch
+  those paths and their descendants. Omit it for full access.
+
+Namespace enforcement happens in the brain layer, so it applies to every entry
+point (dashboard API, MCP tools, export) rather than per endpoint.
+
 Point any MCP-compatible client at that URL. Example configs:
 
 With `STASH_API_TOKEN` set, add the header to the client config, e.g. for Cursor:

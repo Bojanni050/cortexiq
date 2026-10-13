@@ -39,9 +39,9 @@ func serveHTTP(ctx context.Context, cmd *cli.Command) error {
 	addr := net.JoinHostPort(host, port)
 
 	mux := http.NewServeMux()
-	ui := &webui.Handler{Brain: bc.Brain, Token: bc.Config.APIToken}
-	if bc.Config.APIToken == "" {
-		log.Println("WARNING: STASH_API_TOKEN is not set; the dashboard API is unauthenticated")
+	ui := &webui.Handler{Brain: bc.Brain, Auth: bc.Auth}
+	if !bc.Auth.Enabled() {
+		log.Println("WARNING: no API token configured; the dashboard API is unauthenticated")
 	}
 	ui.Register(mux)
 	mux.Handle("/metrics", promhttp.Handler())
