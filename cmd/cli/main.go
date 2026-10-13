@@ -147,6 +147,16 @@ func main() {
 				},
 			},
 			{
+				Name:   "runs",
+				Usage:  "Show recent consolidation runs (what each run changed)",
+				Action: runsCmd,
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to query (each includes descendants; default all)"},
+					&cli.IntFlag{Name: "limit", Value: 50, Usage: "Max results"},
+					&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
+				},
+			},
+			{
 				Name:   "export",
 				Usage:  "Export episodes and facts as JSON Lines (embeddings are not included)",
 				Action: exportCmd,

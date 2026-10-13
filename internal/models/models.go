@@ -213,3 +213,33 @@ type RecallResult struct {
 	CreatedAt      time.Time       `db:"created_at"`
 	Score          float32         `db:"score"`
 }
+
+// ConsolidationRun records the outcome of one consolidation run for a namespace.
+type ConsolidationRun struct {
+	ID                      int64     `db:"id" json:"id"`
+	NamespaceID             int64     `db:"namespace_id" json:"namespace_id"`
+	NamespaceSlug           string    `db:"namespace_slug" json:"namespace_slug"`
+	StartedAt               time.Time `db:"started_at" json:"started_at"`
+	DurationMS              int64     `db:"duration_ms" json:"duration_ms"`
+	EpisodesRead            int       `db:"episodes_read" json:"episodes_read"`
+	FactsCreated            int       `db:"facts_created" json:"facts_created"`
+	FactsDeduplicated       int       `db:"facts_deduplicated" json:"facts_deduplicated"`
+	RelationshipsFound      int       `db:"relationships_found" json:"relationships_found"`
+	CausalLinksFound        int       `db:"causal_links_found" json:"causal_links_found"`
+	PatternsFound           int       `db:"patterns_found" json:"patterns_found"`
+	ContradictionsFound     int       `db:"contradictions_found" json:"contradictions_found"`
+	GoalsAnnotated          int       `db:"goals_annotated" json:"goals_annotated"`
+	GoalsSuggestedComplete  int       `db:"goals_suggested_complete" json:"goals_suggested_complete"`
+	FailureRepeatsDetected  int       `db:"failure_repeats_detected" json:"failure_repeats_detected"`
+	FailurePatternsFound    int       `db:"failure_patterns_found" json:"failure_patterns_found"`
+	HypothesesAutoConfirmed int       `db:"hypotheses_auto_confirmed" json:"hypotheses_auto_confirmed"`
+	HypothesesAutoRejected  int       `db:"hypotheses_auto_rejected" json:"hypotheses_auto_rejected"`
+	HypothesesUpdated       int       `db:"hypotheses_updated" json:"hypotheses_updated"`
+	FactsDecayed            int       `db:"facts_decayed" json:"facts_decayed"`
+	FactsExpired            int       `db:"facts_expired" json:"facts_expired"`
+	LLMCalls                int       `db:"llm_calls" json:"llm_calls"`
+	LLMCallsLimited         bool      `db:"llm_calls_limited" json:"llm_calls_limited"`
+	Errors                  int       `db:"errors" json:"errors"`
+	ErrorSample             string    `db:"error_sample" json:"error_sample"`
+	CreatedAt               time.Time `db:"created_at" json:"created_at"`
+}

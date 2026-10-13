@@ -51,6 +51,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/failures/", h.failureItem)
 	api.HandleFunc("/api/v1/causal-links", h.causalLinks)
 	api.HandleFunc("/api/v1/causal-links/", h.causalLinkItem)
+	api.HandleFunc("/api/v1/runs", h.runs)
 	api.HandleFunc("/api/v1/metrics", h.metrics)
 	mux.Handle("/api/v1/", auth.RequireToken(h.Token, api))
 }
@@ -712,4 +713,16 @@ func (h *Handler) causalLinkItem(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeErr(w, http.StatusNotFound, errors.New("not found"))
 	}
+}
+
+func (h *Handler) runs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	items, err := h.Brain.ListConsolidationRuns(r.Context(), namespacesParam(r), pagination(r))
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, nonNil(items))
 }

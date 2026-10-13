@@ -176,6 +176,7 @@ const icons = {
   failures: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
   links: '<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>',
   namespaces: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  runs: '<path d="M3 12a9 9 0 1 0 2.6-6.4"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/>',
   metrics: '<path d="M4 19V5M4 19h16"/><path d="m7 15 3-4 3 2 5-7"/>',
 };
 const svg = k => `<svg viewBox="0 0 24 24">${icons[k]}</svg>`;
@@ -191,6 +192,7 @@ const tabs = [
   ['failures', 'Failures', 'What went wrong, and what was learned'],
   ['links', 'Causal Links', 'Cause and effect between facts'],
   ['namespaces', 'Namespaces', 'How memory is organised'],
+  ['runs', 'Runs', 'Recent consolidation runs and what changed'],
   ['metrics', 'Metrics', 'Runtime, consolidation and LLM usage metrics'],
 ];
 const nav = document.getElementById('nav');
@@ -663,9 +665,29 @@ async function del(kind, id) {
 }
 function dlgClose() { document.getElementById('dlg').close(); }
 
+async function renderRuns() {
+  const items = await apiList(`/runs?namespaces=${encodeURIComponent(state.ns)}&limit=200`);
+  const dur = ms => ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : (ms || 0) + 'ms';
+  const n = v => v ? String(v) : '<span class="muted">—</span>';
+  document.getElementById('content').innerHTML = table(
+    ['Started', 'Namespace', 'Duration', 'Episodes', 'Facts', 'Dedup', 'Rels', 'Patterns', 'Contra', 'LLM calls', 'Errors'],
+    items.map(r => `<tr>
+      <td class="muted">${ts(r.started_at)}</td>
+      <td class="mono">${esc(r.namespace_slug || nsSlug(r.namespace_id))}</td>
+      <td class="mono">${dur(r.duration_ms)}</td>
+      <td>${n(r.episodes_read)}</td>
+      <td>${n(r.facts_created)}</td>
+      <td>${n(r.facts_deduplicated)}</td>
+      <td>${n(r.relationships_found)}</td>
+      <td>${n(r.patterns_found)}</td>
+      <td>${n(r.contradictions_found)}</td>
+      <td>${n(r.llm_calls)}${r.llm_calls_limited ? ' <span class="badge pending">limited</span>' : ''}</td>
+      <td>${r.errors ? `<span class="badge abandoned">${r.errors}</span>${r.error_sample ? `<div class="muted">${esc(r.error_sample)}</div>` : ''}` : '<span class="muted">—</span>'}</td>
+    </tr>`));
+}
 const renderers = { overview: renderOverview, episodes: renderEpisodes, recall: renderRecall, facts: renderFacts,
   goals: renderGoals, hypotheses: renderHypotheses, contradictions: renderContradictions,
-  failures: renderFailures, links: renderLinks, namespaces: renderNamespaces, metrics: renderMetrics };
+  failures: renderFailures, links: renderLinks, namespaces: renderNamespaces, runs: renderRuns, metrics: renderMetrics };
 
 async function refresh() {
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === state.tab));

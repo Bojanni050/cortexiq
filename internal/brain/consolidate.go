@@ -171,6 +171,13 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 			break
 		}
 	}
+
+	// Run history is best effort: record a failure so it is visible, but never
+	// fail consolidation because history could not be written.
+	if err := b.SaveConsolidationRun(saveCtx, nsID, result, start); err != nil {
+		result.Errors = append(result.Errors, err.Error())
+	}
+
 	observability.RecordConsolidation(observability.Observation{
 		Namespace:          namespaceSlug,
 		EventsRead:         result.EpisodesRead,
