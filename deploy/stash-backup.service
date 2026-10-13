@@ -1,0 +1,11 @@
+[Unit]
+Description=Stash full Postgres backup
+Documentation=file:/opt/stash/docs/BACKUP.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/stash
+ExecStart=/opt/stash/scripts/backup-prod.sh
+# Failures are visible in journalctl -u stash-backup.service

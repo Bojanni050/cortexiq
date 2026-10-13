@@ -19,6 +19,10 @@ stash-*
 .DS_Store
 Thumbs.db
 
+# systemd units (the general stash-* rule above would otherwise hide these)
+!deploy/stash-backup.service
+!deploy/stash-backup.timer
+
 # Test coverage
 coverage.txt
 coverage.html
