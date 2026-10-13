@@ -2,6 +2,17 @@
 
 You ran `docker compose up`. Here's what to do next.
 
+For production, do not run the default compose file on the VPS. Copy
+`docker-compose.prod.example.yml` to `docker-compose.prod.yml`, keep secrets in
+`.env`, and always deploy explicitly with:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+The explicit file is important: the default compose file is the local-development
+variant and uses different ports and database defaults.
+
 ## 1. Verify Stash is running
 
 ```bash

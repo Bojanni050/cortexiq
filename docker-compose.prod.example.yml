@@ -1,0 +1,80 @@
+name: stash
+
+# Production template. Copy to docker-compose.prod.yml on the server and keep
+# secrets in /opt/stash/.env; never commit the real production file or secrets.
+x-stash-env: &stash-env
+  STASH_POSTGRES_DSN: postgresql://stash:${POSTGRES_PASSWORD}@postgres:5432/stash?sslmode=disable
+  STASH_VECTOR_DIM: ${STASH_VECTOR_DIM:-1024}
+  STASH_MAX_RESULT_SIZE: ${STASH_MAX_RESULT_SIZE:-10000}
+  STASH_OPENAI_API_KEY: ${STASH_OPENAI_API_KEY}
+  STASH_OPENAI_BASE_URL: ${STASH_OPENAI_BASE_URL}
+  STASH_EMBEDDING_MODEL: ${STASH_EMBEDDING_MODEL}
+  STASH_EMBEDDING_BASE_URL: ${STASH_EMBEDDING_BASE_URL:-}
+  STASH_EMBEDDING_API_KEY: ${STASH_EMBEDDING_API_KEY:-}
+  STASH_REASONER_MODEL: ${STASH_REASONER_MODEL}
+  STASH_REASONER_MAX_TOKENS: ${STASH_REASONER_MAX_TOKENS:-1024}
+  STASH_REASONER_JSON_MODE: ${STASH_REASONER_JSON_MODE:-false}
+  STASH_CONTEXT_TTL: ${STASH_CONTEXT_TTL:-1h}
+  STASH_HTTP_ADDR: :9090
+  STASH_API_TOKEN: ${STASH_API_TOKEN:?STASH_API_TOKEN must be set in .env}
+  STASH_LOG_LEVEL: ${STASH_LOG_LEVEL:-info}
+  STASH_LOG_FORMAT: ${STASH_LOG_FORMAT:-text}
+  STASH_CONSOLIDATION_BATCH_SIZE: ${STASH_CONSOLIDATION_BATCH_SIZE:-100}
+  STASH_CONSOLIDATION_SIMILARITY_THRESHOLD: ${STASH_CONSOLIDATION_SIMILARITY_THRESHOLD:-0.85}
+  STASH_CONSOLIDATION_DEDUP_THRESHOLD: ${STASH_CONSOLIDATION_DEDUP_THRESHOLD:-0.90}
+  STASH_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD: ${STASH_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD:-0.80}
+  STASH_HYBRID_RECALL: ${STASH_HYBRID_RECALL:-true}
+  STASH_RECALL_MIN_SIMILARITY: ${STASH_RECALL_MIN_SIMILARITY:-0}
+  STASH_RELATIONSHIP_BATCH_SIZE: ${STASH_RELATIONSHIP_BATCH_SIZE:-5}
+  STASH_CONSOLIDATION_WINDOW: ${STASH_CONSOLIDATION_WINDOW:-168h}
+  STASH_DECAY_FACTOR: ${STASH_DECAY_FACTOR:-0.95}
+  STASH_EXPIRY_THRESHOLD: ${STASH_EXPIRY_THRESHOLD:-0.1}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: stash
+      POSTGRES_USER: stash
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stash"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  stash:
+    build: .
+    image: stash:local
+    command: ["mcp", "serve", "--host", "0.0.0.0", "--port", "8080", "--with-consolidation"]
+    ports:
+      - "127.0.0.1:18100:8080"
+    environment: *stash-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  stash-ui:
+    image: stash:local
+    command: ["http", "serve", "--host", "0.0.0.0", "--port", "9090"]
+    ports:
+      - "127.0.0.1:18101:9090"
+    environment: *stash-env
+    depends_on:
+      stash:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  ollama_data:

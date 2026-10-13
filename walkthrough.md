@@ -33,6 +33,12 @@ Chronological log of significant changes. Oldest → newest. Format per entry:
 - Conclusions: Fixed the compose rather than the docs, because the dashboard is a real feature and the docs describe the intended first-run experience. Switched the service command to `serve` (starts HTTP + MCP + consolidation together) and published port 9090. Also removed the obsolete top-level `version` key that Docker Compose v2 warns about. On the live host this is fronted by `tailscale serve` (8444 → MCP, 8445 → dashboard), which is environment-specific and stays out of the repo.
 - Actions: `docker-compose.yml` — command `mcp serve …` → `serve --http-host 0.0.0.0 --http-port 9090 --mcp-host 0.0.0.0 --mcp-port 8080`; added the `"9090:9090"` port mapping; removed `version: '3.8'`. Validated with `docker compose config` (parses clean, no version warning). No Go changes, so no build was required.
 
+## 2026-10-13 (Add a production compose template)
+
+- Findings: Production uses a server-local `docker-compose.prod.yml`, while the repository also contains a development `docker-compose.yml`. Running bare `docker compose up` on the VPS previously selected the development file, causing the wrong database credentials and missing production settings to be used.
+- Conclusions: Add a sanitized, tracked production template rather than committing the real server file or its secrets. The template forwards every current `STASH_*` tuning/auth setting and fails early when the production database password or API token is absent. Documentation now requires explicit `-f docker-compose.prod.yml` deployment.
+- Actions: Added `docker-compose.prod.example.yml`, added reasoner token/JSON settings to the local compose, and documented the explicit production command in `docs/GETTING_STARTED.md`. The template was not applied automatically to the VPS; the live server keeps its existing secret-bearing file and was already synchronized separately. YAML validation/build pending after this change.
+
 ## 2026-10-09 (Guard reasoner output cost: max_tokens + optional JSON mode)
 
 - Findings: LiteLLM usage data showed the `stash` key spending ~$4.62 in total, almost entirely on 2026-10-08 ($4.13): ~10.3M completion tokens versus 1.9M prompt tokens across 3,769 requests — about 2,745 output tokens per call, for responses that should be sub-200-token JSON. Root cause: the configured model was a reasoning-style model and the reasoner sent no `max_tokens`, so nothing capped the output.
