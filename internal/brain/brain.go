@@ -62,6 +62,8 @@ type Config struct {
 	HypothesisAutoRejectThreshold  float32
 	// RelationshipBatchSize is how many facts go into one relationship-extraction call.
 	RelationshipBatchSize int
+	// HybridRecall adds full-text search to recall and fuses it with the vector ranking.
+	HybridRecall bool
 }
 
 const defaultRelationshipBatchSize = 5
@@ -77,6 +79,7 @@ func DefaultConfig() Config {
 		HypothesisAutoConfirmThreshold: 0.9,
 		HypothesisAutoRejectThreshold:  0.9,
 		RelationshipBatchSize:          defaultRelationshipBatchSize,
+		HybridRecall:                   true,
 	}
 }
 

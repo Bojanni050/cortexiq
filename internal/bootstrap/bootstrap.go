@@ -85,6 +85,7 @@ func New(ctx context.Context) (*Context, error) {
 		HypothesisAutoConfirmThreshold: cfg.HypothesisAutoConfirmThreshold,
 		HypothesisAutoRejectThreshold:  cfg.HypothesisAutoRejectThreshold,
 		RelationshipBatchSize:          cfg.RelationshipBatchSize,
+		HybridRecall:                   cfg.HybridRecall,
 	})
 	if err != nil {
 		pool.Close()

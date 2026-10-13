@@ -51,6 +51,8 @@ type Config struct {
 	ConsolidationSimilarityThreshold float64 `env:"STASH_CONSOLIDATION_SIMILARITY_THRESHOLD" envDefault:"0.85"`
 	ConsolidationDedupThreshold      float64 `env:"STASH_CONSOLIDATION_DEDUP_THRESHOLD" envDefault:"0.85"`
 	ConsolidationWindow              string  `env:"STASH_CONSOLIDATION_WINDOW" envDefault:"168h"`
+	// HybridRecall adds full-text search to recall (fused with the vector ranking).
+	HybridRecall bool `env:"STASH_HYBRID_RECALL" envDefault:"true"`
 	// RelationshipBatchSize facts are sent per relationship-extraction LLM call.
 	// Keep it modest: the reply must fit in STASH_REASONER_MAX_TOKENS.
 	RelationshipBatchSize          int     `env:"STASH_RELATIONSHIP_BATCH_SIZE" envDefault:"5"`

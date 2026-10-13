@@ -59,6 +59,28 @@ func (q *Queries) RecallFacts(namespaceIDs []int64, vector pgvector.Vector, limi
 	return q.tpl.Execute("recall_facts", args)
 }
 
+// RecallEpisodesKeyword returns SQL + args for episode full-text search.
+// query is a websearch-syntax string (see brain.keywordQuery).
+func (q *Queries) RecallEpisodesKeyword(namespaceIDs []int64, query string, limit int) (string, []any, error) {
+	return q.tpl.Execute("recall_episodes_keyword", keywordArgs(namespaceIDs, query, limit))
+}
+
+// RecallFactsKeyword returns SQL + args for fact full-text search.
+func (q *Queries) RecallFactsKeyword(namespaceIDs []int64, query string, limit int) (string, []any, error) {
+	return q.tpl.Execute("recall_facts_keyword", keywordArgs(namespaceIDs, query, limit))
+}
+
+func keywordArgs(namespaceIDs []int64, query string, limit int) map[string]any {
+	args := map[string]any{
+		"query": query,
+		"limit": limit,
+	}
+	if len(namespaceIDs) > 0 {
+		args["namespace_ids"] = namespaceIDs
+	}
+	return args
+}
+
 // FetchEpisodes returns SQL + args for batch episode read after a checkpoint.
 func (q *Queries) FetchEpisodes(namespaceID int64, afterID int64, limit int) (string, []any, error) {
 	return q.tpl.Execute("fetch_episodes", map[string]any{

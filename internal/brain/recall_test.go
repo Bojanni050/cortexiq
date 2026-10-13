@@ -1,0 +1,96 @@
+package brain
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestKeywordQuery(t *testing.T) {
+	tests := []struct {
+		name, in, want string
+	}{
+		{"empty", "", ""},
+		{"only stopwords", "the of a", ""},
+		{"dutch question", "Welke poort draait stash?", "welke or poort or draait or stash"},
+		{"numbers kept", "stash port 8445", "stash or port or 8445"},
+		{"deduplicated", "stash  stash STASH", "stash"},
+		{"punctuation stripped", `Bo's "server" (v1.2)`, "bo or server or v1"},
+		{"tsquery syntax neutralised", "x or y; DROP TABLE facts", "drop or table or facts"},
+		{"single characters dropped", "a b c", ""},
+	}
+	for _, tt := range tests {
+		if got := keywordQuery(tt.in); got != tt.want {
+			t.Errorf("%s: keywordQuery(%q) = %q, want %q", tt.name, tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestKeywordQueryCapsTerms(t *testing.T) {
+	q := "aa bb cc dd ee ff gg hh ii jj kk ll mm nn oo"
+	got := keywordQuery(q)
+	want := "aa or bb or cc or dd or ee or ff or gg or hh or ii or jj or kk or ll"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func rr(ids ...int64) []RecallResult {
+	out := make([]RecallResult, len(ids))
+	for i, id := range ids {
+		out[i] = RecallResult{ID: id, Score: 0.9 - float32(i)/10}
+	}
+	return out
+}
+
+func ids(rs []RecallResult) []int64 {
+	var out []int64
+	for _, r := range rs {
+		out = append(out, r.ID)
+	}
+	return out
+}
+
+func TestFuseNonHybridKeepsVectorOrderAndScore(t *testing.T) {
+	got := fuse(rr(3, 1, 2), nil, 2, false)
+	if !reflect.DeepEqual(ids(got), []int64{3, 1}) {
+		t.Fatalf("ids = %v", ids(got))
+	}
+	if got[0].Score != 0.9 || got[0].Match != "vector" {
+		t.Errorf("score/match = %v/%q", got[0].Score, got[0].Match)
+	}
+}
+
+func TestFuseHybridRewardsAgreement(t *testing.T) {
+	// 5 is top of the vector list only; 7 is 2nd in vector and top in keyword.
+	got := fuse(rr(5, 7), rr(7, 9), 10, true)
+	if got[0].ID != 7 || got[0].Match != "hybrid" {
+		t.Fatalf("expected 7 first as hybrid, got %+v", got[0])
+	}
+	if got[0].Similarity == 0 {
+		t.Error("hybrid vector hit should keep its cosine similarity")
+	}
+	for _, r := range got {
+		if r.Score <= 0 || r.Score > 1 {
+			t.Errorf("score %v out of (0,1]", r.Score)
+		}
+		if r.ID == 9 && (r.Match != "keyword" || r.Similarity != 0) {
+			t.Errorf("keyword-only hit: %+v", r)
+		}
+	}
+	if len(got) != 3 {
+		t.Errorf("want 3 unique results, got %d", len(got))
+	}
+}
+
+func TestFuseHybridScaleIndependentOfKeywordHits(t *testing.T) {
+	got := fuse(rr(1), nil, 5, true)
+	if got[0].Score >= 0.9 || got[0].Match != "vector" {
+		t.Errorf("hybrid with no keyword hits should use the fused scale, got %+v", got[0])
+	}
+}
+
+func TestFuseLimit(t *testing.T) {
+	if got := fuse(rr(1, 2, 3), rr(4, 5, 6), 4, true); len(got) != 4 {
+		t.Errorf("len = %d, want 4", len(got))
+	}
+}

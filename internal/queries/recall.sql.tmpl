@@ -34,3 +34,40 @@ WHERE deleted_at IS NULL
 ORDER BY embedding <=> {{.Bind .Args.vector}}
 LIMIT {{.Bind .Args.limit}}
 {{end}}
+
+{{define "recall_episodes_keyword"}}
+SELECT
+    id,
+    namespace_id,
+    content,
+    occurred_at,
+    created_at,
+    ts_rank_cd(content_tsv, websearch_to_tsquery('simple', {{.Bind .Args.query}})) AS score
+FROM episodes
+WHERE deleted_at IS NULL
+    AND content_tsv @@ websearch_to_tsquery('simple', {{.Bind .Args.query}})
+{{if .Args.namespace_ids}}
+    AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
+{{end}}
+ORDER BY score DESC, id DESC
+LIMIT {{.Bind .Args.limit}}
+{{end}}
+
+{{define "recall_facts_keyword"}}
+SELECT
+    id,
+    namespace_id,
+    content,
+    confidence,
+    created_at,
+    ts_rank_cd(content_tsv, websearch_to_tsquery('simple', {{.Bind .Args.query}})) AS score
+FROM facts
+WHERE deleted_at IS NULL
+    AND (valid_until IS NULL OR valid_until > now())
+    AND content_tsv @@ websearch_to_tsquery('simple', {{.Bind .Args.query}})
+{{if .Args.namespace_ids}}
+    AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
+{{end}}
+ORDER BY score DESC, id DESC
+LIMIT {{.Bind .Args.limit}}
+{{end}}
