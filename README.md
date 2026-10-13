@@ -55,9 +55,10 @@ For a complete production backup, use the Postgres scripts on the VPS:
 /opt/stash/scripts/restore-prod.sh /opt/stash/backups/stash-<timestamp>.dump --confirm
 ```
 
-The restore command is destructive and requires `--confirm`. See
-[`docs/QUALITY_EVALUATION.md`](docs/QUALITY_EVALUATION.md) before changing the
-reasoner model or consolidation settings.
+Backups can be scheduled with a systemd timer and pruned automatically; see
+[`docs/BACKUP.md`](docs/BACKUP.md) for retention, off-box copies, and a restore
+drill. See [`docs/QUALITY_EVALUATION.md`](docs/QUALITY_EVALUATION.md) before
+changing the reasoner model or consolidation settings.
 
 ## Atlas Cloud
 
