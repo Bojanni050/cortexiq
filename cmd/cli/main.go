@@ -147,6 +147,26 @@ func main() {
 				},
 			},
 			{
+				Name:   "export",
+				Usage:  "Export episodes and facts as JSON Lines (embeddings are not included)",
+				Action: exportCmd,
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to export (each includes descendants; default /)"},
+					&cli.StringFlag{Name: "output", Aliases: []string{"o"}, Usage: "Output file (default: stdout)"},
+					&cli.StringSliceFlag{Name: "types", Usage: "episode and/or fact (default: both)"},
+				},
+			},
+			{
+				Name:      "import",
+				Usage:     "Import a file written by 'export'; embeddings are recomputed with the configured model",
+				ArgsUsage: "<file|->",
+				Action:    importCmd,
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{Name: "types", Usage: "episode and/or fact (default: both)"},
+					&cli.BoolFlag{Name: "dry-run", Aliases: []string{"d"}, Usage: "Validate and count without writing"},
+				},
+			},
+			{
 				Name:  "consolidate",
 				Usage: "Consolidate memories",
 				Commands: []*cli.Command{

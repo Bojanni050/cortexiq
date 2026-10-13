@@ -28,6 +28,16 @@ That's it. Postgres + pgvector, migrations, MCP server with background consolida
 
 **Fully local (no cloud API):** [Ollama setup guide](docs/LOCAL_OLLAMA.md) — host Ollama + Docker Compose, private embeddings and reasoner.
 
+## Backup, export and import
+
+```bash
+stash export -n /projects -o backup.jsonl        # episodes + facts as JSON Lines
+stash import backup.jsonl --dry-run              # validate and count
+stash import backup.jsonl                        # re-embeds with the configured model
+```
+
+Embeddings are not exported, so a file can be imported into an instance that uses a different embedding model. Importing is idempotent (same namespace + content is skipped). Use `--types episode` or `--types fact` to avoid importing both kinds — imported episodes are consolidated again, which can create duplicate facts that consolidation then merges.
+
 ## Atlas Cloud
 
 > [Atlas Cloud](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=stash) is a full-modal AI inference platform that gives developers a single AI API to access video generation, image generation, and LLM APIs. Instead of managing multiple vendor integrations, you connect once and get unified access to 300+ curated models across all modalities.
