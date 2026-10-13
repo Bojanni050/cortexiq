@@ -93,7 +93,7 @@ func (b *Brain) ListConsolidationRuns(ctx context.Context, namespaceSlugs []stri
 			&run.GoalsAnnotated, &run.GoalsSuggestedComplete,
 			&run.FailureRepeatsDetected, &run.FailurePatternsFound,
 			&run.HypothesesAutoConfirmed, &run.HypothesesAutoRejected, &run.HypothesesUpdated,
-			&run.FactsDecayed, &run.FactsExpired, &run.LLMCalls, &run.LLMCallsLimited, &run.Errors, &run.ErrorSample); err != nil {
+			&run.FactsDecayed, &run.FactsExpired, &run.LLMCalls, &run.LLMCallsLimited, &run.Errors, &run.ErrorSample, &run.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan consolidation run: %w", err)
 		}
 		out = append(out, run)
