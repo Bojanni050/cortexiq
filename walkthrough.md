@@ -81,6 +81,12 @@ Chronological log of significant changes. Oldest → newest. Format per entry:
 - Conclusions: Persist one row per run in a dedicated table, written best-effort so history can never break consolidation, and trimmed to a 30-day per-namespace window so a 5-minute ticker cannot grow it without bound. Surface it through the same read API and dashboard as the other entities, plus a CLI command.
 - Actions: Added migration `00025_create_consolidation_runs.sql`, `models.ConsolidationRun` (with JSON tags), and `internal/brain/runs.go` (`SaveConsolidationRun` with retention, `ListConsolidationRuns`). Hooked the save into `ConsolidateByID`. Added `GET /api/v1/runs`, a Runs tab in the dashboard, and a `stash runs` CLI command. Validated with `gofmt`, `go build ./...`, `go vet ./...`, and `go test ./...`.
 
+## 2026-10-14 (Deploy run history; fix a scan mismatch caught live)
+
+- Findings: The first live call failed with "number of field descriptions must equal number of destinations, got 26 and 25": `ListConsolidationRuns` selected `created_at` but did not scan it. Neither the build nor the local unit tests could catch this — only a real database round-trip did.
+- Conclusions: Fix the scan and add an integration test that round-trips a run through Postgres, so this class of bug fails in CI rather than in production.
+- Actions: Added the missing `&run.CreatedAt` destination in `internal/brain/runs.go`; added `internal/brain/runs_integration_test.go`; redeployed and verified `stash runs`, `GET /api/v1/runs` (200), `/ui` (200), and `/healthz` (200).
+
 ## 2026-10-09 (Guard reasoner output cost: max_tokens + optional JSON mode)
 
 - Findings: LiteLLM usage data showed the `stash` key spending ~$4.62 in total, almost entirely on 2026-10-08 ($4.13): ~10.3M completion tokens versus 1.9M prompt tokens across 3,769 requests — about 2,745 output tokens per call, for responses that should be sub-200-token JSON. Root cause: the configured model was a reasoning-style model and the reasoner sent no `max_tokens`, so nothing capped the output.
