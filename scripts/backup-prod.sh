@@ -20,6 +20,7 @@ mkdir -p "$BACKUP_DIR"
 
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 backup="$BACKUP_DIR/stash-$timestamp.dump"
+verify="/tmp/stash-verify-$$.dump"
 
 echo "Creating $backup"
 docker compose -f "$COMPOSE_FILE" exec -T postgres \
@@ -27,8 +28,12 @@ docker compose -f "$COMPOSE_FILE" exec -T postgres \
 
 # A dump that pg_dump could not finish would be empty or unreadable; fail loudly.
 test -s "$backup"
-cat "$backup" | docker compose -f "$COMPOSE_FILE" exec -T postgres \
-  pg_restore --list > "$backup.toc"
+
+# Verify by reading the dump inside the container. Piping it in via stdin is
+# avoided on purpose: cat then receives SIGPIPE and pipefail aborts the script.
+docker compose -f "$COMPOSE_FILE" cp "$backup" "postgres:$verify" >/dev/null
+docker compose -f "$COMPOSE_FILE" exec -T postgres pg_restore --list "$verify" > "$backup.toc"
+docker compose -f "$COMPOSE_FILE" exec -T postgres rm -f "$verify"
 sha256sum "$backup" > "$backup.sha256"
 
 # Off-box copy is optional but strongly recommended: a backup on the same disk
