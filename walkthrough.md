@@ -45,6 +45,12 @@ Chronological log of significant changes. Oldest → newest. Format per entry:
 - Conclusions: Add metrics at the actual OpenAI-compatible request boundary, labelled by reasoner stage, so retries and token-heavy stages are visible. Enforce a per-consolidation reasoner-call budget through the existing `Reasoner` interface; a zero value preserves unlimited behaviour, while a positive value stops later stages once the budget is consumed and marks the result as limited.
 - Actions: Added `STASH_MAX_LLM_CALLS_PER_RUN` (default `0` in general config; production template recommends `50`) to config and both compose templates. Added a context-scoped budget wrapper and `llm_calls_limited` to consolidation results. Added `reasoner_requests_total{stage,status}`, `reasoner_prompt_tokens_total{stage}`, and `reasoner_completion_tokens_total{stage}`. Documented the controls and added unit tests for bounded/unlimited budgets. Validated with `gofmt`, `go build ./...`, `go vet ./...`, and `go test ./...` (all passing; the first test invocation hit a transient Windows temp-file lock, the clean rerun passed).
 
+## 2026-10-13 (Deploy LLM cost guard to Strato)
+
+- Findings: The new code and configuration controls were on `main`, but the running production image still predated them. A limit in source code is not protection until the image and environment are updated together.
+- Conclusions: Deploy the current `main` using the production compose file, not the local compose. Set the live per-consolidation reasoner budget to 50 calls: conservative enough to prevent a backlog from creating a large burst, while allowing a normal namespace run to complete.
+- Actions: On `/opt/stash`, fast-forwarded to `main`, built `stash:local`, added `STASH_MAX_LLM_CALLS_PER_RUN=50` to the secret-bearing production `.env`, and recreated only `stash` and `stash-ui` (Postgres remained running). Both containers are healthy; dashboard `/ui` and `/healthz` return 200. Metrics will appear after the next reasoner call.
+
 ## 2026-10-09 (Guard reasoner output cost: max_tokens + optional JSON mode)
 
 - Findings: LiteLLM usage data showed the `stash` key spending ~$4.62 in total, almost entirely on 2026-10-08 ($4.13): ~10.3M completion tokens versus 1.9M prompt tokens across 3,769 requests — about 2,745 output tokens per call, for responses that should be sub-200-token JSON. Root cause: the configured model was a reasoning-style model and the reasoner sent no `max_tokens`, so nothing capped the output.
