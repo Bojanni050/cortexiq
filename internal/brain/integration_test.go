@@ -238,6 +238,24 @@ func TestIntegrationHybridRecallFlagsKeywordMatches(t *testing.T) {
 	}
 }
 
+// Regression: the default parser kept hostnames/URLs/paths as one token, so a
+// search for "8445" or "dashboard" missed "https://host.ts.net:8445/ui" and
+// "GUI/dashboard". Both must be found by the keyword side.
+func TestIntegrationKeywordSearchSplitsUrlsAndPaths(t *testing.T) {
+	e := newEnv(t, nil)
+	e.insertFact(t, "The web GUI/dashboard is at https://server.example.ts.net:8445/ui", nil)
+
+	for _, q := range []string{"8445", "dashboard", "ui"} {
+		res, err := e.b.Recall(e.ctx, []string{e.ns}, q, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res) == 0 || res[0].Match != "hybrid" {
+			t.Errorf("query %q: keyword side did not match the URL/path fact: %+v", q, res)
+		}
+	}
+}
+
 func TestIntegrationRecallIsCountedAndDelaysDecay(t *testing.T) {
 	e := newEnv(t, nil)
 	used := e.insertFact(t, "kubernetes cluster upgrade planned", nil)
