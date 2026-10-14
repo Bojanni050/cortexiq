@@ -275,6 +275,17 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
+	mcpServer.AddTool(mcp.NewTool("memory_stats",
+		mcp.WithDescription("Return memory statistics: total entries stored, database size, and the date range of the oldest and newest stored memories."),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		st, err := bc.Brain.Stats(ctx)
+		if err != nil {
+			return nil, err
+		}
+		b, _ := json.Marshal(st)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
 	mcpServer.AddTool(mcp.NewTool("create_namespace",
 		mcp.WithDescription(render("create_namespace_description")),
 		mcp.WithString("slug", mcp.Description(render("create_namespace_slug")), mcp.Required()),
@@ -752,6 +763,7 @@ var readOnlyTools = map[string]bool{
 	"list_causal_links":   true,
 	"get_context":         true,
 	"trace_causal_chain":  true,
+	"memory_stats":        true,
 }
 
 // readOnlyMCP rejects tools/call requests for mutating tools when the token is

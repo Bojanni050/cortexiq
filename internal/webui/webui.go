@@ -54,6 +54,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/causal-links", h.causalLinks)
 	api.HandleFunc("/api/v1/causal-links/", h.causalLinkItem)
 	api.HandleFunc("/api/v1/runs", h.runs)
+	api.HandleFunc("/api/v1/stats", h.stats)
 	api.HandleFunc("/api/v1/metrics", h.metrics)
 	mux.Handle("/api/v1/", auth.Require(h.Auth, readOnlyWeb(api)))
 }
@@ -752,4 +753,16 @@ func (h *Handler) runs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, nonNil(items))
+}
+
+func (h *Handler) stats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	st, err := h.Brain.Stats(r.Context())
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
 }
