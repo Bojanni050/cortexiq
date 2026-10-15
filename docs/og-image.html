@@ -1,0 +1,177 @@
+<!--
+  Source for docs/og-image.png (the Open Graph / social card).
+
+  Regenerate by opening this file at exactly 1200x630 and screenshotting it, or
+  headless:
+    chrome --headless --window-size=1200,630 \
+      --screenshot=docs/og-image.png docs/og-image.html
+
+  Wait for the webfonts (DM Sans, Fraunces, IBM Plex Mono) to finish loading
+  before capturing, otherwise the fallback fonts end up in the PNG. Everything
+  is sized in px for a fixed 1200x630 viewport, and the node-graph background is
+  deterministic (fixed seed), so the same input always gives the same image.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>loading</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700&family=Fraunces:ital,opsz,wght@0,9..144,700;0,9..144,900;1,9..144,700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080808;
+    --surface: #0f0f0f;
+    --border: #1a1a1a;
+    --amber: #e8a020;
+    --amber-dim: #a06a10;
+    --text: #e8e0d0;
+    --text-dim: #7a7060;
+    --text-muted: #3a3530;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; background: var(--bg); }
+  body { font-family: 'DM Sans', sans-serif; color: var(--text); }
+  .card { position: relative; width: 1200px; height: 630px; overflow: hidden; }
+
+  /* node graph line art */
+  #graph { position: absolute; inset: 0; }
+  .glow {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(760px 460px at 12% 8%, rgba(232,160,32,0.13), transparent 70%),
+      radial-gradient(620px 420px at 96% 100%, rgba(232,160,32,0.09), transparent 72%);
+  }
+  .fade {
+    position: absolute; inset: 0;
+    background: linear-gradient(96deg, rgba(8,8,8,0.94) 0%, rgba(8,8,8,0.86) 38%, rgba(8,8,8,0.34) 62%, rgba(8,8,8,0.18) 100%);
+  }
+
+  .content { position: relative; height: 630px; padding: 52px 64px 46px; display: flex; flex-direction: column; }
+
+  .top { display: flex; align-items: center; gap: 14px; }
+  .mark {
+    width: 44px; height: 44px; border-radius: 11px; flex: 0 0 44px;
+    background: linear-gradient(150deg, #f0b040, var(--amber-dim));
+    color: #140c00; font-family: 'Fraunces', Georgia, serif; font-weight: 900;
+    font-size: 27px; line-height: 44px; text-align: center;
+    box-shadow: 0 0 0 1px rgba(232,160,32,0.35), 0 6px 22px rgba(232,160,32,0.18);
+  }
+  .wordmark { font-size: 27px; font-weight: 700; letter-spacing: -0.015em; }
+  .wordmark span { color: var(--amber); }
+  .eyebrow {
+    margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 15px;
+    letter-spacing: 0.22em; color: var(--amber-dim); text-transform: uppercase;
+  }
+
+  .mid { margin-top: auto; margin-bottom: auto; }
+  h1 {
+    font-family: 'Fraunces', Georgia, serif; font-weight: 700;
+    font-size: 116px; line-height: 0.98; letter-spacing: -0.03em;
+  }
+  h1 .light { color: var(--text); }
+  h1 .amber { color: var(--amber); font-style: italic; }
+  .sub {
+    margin-top: 30px; font-size: 30px; line-height: 1.35; color: var(--text-dim);
+    max-width: 1075px; letter-spacing: -0.012em; white-space: nowrap;
+  }
+  .sub b { color: var(--text); font-weight: 500; }
+
+  .bottom { display: flex; align-items: flex-end; gap: 24px; }
+  .signature { font-size: 27px; font-weight: 700; color: var(--amber); letter-spacing: -0.01em; }
+  .signature em {
+    font-family: 'IBM Plex Mono', monospace; font-style: normal; font-weight: 500;
+    font-size: 22px; color: var(--text-muted); letter-spacing: 0.01em;
+  }
+  .badges { margin-left: auto; text-align: right; }
+  .badge-row { display: flex; gap: 10px; justify-content: flex-end; }
+  .badge {
+    font-family: 'IBM Plex Mono', monospace; font-size: 16px; color: var(--text-dim);
+    border: 1px solid var(--border); border-radius: 7px; padding: 8px 14px;
+    background: rgba(15,15,15,0.72); white-space: nowrap;
+  }
+  .badge.hl { color: var(--amber); border-color: rgba(232,160,32,0.32); }
+  .repo {
+    margin-top: 13px; font-family: 'IBM Plex Mono', monospace; font-size: 17px;
+    color: var(--text-muted); letter-spacing: 0.01em;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <svg id="graph" width="1200" height="630" viewBox="0 0 1200 630" fill="none"></svg>
+  <div class="glow"></div>
+  <div class="fade"></div>
+
+  <div class="content">
+    <div class="top">
+      <div class="mark">C</div>
+      <div class="wordmark">Cortex<span>IQ</span></div>
+      <div class="eyebrow">Open source · MCP native</div>
+    </div>
+
+    <div class="mid">
+      <h1><span class="light">Your AI</span><br><span class="amber">has amnesia.</span></h1>
+      <p class="sub"><b>CortexIQ</b> gives any AI agent a persistent memory. Every session. Forever.</p>
+    </div>
+
+    <div class="bottom">
+      <div class="signature">cortexiq<em>.memory</em></div>
+      <div class="badges">
+        <div class="badge-row">
+          <div class="badge hl">29 MCP tools</div>
+          <div class="badge">Apache 2.0</div>
+          <div class="badge">Self-hosted</div>
+        </div>
+        <div class="repo">github.com/Bojanni050/cortexiq</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// deterministic node-graph line art in the amber accent
+(function () {
+  const AMBER = '#e8a020';
+  let seed = 20261015;
+  function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+
+  const svg = document.getElementById('graph');
+  const nodes = [];
+  const COLS = 11, ROWS = 6;
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const jx = (rnd() - 0.5) * 150, jy = (rnd() - 0.5) * 130;
+      nodes.push({ x: 40 + c * 118 + jx, y: 20 + r * 120 + jy, big: rnd() > 0.86 });
+    }
+  }
+  const ns = 'http://www.w3.org/2000/svg';
+  let lines = '';
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d < 232) {
+        lines += '<line x1="' + a.x.toFixed(1) + '" y1="' + a.y.toFixed(1) + '" x2="' + b.x.toFixed(1) +
+          '" y2="' + b.y.toFixed(1) + '" stroke="' + AMBER + '" stroke-width="0.85" stroke-opacity="' +
+          (0.34 - d / 1200).toFixed(2) + '"/>';
+      }
+    }
+  }
+  let dots = '';
+  for (const n of nodes) {
+    dots += '<circle cx="' + n.x.toFixed(1) + '" cy="' + n.y.toFixed(1) + '" r="' + (n.big ? 4.2 : 1.9) +
+      '" fill="' + AMBER + '" fill-opacity="' + (n.big ? 0.9 : 0.6) + '"/>';
+  }
+  svg.innerHTML = lines + dots;
+})();
+
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(function () { document.title = 'ready'; });
+} else {
+  document.title = 'ready';
+}
+</script>
+</body>
+</html>
