@@ -49,6 +49,9 @@ Alles via omgevingsvariabelen (in `$HERMES_HOME/.env`):
 | `CORTEXIQ_MAX_CHARS` | `1400` | maximum aan geïnjecteerde context per turn |
 | `CORTEXIQ_INGEST_PATH` | `/api/v1/remember` | pas aan als je route anders heet |
 | `CORTEXIQ_TURN_IMPORTANCE` | `0.5` | importance bij capture |
+| `CORTEXIQ_CAPTURE_ASSISTANT` | `false` | ook het antwoord opslaan (rijkere episodes) |
+| `CORTEXIQ_ASSISTANT_MAX_CHARS` | `600` | afkapgrens voor dat antwoord |
+| `CORTEXIQ_CAPTURE_MAX_CHARS` | `2000` | harde grens op een hele episode |
 
 **Twee namespaces, en dat is expres.** `/` is de root: voor **lezen** betekent het
 "zoek in alles", maar er bestaat geen namespace-rij voor — schrijven naar `/`
@@ -56,6 +59,26 @@ geeft dus 400 (`namespace not found`). Standaard leest de plugin daarom globaal
 over al je namespaces, terwijl capture naar één concreet namespace gaat. Dat
 namespace moet bestaan (`POST /api/v1/namespaces`); ontbreekt het, dan faalt de
 write en zegt de plugin dat één keer hardop in plaats van stil data te verliezen.
+
+## Wat er per turn wordt opgeslagen
+
+Standaard alleen je eigen bericht — één episode per turn, `source: turn`. Dat is
+goedkoop, maar elke herinnering is dan een **vraag zonder antwoord**: later vind
+je terug wat er gevraagd is, niet wat er geconcludeerd is.
+
+Zet `CORTEXIQ_CAPTURE_ASSISTANT=true` om beide kanten op te slaan, met
+rol-labels zodat de extractor ze kan scheiden:
+
+```
+user: hoe staat mijn dashboard er nu voor?
+
+assistant: Het dashboard bindt op 127.0.0.1 en zit achter Tailscale Serve…
+```
+
+Het antwoord wordt afgekapt op `CORTEXIQ_ASSISTANT_MAX_CHARS` (600) en de hele
+episode op `CORTEXIQ_CAPTURE_MAX_CHARS` (2000); afgekapte stukken eindigen op
+`…[afgekapt]`. Reken op meer opslag en meer embeddings per episode — dat is de
+prijs van rijkere herinneringen.
 
 ## Twee dingen die je moet weten
 

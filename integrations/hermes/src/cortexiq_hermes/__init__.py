@@ -25,6 +25,9 @@ Configuratie via omgevingsvariabelen (Hermes laadt ~/.hermes/.env):
                                          relevante treffers beginnen ~0.70)
   CORTEXIQ_MAX_CHARS     default 1400   (cap op wat er per turn in de prompt gaat)
   CORTEXIQ_INGEST_PATH   default /api/v1/remember
+  CORTEXIQ_CAPTURE_ASSISTANT  default false  ook het antwoord opslaan (rijkere episodes)
+  CORTEXIQ_ASSISTANT_MAX_CHARS default 600   afkapgrens voor dat antwoord
+  CORTEXIQ_CAPTURE_MAX_CHARS  default 2000   harde grens op een hele episode
 """
 
 from __future__ import annotations
@@ -55,6 +58,11 @@ _TOKEN_CACHE: dict[str, str] = {}
 
 def _env(name: str, default: str = "") -> str:
     return (os.environ.get(name) or "").strip() or default
+
+
+def _truthy(value: str) -> bool:
+    """Env-vlag -> bool. Alleen deze waarden gelden als aan."""
+    return value.strip().lower() in ("1", "true", "yes", "on")
 
 
 def _token() -> str:
@@ -231,11 +239,33 @@ class CortexIQProvider(MemoryProvider):
     def sync_turn(self, user_content: str, assistant_content: str, *,
                   session_id: str = "", messages: Optional[list[dict[str, Any]]] = None,
                   turn_author: Optional[dict[str, Any]] = None) -> None:
-        """Capture de turn als episode. Non-blocking; niet-primary contexten overslaan."""
+        """Capture de turn als episode. Non-blocking; niet-primary contexten overslaan.
+
+        Standaard gaat alleen het gebruikersbericht mee. Met
+        CORTEXIQ_CAPTURE_ASSISTANT=true gaat het antwoord er ook in (afgekapt op
+        CORTEXIQ_ASSISTANT_MAX_CHARS) — anders is elke herinnering een vraag
+        zonder antwoord, en kun je later wel terugvinden wat er gevraagd is maar
+        niet wat er geconcludeerd is. Beide kanten krijgen een rol-label, zodat
+        de extractor ze kan onderscheiden.
+        """
         if self._agent_context != "primary" or not user_content or not self._ingest_ok:
             return
+
+        content = user_content
+        if _truthy(_env("CORTEXIQ_CAPTURE_ASSISTANT", "false")):
+            answer = (assistant_content or "").strip()
+            if answer:
+                cap = int(_env("CORTEXIQ_ASSISTANT_MAX_CHARS", "600"))
+                if len(answer) > cap:
+                    answer = answer[:cap].rstrip() + " …[afgekapt]"
+                content = f"user: {user_content}\n\nassistant: {answer}"
+
+        hard = int(_env("CORTEXIQ_CAPTURE_MAX_CHARS", "2000"))
+        if len(content) > hard:
+            content = content[:hard].rstrip() + " …[afgekapt]"
+
         spawn_context_thread(self._store, name=f"{PROVIDER_NAME}-sync",
-                             args=(user_content, "turn", session_id or self._session_id)).start()
+                             args=(content, "turn", session_id or self._session_id)).start()
 
     def on_session_switch(self, new_session_id: str, *, parent_session_id: str = "",
                           reset: bool = False, rewound: bool = False, **kwargs) -> None:
