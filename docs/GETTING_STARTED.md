@@ -64,6 +64,8 @@ curl -X POST http://localhost:9090/api/v1/recall \
 
 `namespace` may be replaced by a `namespaces` array (first entry wins); `importance` (0..1, default 0.5) and `occurred_at` (RFC3339) are optional. Both endpoints answer the same shape as the matching MCP tools.
 
+Each recall result names the table its id belongs to (`fact_id` for a fact, `episode_id` for an episode, plus `type`). Use the typed field when you act on a result — `id` alone is ambiguous, because facts and episodes number their rows independently and one id exists in both tables. A missing row answers `404`, a bad request `400`, so a client can tell its own mistake from a server fault.
+
 ## 2. Connect your MCP client
 
 Point any MCP-over-SSE client at `http://localhost:8080/sse`.

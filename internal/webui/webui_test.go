@@ -2,11 +2,14 @@ package webui
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/Bojanni050/cortexiq/internal/brain"
 	"github.com/Bojanni050/cortexiq/internal/scope"
 )
 
@@ -168,5 +171,35 @@ func TestRememberNamespace(t *testing.T) {
 		if got := rememberNamespace(c.single, c.many); got != c.wantSlug {
 			t.Errorf("rememberNamespace(%q, %v) = %q, want %q", c.single, c.many, got, c.wantSlug)
 		}
+	}
+}
+
+// A client has to be able to tell its own mistake from a server failure: a
+// missing resource is 404, a bad request is 400, and only a real fault is 500.
+func TestErrStatus(t *testing.T) {
+	cases := []struct {
+		err  error
+		want int
+	}{
+		{brain.ErrFactNotFound, http.StatusNotFound},
+		{brain.ErrEpisodeNotFound, http.StatusNotFound},
+		{brain.ErrGoalNotFound, http.StatusNotFound},
+		{brain.ErrHypothesisNotFound, http.StatusNotFound},
+		{brain.ErrEmptyContent, http.StatusBadRequest},
+		{brain.ErrInvalidPath, http.StatusBadRequest},
+		{brain.ErrNamespacesRequired, http.StatusBadRequest},
+		{brain.ErrNamespaceNotFound, http.StatusBadRequest},
+		{brain.ErrReadOnly, http.StatusForbidden},
+		{errors.New("connection refused"), http.StatusInternalServerError},
+	}
+	for _, c := range cases {
+		if got := errStatus(c.err); got != c.want {
+			t.Errorf("errStatus(%v) = %d, want %d", c.err, got, c.want)
+		}
+	}
+
+	// Errors from deeper layers arrive wrapped, so the mapping must unwrap.
+	if got := errStatus(fmt.Errorf("namespace %q: %w", "/x", brain.ErrInvalidPath)); got != http.StatusBadRequest {
+		t.Errorf("wrapped validation error = %d, want 400", got)
 	}
 }

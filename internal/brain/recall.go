@@ -15,7 +15,15 @@ import (
 
 // RecallResult is a unified result from semantic and keyword search across episodes and facts.
 type RecallResult struct {
-	ID          int64   `json:"id"`
+	// ID is the row id inside its own table. Fact ids and episode ids are
+	// independent sequences that overlap, so a client must read Type (or the
+	// typed field below) before acting on ID: feeding an episode id to
+	// DELETE /api/v1/facts/{id} would delete an unrelated fact.
+	ID int64 `json:"id"`
+	// Exactly one of these is set, naming the same id but saying which table it
+	// belongs to, so a client never has to guess.
+	FactID      *int64  `json:"fact_id,omitempty"`
+	EpisodeID   *int64  `json:"episode_id,omitempty"`
 	NamespaceID int64   `json:"namespace_id"`
 	Content     string  `json:"content"`
 	Confidence  float32 `json:"confidence,omitempty"`
@@ -253,6 +261,18 @@ func (b *Brain) touchRecalledFacts(ctx context.Context, results []RecallResult) 
 	)
 }
 
+// typedID records which table ID belongs to. Fact ids and episode ids are
+// independent sequences that overlap, and only the caller knows which endpoint
+// it got the id from; naming it here means a client never has to infer it.
+func (r *RecallResult) typedID(kind string) {
+	id := r.ID
+	if kind == "fact" {
+		r.FactID = &id
+		return
+	}
+	r.EpisodeID = &id
+}
+
 // runRecall executes one recall query and scans its rows. kind is "fact" or
 // "episode"; both vector and keyword templates return the same columns per kind.
 func (b *Brain) runRecall(ctx context.Context, sql string, args []any, kind string) ([]RecallResult, error) {
@@ -277,6 +297,7 @@ func (b *Brain) runRecall(ctx context.Context, sql string, args []any, kind stri
 			}
 			r.OccurredAt = occurredAt.Format(time.RFC3339)
 		}
+		r.typedID(kind)
 		r.CreatedAt = createdAt.Format(time.RFC3339)
 		r.refTime = createdAt
 		if kind == "episode" {

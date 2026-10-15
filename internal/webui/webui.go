@@ -126,12 +126,22 @@ func writeErr(w http.ResponseWriter, status int, err error) {
 
 func errStatus(err error) int {
 	switch {
-	case errors.Is(err, brain.ErrEmptyContent),
-		errors.Is(err, brain.ErrNamespaceNotFound),
+	// A resource addressed by the path does not exist.
+	case errors.Is(err, brain.ErrFactNotFound),
+		errors.Is(err, brain.ErrEpisodeNotFound),
 		errors.Is(err, brain.ErrGoalNotFound),
 		errors.Is(err, brain.ErrFailureNotFound),
 		errors.Is(err, brain.ErrContradictionNotFound),
-		errors.Is(err, brain.ErrCausalLinkNotFound):
+		errors.Is(err, brain.ErrCausalLinkNotFound),
+		errors.Is(err, brain.ErrHypothesisNotFound):
+		return http.StatusNotFound
+	// The request itself is wrong, so a client can tell its own mistake from a
+	// server failure.
+	case errors.Is(err, brain.ErrEmptyContent),
+		errors.Is(err, brain.ErrContentTooLong),
+		errors.Is(err, brain.ErrInvalidPath),
+		errors.Is(err, brain.ErrNamespacesRequired),
+		errors.Is(err, brain.ErrNamespaceNotFound):
 		return http.StatusBadRequest
 	case errors.Is(err, brain.ErrReadOnly):
 		return http.StatusForbidden

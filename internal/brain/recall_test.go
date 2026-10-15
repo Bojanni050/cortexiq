@@ -1,8 +1,10 @@
 package brain
 
 import (
+	"encoding/json"
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -199,5 +201,37 @@ func TestApplyBoostsImportanceOvertakes(t *testing.T) {
 	}
 	if got[0].Score > 1 {
 		t.Errorf("scores must stay within 0..1, got %v", got[0].Score)
+	}
+}
+
+// Fact and episode ids are separate sequences that overlap, so every result must
+// say which table its id lives in: DELETE /api/v1/facts/<episode id> would take
+// an unrelated fact with it.
+func TestTypedIDNamesTheTable(t *testing.T) {
+	fact := RecallResult{ID: 7}
+	fact.typedID("fact")
+	if fact.FactID == nil || *fact.FactID != 7 || fact.EpisodeID != nil {
+		t.Fatalf("fact result: %+v", fact)
+	}
+
+	episode := RecallResult{ID: 7}
+	episode.typedID("episode")
+	if episode.EpisodeID == nil || *episode.EpisodeID != 7 || episode.FactID != nil {
+		t.Fatalf("episode result: %+v", episode)
+	}
+
+	blob, err := json.Marshal(episode)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(blob), `"episode_id":7`) || strings.Contains(string(blob), "fact_id") {
+		t.Fatalf("episode json = %s", blob)
+	}
+	blob, err = json.Marshal(fact)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(blob), `"fact_id":7`) || strings.Contains(string(blob), "episode_id") {
+		t.Fatalf("fact json = %s", blob)
 	}
 }
