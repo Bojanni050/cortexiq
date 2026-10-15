@@ -1,3 +1,4 @@
+<!-- Modifications copyright (c) 2026 Bojan van der Heide -->
 # CortexIQ
 
 **Your AI has amnesia. We fixed it.**
@@ -191,6 +192,6 @@ Upstream documentation: **[alash3al.github.io/stash →](https://alash3al.github
 
 ## Credits and license
 
-CortexIQ is a fork of [Stash](https://github.com/alash3al/stash) by alash3al. The original copyright and license are retained.
+CortexIQ is a fork of [Stash](https://github.com/alash3al/stash) by alash3al, Copyright 2024 Mohamed Al Ashaal. The upstream code and its license are retained, and every upstream file this fork changed carries a modification notice: see [`LICENSE-THIRD-PARTY.md`](LICENSE-THIRD-PARTY.md).
 
-Apache 2.0
+Apache 2.0 — [`LICENSE`](LICENSE) · third-party notices — [`LICENSE-THIRD-PARTY.md`](LICENSE-THIRD-PARTY.md)

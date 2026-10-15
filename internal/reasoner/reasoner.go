@@ -1,3 +1,4 @@
+// Modifications copyright (c) 2026 Bojan van der Heide
 // Package reasoner synthesizes structured reasoning over text.
 package reasoner
 

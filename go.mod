@@ -1,3 +1,4 @@
+// Modifications copyright (c) 2026 Bojan van der Heide
 module github.com/Bojanni050/cortexiq
 
 go 1.25.5

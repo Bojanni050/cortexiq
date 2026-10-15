@@ -1,3 +1,4 @@
+// Modifications copyright (c) 2026 Bojan van der Heide
 // Package queries provides sqltmpl templates for dynamic SQL generation.
 // Templates are embedded at compile time.
 package queries

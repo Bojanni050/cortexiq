@@ -1,3 +1,4 @@
+// Modifications copyright (c) 2026 Bojan van der Heide
 // Package models defines domain structs for pgx scanning.
 // Every field tag matches the PostgreSQL column name exactly.
 package models

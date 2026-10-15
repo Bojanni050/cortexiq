@@ -1,3 +1,4 @@
+<!-- Modifications copyright (c) 2026 Bojan van der Heide -->
 # Local setup with Ollama (no cloud API)
 
 CortexIQ's landing page promises fully local, fully private memory. This guide closes the gap between marketing and `.env` — **Ollama on your machine, CortexIQ in Docker, zero outbound API keys.**

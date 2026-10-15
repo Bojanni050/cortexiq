@@ -1,3 +1,4 @@
+<!-- Modifications copyright (c) 2026 Bojan van der Heide -->
 # Getting Started with CortexIQ
 
 You ran `docker compose up`. Here's what to do next.
