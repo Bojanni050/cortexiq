@@ -19,29 +19,33 @@ import (
 
 // ConsolidationResult describes the outcome of a consolidation run.
 type ConsolidationResult struct {
-	Namespace                  string        `json:"namespace"`
-	Duration                   time.Duration `json:"duration"`
-	EpisodesRead               int           `json:"episodes_read"`
-	EpisodesSkipped            int           `json:"episodes_skipped"`
-	FactsCreated               int           `json:"facts_created"`
-	FactsDeduplicated          int           `json:"facts_deduplicated"`
-	RelationshipsFound         int           `json:"relationships_found"`
-	CausalLinksFound           int           `json:"causal_links_found"`
-	PatternsFound              int           `json:"patterns_found"`
-	ContradictionsFound        int           `json:"contradictions_found"`
-	ContradictionsAutoResolved int           `json:"contradictions_auto_resolved"`
-	GoalsAnnotated             int           `json:"goals_annotated"`
-	GoalsSuggestedComplete     int           `json:"goals_suggested_complete"`
-	FailureRepeatsDetected     int           `json:"failure_repeats_detected"`
-	FailurePatternsFound       int           `json:"failure_patterns_found"`
-	HypothesesAutoConfirmed    int           `json:"hypotheses_auto_confirmed"`
-	HypothesesAutoRejected     int           `json:"hypotheses_auto_rejected"`
-	HypothesesUpdated          int           `json:"hypotheses_updated"`
-	FactsDecayed               int           `json:"facts_decayed"`
-	FactsExpired               int           `json:"facts_expired"`
-	LLMCalls                   int           `json:"llm_calls"`
-	LLMCallsLimited            bool          `json:"llm_calls_limited"`
-	Errors                     []string      `json:"errors,omitempty"`
+	Namespace         string        `json:"namespace"`
+	Duration          time.Duration `json:"duration"`
+	EpisodesRead      int           `json:"episodes_read"`
+	EpisodesSkipped   int           `json:"episodes_skipped"`
+	FactsCreated      int           `json:"facts_created"`
+	FactsDeduplicated int           `json:"facts_deduplicated"`
+	// DedupNearMisses counts facts that were stored as new while a near-twin —
+	// a candidate above dedupNearMissFloor — was already there. Duplicates are
+	// born in that band and nothing else reports on it.
+	DedupNearMisses            int      `json:"dedup_near_misses"`
+	RelationshipsFound         int      `json:"relationships_found"`
+	CausalLinksFound           int      `json:"causal_links_found"`
+	PatternsFound              int      `json:"patterns_found"`
+	ContradictionsFound        int      `json:"contradictions_found"`
+	ContradictionsAutoResolved int      `json:"contradictions_auto_resolved"`
+	GoalsAnnotated             int      `json:"goals_annotated"`
+	GoalsSuggestedComplete     int      `json:"goals_suggested_complete"`
+	FailureRepeatsDetected     int      `json:"failure_repeats_detected"`
+	FailurePatternsFound       int      `json:"failure_patterns_found"`
+	HypothesesAutoConfirmed    int      `json:"hypotheses_auto_confirmed"`
+	HypothesesAutoRejected     int      `json:"hypotheses_auto_rejected"`
+	HypothesesUpdated          int      `json:"hypotheses_updated"`
+	FactsDecayed               int      `json:"facts_decayed"`
+	FactsExpired               int      `json:"facts_expired"`
+	LLMCalls                   int      `json:"llm_calls"`
+	LLMCallsLimited            bool     `json:"llm_calls_limited"`
+	Errors                     []string `json:"errors,omitempty"`
 }
 
 // Consolidate runs the full 8-stage consolidation pipeline for a namespace.
@@ -82,11 +86,12 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 
 	// Stage 1: Episodes -> Facts (+ Stage 4: Contradiction detection)
 	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
-		factsCreated, factsDeduped, episodesRead, episodesSkipped, llmCalls, contFound, contAuto, errs := b.consolidateEpisodesToFacts(ctx, nsID, cp)
+		factsCreated, factsDeduped, episodesRead, episodesSkipped, nearMisses, llmCalls, contFound, contAuto, errs := b.consolidateEpisodesToFacts(ctx, nsID, cp)
 		result.FactsCreated = factsCreated
 		result.FactsDeduplicated = factsDeduped
 		result.EpisodesRead = episodesRead
 		result.EpisodesSkipped = episodesSkipped
+		result.DedupNearMisses = nearMisses
 		result.LLMCalls += llmCalls
 		result.ContradictionsFound = contFound
 		result.ContradictionsAutoResolved = contAuto
@@ -201,7 +206,7 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 
 // --- Stage 1: Episodes -> Facts ---
 
-func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (created, deduped, read, skipped, llmCalls, contradictionsFound, contradictionsAutoResolved int, errs []string) {
+func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (created, deduped, read, skipped, nearMisses, llmCalls, contradictionsFound, contradictionsAutoResolved int, errs []string) {
 	sql, args, err := b.queries.FetchEpisodes(nsID, cp.LastEpisodeID, b.config.BatchSize)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("build fetch episodes: %v", err))
@@ -298,6 +303,9 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 			}
 			if r.deduped {
 				deduped++
+			}
+			if r.nearMiss {
+				nearMisses++
 			}
 			contradictionsFound += r.contradictions
 			contradictionsAutoResolved += r.autoResolved
@@ -402,9 +410,11 @@ func (b *Brain) clusterEpisodes(episodes []models.Episode) [][]models.Episode {
 // storeResult describes what storeFact did with one synthesized fact.
 type storeResult struct {
 	created, deduped bool
-	contradictions   int
-	autoResolved     int
-	llmCalls         int
+	// nearMiss says the fact was stored as new while a near-twin already existed.
+	nearMiss       bool
+	contradictions int
+	autoResolved   int
+	llmCalls       int
 }
 
 // storeFact embeds one synthesized fact and either folds it into an existing
@@ -418,16 +428,19 @@ func (b *Brain) storeFact(ctx context.Context, nsID int64, sf *reasoner.Structur
 		return r, fmt.Errorf("embed fact: %w", err)
 	}
 
-	dupID, dup, reviewCalls, err := b.findDuplicate(ctx, nsID, vec, sf.Summary)
-	r.llmCalls += reviewCalls
+	out, err := b.findDuplicate(ctx, nsID, vec, sf.Summary)
+	r.llmCalls += out.LLMCalls
 	if err != nil {
 		return r, fmt.Errorf("check duplicate: %w", err)
 	}
-	if dup {
-		b.reinforceFact(ctx, dupID, episodeIDs)
+	if out.Merged {
+		b.reinforceFact(ctx, out.DupID, episodeIDs)
 		r.deduped = true
 		return r, nil
 	}
+	// The fact is stored as new. If something close was already there, this is
+	// where a duplicate was born, and the run reports it.
+	r.nearMiss = out.BestScore >= dedupNearMissFloor
 
 	confidence := calculateConfidence(len(episodeIDs), sf.Entity != "" && sf.Property != "")
 	now := time.Now().UTC()

@@ -1,6 +1,7 @@
 package brain
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 )
@@ -85,5 +86,96 @@ func TestFormatSubject(t *testing.T) {
 		if got := formatSubject(tt.slug, tt.name); got != tt.want {
 			t.Errorf("formatSubject(%q,%q) = %q, want %q", tt.slug, tt.name, got, tt.want)
 		}
+	}
+}
+
+// A new fact is weighed against several neighbours, nearest first: the closest
+// one is not always the twin, and a generic statement in front of the twin used
+// to hide it.
+func TestPickDedupTargetWalksCandidates(t *testing.T) {
+	const high, review = 0.85, 0.80
+
+	t.Run("clear duplicate merges without asking", func(t *testing.T) {
+		asked := 0
+		id, merged, calls, err := pickDedupTarget(
+			[]nearestFact{{ID: 1, Score: 0.95}, {ID: 2, Score: 0.86}},
+			high, review,
+			func(nearestFact) (bool, error) { asked++; return true, nil },
+		)
+		if err != nil || !merged || id != 1 || calls != 0 || asked != 0 {
+			t.Fatalf("got id=%d merged=%v calls=%d asked=%d err=%v", id, merged, calls, asked, err)
+		}
+	})
+
+	t.Run("the twin behind an unrelated neighbour is found", func(t *testing.T) {
+		// Rank 1 is borderline and the LLM says it is a different fact; rank 2
+		// is the twin. Before, rank 2 was never looked at.
+		var seen []int64
+		id, merged, calls, err := pickDedupTarget(
+			[]nearestFact{{ID: 1, Score: 0.82}, {ID: 2, Score: 0.81}},
+			high, review,
+			func(c nearestFact) (bool, error) { seen = append(seen, c.ID); return c.ID == 2, nil },
+		)
+		if err != nil || !merged || id != 2 || calls != 2 {
+			t.Fatalf("got id=%d merged=%v calls=%d err=%v", id, merged, calls, err)
+		}
+		if !reflect.DeepEqual(seen, []int64{1, 2}) {
+			t.Fatalf("asked about %v, want [1 2]", seen)
+		}
+	})
+
+	t.Run("stops below the review band", func(t *testing.T) {
+		asked := 0
+		_, merged, calls, err := pickDedupTarget(
+			[]nearestFact{{ID: 1, Score: 0.82}, {ID: 2, Score: 0.70}},
+			high, review,
+			func(nearestFact) (bool, error) { asked++; return false, nil },
+		)
+		if err != nil || merged || calls != 1 || asked != 1 {
+			t.Fatalf("got merged=%v calls=%d asked=%d err=%v", merged, calls, asked, err)
+		}
+	})
+
+	t.Run("review disabled never asks", func(t *testing.T) {
+		asked := 0
+		_, merged, calls, err := pickDedupTarget(
+			[]nearestFact{{ID: 1, Score: 0.82}},
+			high, 0,
+			func(nearestFact) (bool, error) { asked++; return true, nil },
+		)
+		if err != nil || merged || calls != 0 || asked != 0 {
+			t.Fatalf("got merged=%v calls=%d asked=%d err=%v", merged, calls, asked, err)
+		}
+	})
+
+	t.Run("no candidates stores the fact", func(t *testing.T) {
+		id, merged, calls, err := pickDedupTarget(nil, high, review, func(nearestFact) (bool, error) {
+			t.Fatal("review must not be called without candidates")
+			return false, nil
+		})
+		if err != nil || merged || id != 0 || calls != 0 {
+			t.Fatalf("got id=%d merged=%v calls=%d err=%v", id, merged, calls, err)
+		}
+	})
+
+	t.Run("a failing review stops the walk", func(t *testing.T) {
+		want := errors.New("reasoner down")
+		_, merged, calls, err := pickDedupTarget(
+			[]nearestFact{{ID: 1, Score: 0.82}, {ID: 2, Score: 0.81}},
+			high, review,
+			func(nearestFact) (bool, error) { return false, want },
+		)
+		if !errors.Is(err, want) || merged || calls != 1 {
+			t.Fatalf("got merged=%v calls=%d err=%v", merged, calls, err)
+		}
+	})
+}
+
+func TestDedupCandidatesFallsBackToDefault(t *testing.T) {
+	if got := (&Brain{}).dedupCandidates(); got != defaultDedupCandidates {
+		t.Errorf("unset config = %d, want %d", got, defaultDedupCandidates)
+	}
+	if got := (&Brain{config: Config{DedupCandidates: 3}}).dedupCandidates(); got != 3 {
+		t.Errorf("configured = %d, want 3", got)
 	}
 }

@@ -68,7 +68,11 @@ type Config struct {
 	// From this similarity up to the dedup threshold the LLM decides whether a new
 	// fact is a rewording/translation of its nearest neighbour (0 = off).
 	ConsolidationDedupReviewThreshold float64 `env:"CORTEXIQ_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD" envDefault:"0.80"`
-	ConsolidationWindow               string  `env:"CORTEXIQ_CONSOLIDATION_WINDOW" envDefault:"168h"`
+	// ConsolidationDedupCandidates is how many nearest facts a new fact is weighed
+	// against: one neighbour is not enough when it is a generic statement that
+	// hides the real duplicate behind it. 0 uses the default (5).
+	ConsolidationDedupCandidates int    `env:"CORTEXIQ_DEDUP_CANDIDATES" envDefault:"5"`
+	ConsolidationWindow          string `env:"CORTEXIQ_CONSOLIDATION_WINDOW" envDefault:"168h"`
 	// ExtractionMinChars is the shortest episode the extractor may read facts
 	// from. Below it an episode states nothing — one token, a greeting, a clipped
 	// acknowledgement — and the extractor reads a claim into it that nobody made.

@@ -109,6 +109,7 @@ func New(ctx context.Context) (*Context, error) {
 		SimilarityThreshold:            cfg.ConsolidationSimilarityThreshold,
 		DedupThreshold:                 cfg.ConsolidationDedupThreshold,
 		DedupReviewThreshold:           cfg.ConsolidationDedupReviewThreshold,
+		DedupCandidates:                cfg.ConsolidationDedupCandidates,
 		Window:                         window,
 		DecayFactor:                    cfg.DecayFactor,
 		ExpiryThreshold:                cfg.ExpiryThreshold,

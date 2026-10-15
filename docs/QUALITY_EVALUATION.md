@@ -40,6 +40,16 @@ tokens, retries, and these scores:
 The run fails if any unsupported claim is accepted, a critical number/name is
 changed, or the reasoner exceeds the configured call budget.
 
+Deduplication rests on cosine similarity, which on our own data separates signal
+from noise less cleanly than the vector model suggests (see section 4 on
+ranking): these thresholds are properties of the model, not measurements of the
+data. A new fact is weighed against `CORTEXIQ_DEDUP_CANDIDATES` nearest facts
+instead of one, so a twin that is not the closest neighbour still reaches the LLM
+review. Every consolidation run also reports `dedup_near_misses`: facts stored as
+new while a near-twin (similarity >= 0.75) was already there. That band is where
+duplicates are born, and it is where the calibration should start — label ~50
+pairs (rewordings, translations, near-misses) and record the raw cosine.
+
 ## 3. Compare models safely
 
 Run the same examples with the old and new configuration. Keep the raw JSONL

@@ -74,7 +74,10 @@ type Config struct {
 	DedupThreshold      float64
 	// DedupReviewThreshold: from this similarity up to DedupThreshold a new fact is
 	// compared by the LLM with its nearest neighbour. 0 disables the review.
-	DedupReviewThreshold           float64
+	DedupReviewThreshold float64
+	// DedupCandidates is how many nearest facts a new fact is weighed against
+	// before it is stored as new. 0 uses the default (5).
+	DedupCandidates                int
 	Window                         time.Duration
 	DecayFactor                    float64
 	ExpiryThreshold                float32
@@ -119,6 +122,7 @@ func DefaultConfig() Config {
 		SimilarityThreshold:            0.85,
 		DedupThreshold:                 0.85,
 		DedupReviewThreshold:           0.80,
+		DedupCandidates:                defaultDedupCandidates,
 		Window:                         7 * 24 * time.Hour,
 		DecayFactor:                    0.95,
 		ExpiryThreshold:                0.1,

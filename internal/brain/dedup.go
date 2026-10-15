@@ -2,12 +2,10 @@ package brain
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -42,41 +40,120 @@ type nearestFact struct {
 	Score   float32
 }
 
-// nearestActiveFact returns the closest active (not deleted, not expired) fact of
-// the namespace, or nil when there is none. Superseded facts are ignored so a
+// defaultDedupCandidates bounds how many nearest facts one new fact is weighed
+// against. Comparing against a single neighbour was not enough: when that
+// neighbour is a generic statement that sits close to everything, the real twin
+// at rank two is invisible to both the vector test and the LLM review.
+const defaultDedupCandidates = 5
+
+// dedupNearMissFloor is the similarity from which a candidate counts as a
+// near-miss when the new fact is stored as new anyway. That band is where
+// duplicates are born, and it is the one nothing reported on. Like the
+// thresholds above it, it is not calibrated on our own data.
+const dedupNearMissFloor float32 = 0.75
+
+// nearestActiveFacts returns up to k closest active (not deleted, not expired)
+// facts of the namespace, nearest first. Superseded facts are ignored so a
 // re-observed value is not swallowed by them.
-func (b *Brain) nearestActiveFact(ctx context.Context, nsID int64, vec []float32) (*nearestFact, error) {
-	var n nearestFact
-	err := b.pool.QueryRow(ctx,
+func (b *Brain) nearestActiveFacts(ctx context.Context, nsID int64, vec []float32, k int) ([]nearestFact, error) {
+	rows, err := b.pool.Query(ctx,
 		`SELECT id, content, 1 - (embedding <=> $2) AS score FROM facts
 		 WHERE namespace_id = $1 AND deleted_at IS NULL AND valid_until IS NULL AND embedding IS NOT NULL
-		 ORDER BY embedding <=> $2 LIMIT 1`,
-		nsID, pgvector.NewVector(vec),
-	).Scan(&n.ID, &n.Content, &n.Score)
+		 ORDER BY embedding <=> $2 LIMIT $3`,
+		nsID, pgvector.NewVector(vec), k,
+	)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
 		return nil, err
 	}
-	return &n, nil
+	defer rows.Close()
+
+	var out []nearestFact
+	for rows.Next() {
+		var n nearestFact
+		if err := rows.Scan(&n.ID, &n.Content, &n.Score); err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
 }
 
-// findDuplicate reports whether summary duplicates an existing fact and, if so,
-// which one. llmCalls is the number of review calls made (0 or 1).
-func (b *Brain) findDuplicate(ctx context.Context, nsID int64, vec []float32, summary string) (dupID int64, dup bool, llmCalls int, err error) {
-	n, err := b.nearestActiveFact(ctx, nsID, vec)
-	if err != nil || n == nil {
-		return 0, false, 0, err
+// dedupCandidates is how many neighbours a new fact is compared against.
+func (b *Brain) dedupCandidates() int {
+	if b.config.DedupCandidates > 0 {
+		return b.config.DedupCandidates
 	}
-	switch decideDedup(n.Score, float32(b.config.DedupThreshold), float32(b.config.DedupReviewThreshold)) {
-	case dedupDuplicate:
-		return n.ID, true, 0, nil
-	case dedupReview:
-		same, err := b.reasoner.ReasonSameFact(ctx, n.Content, summary)
-		return n.ID, same, 1, err
+	return defaultDedupCandidates
+}
+
+// dedupOutcome is what comparing a new fact against its namespace concluded.
+type dedupOutcome struct {
+	// DupID is the fact to fold the new one into; 0 when the new fact is stored.
+	DupID int64
+	// Merged says whether DupID holds a duplicate of the new fact.
+	Merged bool
+	// LLMCalls counts the review calls made while walking the candidates.
+	LLMCalls int
+	// Candidates is how many neighbours were weighed.
+	Candidates int
+	// BestScore is the highest similarity among them, 0 without candidates. It
+	// tells the caller whether a new fact was born next to a near-twin.
+	BestScore float32
+}
+
+// findDuplicate reports whether summary duplicates an existing active fact and,
+// if so, which one. It weighs the nearest neighbours in score order, so a twin
+// that is not the closest fact still gets its review.
+func (b *Brain) findDuplicate(ctx context.Context, nsID int64, vec []float32, summary string) (dedupOutcome, error) {
+	var out dedupOutcome
+	candidates, err := b.nearestActiveFacts(ctx, nsID, vec, b.dedupCandidates())
+	if err != nil {
+		return out, err
 	}
-	return 0, false, 0, nil
+	if len(candidates) == 0 {
+		return out, nil
+	}
+	out.Candidates = len(candidates)
+	out.BestScore = candidates[0].Score
+
+	out.DupID, out.Merged, out.LLMCalls, err = pickDedupTarget(
+		candidates,
+		float32(b.config.DedupThreshold),
+		float32(b.config.DedupReviewThreshold),
+		func(c nearestFact) (bool, error) {
+			return b.reasoner.ReasonSameFact(ctx, c.Content, summary)
+		},
+	)
+	return out, err
+}
+
+// pickDedupTarget walks candidates in descending score order and returns the
+// first one that counts as the same fact: at or above high without asking, or
+// accepted by review inside the borderline band. The walk stops at the first
+// candidate below that band, since none after it can score higher. review is
+// only called for borderline candidates, so the number of LLM calls stays
+// bounded by the number of candidates.
+func pickDedupTarget(candidates []nearestFact, high, review float32, ask func(nearestFact) (bool, error)) (dupID int64, merged bool, llmCalls int, err error) {
+	for _, c := range candidates {
+		switch decideDedup(c.Score, high, review) {
+		case dedupDuplicate:
+			return c.ID, true, llmCalls, nil
+		case dedupReview:
+			llmCalls++
+			same, err := ask(c)
+			if err != nil {
+				return 0, false, llmCalls, err
+			}
+			if same {
+				return c.ID, true, llmCalls, nil
+			}
+			// The LLM calls this neighbour a different fact; the next one may
+			// still be the twin, so keep walking.
+		default:
+			return 0, false, llmCalls, nil
+		}
+	}
+	return 0, false, llmCalls, nil
 }
 
 // namespaceSubject names what a namespace is about ("CortexIQ"), so a synthesized fact
