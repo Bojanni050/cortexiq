@@ -229,7 +229,8 @@ Rules:
 - Remove first-person markers ("I", "my", "we") — state facts about subjects, not the narrator.
 - All values MUST come ONLY from the Events. Do not add outside details.
 - If a field is not explicitly stated in the Events, use null for entity, property or value.
-- PRESERVE specifics: proper nouns, library names, version numbers, file paths, commands, ports, configuration names, technical terms, and quantities.
+- PRESERVE specifics: proper nouns, library names, version numbers, file paths, commands, ports, configuration names (the names, not their values), technical terms, and quantities.
+- A setting, default, limit, threshold or version value holds only at the moment it was observed. State it as something configured or measured then, never as a permanent property of the system, and never infer a design behind it. Keep the same entity and property for the same attribute, so a later observation of it reads as a change rather than as a second fact.
 - Do NOT replace specifics with vague words like "various", "components", "functionalities", "features", "certain".
 - The entity should be the most specific subject (e.g., "pgxpool" not "the system").
 
@@ -240,11 +241,14 @@ BAD example (verbatim copy — DO NOT do this):
 [{"entity": "I", "property": "currently_testing", "value": "the CortexIQ memory system", "summary": "I am currently testing the CortexIQ memory system."}]
 
 BAD example (not self-contained — DO NOT do this):
-[{"entity": "plugin", "property": "option", "value": "pastReference", "summary": "The plugin gained a pastReference option that enables recall."}]
+[{"entity": "plugin", "option": "pastReference", "value": null, "summary": "The plugin gained a pastReference option that enables recall."}]
+
+BAD example (a setting stated as a permanent property — DO NOT do this):
+[{"entity": "CortexIQ", "property": "assistant response limit", "value": "612 characters", "summary": "CortexIQ limits assistant responses to 612 characters."}]
 
 GOOD example (two topics in the Events become two specific facts):
 [{"entity": "CortexIQ", "property": "database", "value": "PostgreSQL with pgvector", "summary": "CortexIQ uses PostgreSQL with pgvector extension for vector storage and HNSW indexes."},
- {"entity": "CortexIQ", "property": "consolidation interval", "value": "5 minutes", "summary": "CortexIQ runs background consolidation every 5 minutes with at most 100 episodes per run."}]`, subjectBlock, eventsList, maxFactsPerCall)
+ {"entity": "CortexIQ", "property": "consolidation interval", "value": "5 minutes", "summary": "CortexIQ was running background consolidation every 5 minutes with at most 100 episodes per run."}]`, subjectBlock, eventsList, maxFactsPerCall)
 }
 
 // parseStructuredFacts reads the model output into facts. It accepts the requested
