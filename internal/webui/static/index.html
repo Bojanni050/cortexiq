@@ -973,7 +973,7 @@ function showNodePanel(node) {
     <button class="gx" onclick="closeGraphPanel()" aria-label="Close">×</button>
     <h4>${esc(d.label)}</h4>
     <div class="muted">${d.degree} relation${d.degree === 1 ? '' : 's'} · <span class="mono">${esc(nsSlug(d.ns))}</span></div>
-    <div class="gactions"><button class="btn" onclick="graphFocus(${JSON.stringify(d.label).replace(/"/g, '&quot;')})">Focus on this entity</button></div>
+    <div class="gactions"><button class="btn" onclick="graphFocus(${esc(JSON.stringify(d.label))})">Focus on this entity</button></div>
     <div class="glist">${out.map(e => row(e, 'out')).join('')}${inc.map(e => row(e, 'in')).join('')}</div>`;
   panel.hidden = false;
 }
