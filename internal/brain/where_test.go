@@ -23,13 +23,13 @@ func TestFactWhere(t *testing.T) {
 		wantWhere string
 		wantArgs  int
 	}{
-		{"no range", nil, nil, nil, "namespace_id = ANY($1)", 1},
-		{"since", &at, nil, nil, "namespace_id = ANY($1) AND created_at >= $2", 2},
-		{"until", nil, &at, nil, "namespace_id = ANY($1) AND created_at <= $2", 2},
+		{"no range", nil, nil, nil, "namespace_id = ANY($1) AND deleted_at IS NULL", 1},
+		{"since", &at, nil, nil, "namespace_id = ANY($1) AND deleted_at IS NULL AND created_at >= $2", 2},
+		{"until", nil, &at, nil, "namespace_id = ANY($1) AND deleted_at IS NULL AND created_at <= $2", 2},
 		{
 			"since and until",
 			&at, &at, nil,
-			"namespace_id = ANY($1) AND created_at >= $2 AND created_at <= $3",
+			"namespace_id = ANY($1) AND deleted_at IS NULL AND created_at >= $2 AND created_at <= $3",
 			3,
 		},
 		{
@@ -37,7 +37,7 @@ func TestFactWhere(t *testing.T) {
 			// argument appears once.
 			"as of",
 			nil, nil, &at,
-			"namespace_id = ANY($1) AND COALESCE(valid_from, created_at) <= $2 AND (valid_until IS NULL OR valid_until > $2)",
+			"namespace_id = ANY($1) AND deleted_at IS NULL AND COALESCE(valid_from, created_at) <= $2 AND (valid_until IS NULL OR valid_until > $2)",
 			2,
 		},
 	}

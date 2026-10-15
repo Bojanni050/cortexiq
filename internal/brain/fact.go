@@ -19,7 +19,7 @@ func (b *Brain) QueryFacts(ctx context.Context, namespaceSlugs []string, since, 
 // factWhere builds the filter QueryFactsAsOf and CountFacts share, so the total
 // can never describe a different set than the page.
 func factWhere(nsIDs []int64, since, until, asOf *time.Time) (string, []any) {
-	where := "namespace_id = ANY($1)"
+	where := "namespace_id = ANY($1) AND deleted_at IS NULL"
 	args := []any{nsIDs}
 	if since != nil {
 		args = append(args, *since)
