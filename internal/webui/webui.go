@@ -33,6 +33,8 @@ type Handler struct {
 
 // Register mounts the UI and API routes on the given mux.
 func (h *Handler) Register(mux *http.ServeMux) {
+	// The bare root has no page of its own; send it to the dashboard.
+	mux.HandleFunc("/{$}", h.redirectToUI)
 	mux.HandleFunc("/ui", h.serveIndex)
 	mux.HandleFunc("/ui/", h.serveIndex)
 	api := http.NewServeMux()
@@ -80,6 +82,12 @@ func isReadRequest(r *http.Request) bool {
 	default:
 		return false
 	}
+}
+
+// redirectToUI sends the bare root path to the dashboard, so a visitor who
+// opens the host without a path lands on the UI instead of a 404.
+func (h *Handler) redirectToUI(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/ui", http.StatusFound)
 }
 
 func (h *Handler) serveIndex(w http.ResponseWriter, r *http.Request) {
