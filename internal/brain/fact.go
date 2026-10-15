@@ -138,7 +138,7 @@ func (b *Brain) QueryRelationships(ctx context.Context, namespaceSlugs []string,
 	page = page.Sanitize()
 
 	rows, err := b.pool.Query(ctx,
-		`SELECT id, namespace_id, from_entity, relation_type, to_entity, confidence, source_fact_id, created_at, deleted_at
+		`SELECT id, namespace_id, from_entity, relation_type, canonical_type, to_entity, confidence, source_fact_id, created_at, deleted_at
 		 FROM relationships WHERE namespace_id = ANY($1) AND deleted_at IS NULL ORDER BY id LIMIT $2 OFFSET $3`,
 		nsIDs, page.Limit, page.Offset,
 	)
@@ -150,7 +150,7 @@ func (b *Brain) QueryRelationships(ctx context.Context, namespaceSlugs []string,
 	var rels []models.Relationship
 	for rows.Next() {
 		var r models.Relationship
-		if err := rows.Scan(&r.ID, &r.NamespaceID, &r.FromEntity, &r.RelationType, &r.ToEntity, &r.Confidence, &r.SourceFactID, &r.CreatedAt, &r.DeletedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.NamespaceID, &r.FromEntity, &r.RelationType, &r.CanonicalType, &r.ToEntity, &r.Confidence, &r.SourceFactID, &r.CreatedAt, &r.DeletedAt); err != nil {
 			return nil, fmt.Errorf("scan relationship: %w", err)
 		}
 		rels = append(rels, r)

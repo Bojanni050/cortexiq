@@ -75,15 +75,18 @@ type FactSource struct {
 
 // Relationship is an extracted entity edge.
 type Relationship struct {
-	ID           int64      `db:"id"`
-	NamespaceID  int64      `db:"namespace_id"`
-	FromEntity   string     `db:"from_entity"`
-	RelationType string     `db:"relation_type"`
-	ToEntity     string     `db:"to_entity"`
-	Confidence   float32    `db:"confidence"`
-	SourceFactID *int64     `db:"source_fact_id"`
-	CreatedAt    time.Time  `db:"created_at"`
-	DeletedAt    *time.Time `db:"deleted_at"`
+	ID           int64  `db:"id"`
+	NamespaceID  int64  `db:"namespace_id"`
+	FromEntity   string `db:"from_entity"`
+	RelationType string `db:"relation_type"`
+	// CanonicalType is the relation type mapped onto the fixed vocabulary; nil
+	// when there is no confident mapping (RelationType is always the original).
+	CanonicalType *string    `db:"canonical_type"`
+	ToEntity      string     `db:"to_entity"`
+	Confidence    float32    `db:"confidence"`
+	SourceFactID  *int64     `db:"source_fact_id"`
+	CreatedAt     time.Time  `db:"created_at"`
+	DeletedAt     *time.Time `db:"deleted_at"`
 }
 
 // Pattern is an abstraction over facts and relationships.
