@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alash3al/stash/internal/embedder"
-	"github.com/alash3al/stash/internal/queries"
-	"github.com/alash3al/stash/internal/reasoner"
+	"github.com/Bojanni050/cortexiq/internal/embedder"
+	"github.com/Bojanni050/cortexiq/internal/queries"
+	"github.com/Bojanni050/cortexiq/internal/reasoner"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

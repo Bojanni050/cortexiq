@@ -42,12 +42,12 @@ jobs:
         run: |
           EXT=""
           if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
-          go build -ldflags="-s -w" -o stash-${{ matrix.label }}$EXT ./cmd/cli/
+          go build -ldflags="-s -w" -o cortexiq-${{ matrix.label }}$EXT ./cmd/cli/
 
       - name: Upload Binary to Release
         uses: softprops/action-gh-release@v3
         with:
-          files: stash-${{ matrix.label }}*
+          files: cortexiq-${{ matrix.label }}*
 
   # Job 2: Build and Push Multi-Arch Docker Image
   build-docker:

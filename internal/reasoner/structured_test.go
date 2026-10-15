@@ -8,8 +8,8 @@ import (
 
 func TestParseStructuredFactsArray(t *testing.T) {
 	out := "```json\n" + `[
-  {"entity": "Stash", "property": "interval", "value": "5m", "summary": "Stash consolidates every 5 minutes."},
-  {"entity": null, "property": null, "value": null, "summary": "Stash decays facts by 5 percent per 168 hours."}
+  {"entity": "CortexIQ", "property": "interval", "value": "5m", "summary": "CortexIQ consolidates every 5 minutes."},
+  {"entity": null, "property": null, "value": null, "summary": "CortexIQ decays facts by 5 percent per 168 hours."}
 ]` + "\n```"
 	facts, err := parseStructuredFacts(out)
 	if err != nil {
@@ -18,14 +18,14 @@ func TestParseStructuredFactsArray(t *testing.T) {
 	if len(facts) != 2 {
 		t.Fatalf("want 2 facts, got %d: %+v", len(facts), facts)
 	}
-	if facts[0].Entity != "Stash" || facts[0].Value != "5m" || facts[1].Entity != "" {
+	if facts[0].Entity != "CortexIQ" || facts[0].Value != "5m" || facts[1].Entity != "" {
 		t.Errorf("fields not mapped: %+v %+v", facts[0], facts[1])
 	}
 }
 
 func TestParseStructuredFactsAcceptsSingleObject(t *testing.T) {
-	facts, err := parseStructuredFacts(`{"entity": "Stash", "property": null, "value": null, "summary": "Stash uses pgvector."}`)
-	if err != nil || len(facts) != 1 || facts[0].Summary != "Stash uses pgvector." {
+	facts, err := parseStructuredFacts(`{"entity": "CortexIQ", "property": null, "value": null, "summary": "CortexIQ uses pgvector."}`)
+	if err != nil || len(facts) != 1 || facts[0].Summary != "CortexIQ uses pgvector." {
 		t.Fatalf("single object should still parse: %+v err=%v", facts, err)
 	}
 }

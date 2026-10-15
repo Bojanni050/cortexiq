@@ -12,11 +12,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/alash3al/stash/internal/scope"
+	"github.com/Bojanni050/cortexiq/internal/scope"
 )
 
 // Token is one API token definition. Tokens are configured as a JSON array in
-// STASH_API_TOKENS.
+// CORTEXIQ_API_TOKENS.
 type Token struct {
 	Name       string   `json:"name"`
 	Secret     string   `json:"token"`
@@ -29,14 +29,14 @@ type Set struct {
 	tokens []Token
 }
 
-// ParseSet builds the token set from STASH_API_TOKENS (a JSON array of Token)
-// with STASH_API_TOKEN as a single full-access fallback. Both empty disables
+// ParseSet builds the token set from CORTEXIQ_API_TOKENS (a JSON array of Token)
+// with CORTEXIQ_API_TOKEN as a single full-access fallback. Both empty disables
 // authentication (the historical behaviour).
 func ParseSet(spec, fallback string) (*Set, error) {
 	var tokens []Token
 	if strings.TrimSpace(spec) != "" {
 		if err := json.Unmarshal([]byte(spec), &tokens); err != nil {
-			return nil, fmt.Errorf("STASH_API_TOKENS is not a JSON array of tokens: %w", err)
+			return nil, fmt.Errorf("CORTEXIQ_API_TOKENS is not a JSON array of tokens: %w", err)
 		}
 	}
 	if len(tokens) == 0 && fallback != "" {
@@ -109,7 +109,7 @@ func RequireToken(token string, next http.Handler) http.Handler {
 }
 
 func unauthorized(w http.ResponseWriter) {
-	w.Header().Set("WWW-Authenticate", `Bearer realm="stash"`)
+	w.Header().Set("WWW-Authenticate", `Bearer realm="cortexiq"`)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	_, _ = w.Write([]byte(`{"error":"unauthorized: missing or invalid API token"}` + "\n"))

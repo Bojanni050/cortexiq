@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/alash3al/stash/internal/bootstrap"
+	"github.com/Bojanni050/cortexiq/internal/bootstrap"
 	"github.com/urfave/cli/v3"
 )
 

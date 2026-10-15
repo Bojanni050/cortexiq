@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <!-- Primary SEO -->
-<title>Stash — Persistent Memory for AI Agents</title>
-<meta name="description" content="Stash gives any AI agent a persistent memory, knowledge graph, goals, and self-model. Works with Claude, ChatGPT, Ollama, and any MCP-compatible agent. Open source. Self-hosted.">
+<title>CortexIQ — Persistent Memory for AI Agents</title>
+<meta name="description" content="CortexIQ gives any AI agent a persistent memory, knowledge graph, goals, and self-model. Works with Claude, ChatGPT, Ollama, and any MCP-compatible agent. Open source. Self-hosted.">
 <meta name="keywords" content="AI memory, persistent memory, MCP, model context protocol, AI agents, RAG alternative, pgvector, Ollama, OpenRouter, open source AI memory, agent memory, LLM memory, knowledge graph, AI tools">
 <meta name="author" content="Mohamed Al-Ashaal">
 <meta name="robots" content="index, follow">
@@ -15,22 +15,22 @@
 <!-- Open Graph (Facebook, LinkedIn, WhatsApp) -->
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://alash3al.github.io/stash/">
-<meta property="og:site_name" content="Stash">
-<meta property="og:title" content="Stash — Your AI has amnesia. We fixed it.">
+<meta property="og:site_name" content="CortexIQ">
+<meta property="og:title" content="CortexIQ — Your AI has amnesia. We fixed it.">
 <meta property="og:description" content="Give any AI agent a persistent memory in minutes. Works with Claude, ChatGPT, Ollama, OpenRouter, and any MCP-compatible agent. Open source, self-hosted, model-agnostic.">
 <meta property="og:image" content="https://alash3al.github.io/stash/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Stash — Persistent Memory for AI Agents">
+<meta property="og:image:alt" content="CortexIQ — Persistent Memory for AI Agents">
 <meta property="og:locale" content="en_US">
 
 <!-- Twitter / X Card -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:url" content="https://alash3al.github.io/stash/">
-<meta name="twitter:title" content="Stash — Your AI has amnesia. We fixed it.">
+<meta name="twitter:title" content="CortexIQ — Your AI has amnesia. We fixed it.">
 <meta name="twitter:description" content="Give any AI agent a persistent memory in minutes. Open source, self-hosted, works with any MCP-compatible agent.">
 <meta name="twitter:image" content="https://alash3al.github.io/stash/og-image.png">
-<meta name="twitter:image:alt" content="Stash — Persistent Memory for AI Agents">
+<meta name="twitter:image:alt" content="CortexIQ — Persistent Memory for AI Agents">
 <meta name="twitter:creator" content="@alash3al">
 <meta name="twitter:site" content="@alash3al">
 
@@ -39,7 +39,7 @@
 {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  "name": "Stash",
+  "name": "CortexIQ",
   "url": "https://alash3al.github.io/stash",
   "description": "Persistent memory infrastructure for AI agents. Gives any MCP-compatible agent a knowledge graph, goals, causal reasoning, and self-model. Open source and self-hosted.",
   "applicationCategory": "DeveloperApplication",
@@ -54,7 +54,7 @@
     "name": "Mohamed Al-Ashaal",
     "url": "https://alash3al.com"
   },
-  "codeRepository": "https://github.com/alash3al/stash",
+  "codeRepository": "https://github.com/Bojanni050/cortexiq",
   "license": "https://www.apache.org/licenses/LICENSE-2.0",
   "keywords": "AI memory, MCP, persistent memory, knowledge graph, AI agents, open source"
 }
@@ -380,7 +380,7 @@
     line-height: 1.7;
   }
 
-  /* WHAT IS STASH */
+  /* WHAT IS CORTEXIQ */
   #what {
     padding: 160px 0;
     border-top: 1px solid var(--border);
@@ -985,7 +985,7 @@
   .compare-col:last-child { border-right: none; }
   .compare-feature { color: var(--text-dim); font-size: 13px; }
   .compare-col.competitor { color: var(--text-muted); justify-content: center; }
-  .compare-col.stash-col {
+  .compare-col.cortexiq-col {
     background: rgba(232,160,32,0.04);
     justify-content: center;
     font-weight: 500;
@@ -1000,7 +1000,7 @@
     justify-content: center;
     color: var(--text-muted);
   }
-  .compare-header .stash-col {
+  .compare-header .cortexiq-col {
     color: var(--amber);
     background: rgba(232,160,32,0.06);
     border-top: 2px solid var(--amber);
@@ -1010,7 +1010,7 @@
   .highlight-row { background: rgba(232,160,32,0.03); }
   .highlight-row .compare-feature { color: var(--text); font-weight: 500; }
   .highlight-row .compare-col.competitor { color: var(--text-muted); font-style: italic; }
-  .highlight-row .stash-col { color: var(--amber); font-family: 'Fraunces', serif; font-size: 16px; font-style: italic; }
+  .highlight-row .cortexiq-col { color: var(--amber); font-family: 'Fraunces', serif; font-size: 16px; font-style: italic; }
 
   .backends-note {
     display: flex;
@@ -1231,7 +1231,7 @@
     flex-direction: column;
     gap: 8px;
   }
-  .analogy-card.stash-analogy {
+  .analogy-card.cortexiq-analogy {
     border-color: var(--amber-dim);
     background: rgba(232,160,32,0.04);
   }
@@ -1248,7 +1248,7 @@
     color: var(--text-dim);
     line-height: 1.6;
   }
-  .stash-analogy .analogy-text { color: var(--text); }
+  .cortexiq-analogy .analogy-text { color: var(--text); }
   .analogy-arrow {
     font-size: 24px;
     color: var(--amber-dim);
@@ -1313,13 +1313,13 @@
 
   .demo-line.user .dl-tag { color: #60a0e0; min-width: 70px; flex-shrink: 0; }
   .demo-line.agent .dl-tag { color: var(--amber); min-width: 70px; flex-shrink: 0; }
-  .demo-line.stash .dl-tag { color: var(--green); min-width: 70px; flex-shrink: 0; }
+  .demo-line.cortexiq .dl-tag { color: var(--green); min-width: 70px; flex-shrink: 0; }
   .demo-line.system .dl-tag { color: var(--text-muted); min-width: 70px; flex-shrink: 0; }
   .demo-line.divider .dl-tag { color: var(--text-muted); min-width: 70px; flex-shrink: 0; }
 
   .demo-line.user .dl-text { color: #c0d8f0; }
   .demo-line.agent .dl-text { color: var(--text); }
-  .demo-line.stash .dl-text { color: #80c090; }
+  .demo-line.cortexiq .dl-text { color: #80c090; }
   .demo-line.system .dl-text { color: var(--text-muted); font-style: italic; }
   .demo-line.divider .dl-text { color: var(--text-muted); letter-spacing: 0.1em; }
 
@@ -1666,7 +1666,7 @@
 
 <!-- NAV -->
 <nav id="nav">
-  <div class="nav-logo">stash<span>.memory</span></div>
+  <div class="nav-logo">cortexiq<span>.memory</span></div>
   <ul class="nav-links">
     <li><a href="#what">What</a></li>
     <li><a href="#namespaces">Namespaces</a></li>
@@ -1678,7 +1678,7 @@
     <li><a href="#backends">Backends</a></li>
   </ul>
   <a href="https://usestash.io" style="background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;padding:0.45rem 1.1rem;border-radius:8px;text-decoration:none;font-size:0.85rem;font-weight:700;margin-right:0.4rem;letter-spacing:0.01em;">☁ Try Cloud Free</a>
-  <a href="https://github.com/alash3al/stash" class="nav-cta">→ GitHub</a>
+  <a href="https://github.com/Bojanni050/cortexiq" class="nav-cta">→ GitHub</a>
 </nav>
 
 <!-- HERO -->
@@ -1688,10 +1688,10 @@
     Your AI<br>
     has <em>amnesia.</em>
   </h1>
-  <p class="hero-sub">Stash makes your AI remember you. Every session. Forever. No more explaining yourself from scratch.</p>
+  <p class="hero-sub">CortexIQ makes your AI remember you. Every session. Forever. No more explaining yourself from scratch.</p>
   <div class="hero-actions">
     <a href="https://usestash.io" style="display:inline-block;background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;padding:0.75rem 1.8rem;border-radius:10px;text-decoration:none;font-size:1rem;font-weight:700;letter-spacing:0.02em;box-shadow:0 0 24px rgba(124,58,237,0.4);">☁ Try Cloud Free — No Setup</a>
-    <a href="https://github.com/alash3al/stash" class="btn-primary">→ Self-Host on GitHub</a>
+    <a href="https://github.com/Bojanni050/cortexiq" class="btn-primary">→ Self-Host on GitHub</a>
     <a href="#what" class="btn-secondary">How it works</a>
   </div>
   <div class="hero-stat">
@@ -1717,7 +1717,7 @@
     <div class="section-tag reveal">Sound familiar?</div>
     <div class="story-layout reveal">
       <div class="story-side without">
-        <div class="story-label">😫 Without Stash</div>
+        <div class="story-label">😫 Without CortexIQ</div>
         <div class="story-messages">
           <div class="msg msg-user">Hey, I'm building a SaaS for restaurants. Can you help?</div>
           <div class="msg msg-ai">Of course! Tell me about your project.</div>
@@ -1729,7 +1729,7 @@
       </div>
       <div class="story-divider">VS</div>
       <div class="story-side with">
-        <div class="story-label">😌 With Stash</div>
+        <div class="story-label">😌 With CortexIQ</div>
         <div class="story-messages">
           <div class="msg msg-user">Hey, continuing work on my project.</div>
           <div class="msg msg-ai">Welcome back! Last time we finalized the pricing model for your restaurant SaaS. You were about to work on the onboarding flow. Want to pick up there?</div>
@@ -1748,8 +1748,8 @@
     <div class="ba-table reveal">
       <div class="ba-header">
         <div class="ba-col-label"></div>
-        <div class="ba-col bad">Without Stash</div>
-        <div class="ba-col good">With Stash</div>
+        <div class="ba-col bad">Without CortexIQ</div>
+        <div class="ba-col good">With CortexIQ</div>
       </div>
       <div class="ba-row">
         <div class="ba-col-label">New session</div>
@@ -1790,10 +1790,10 @@
   <div class="container">
     <div class="what-layout">
       <div>
-        <div class="section-tag">What is Stash</div>
+        <div class="section-tag">What is CortexIQ</div>
         <h2 class="what-headline">Not just memory.<br><em>A second brain.</em></h2>
-        <p class="what-body">Stash is a persistent cognitive layer that sits between your AI agent and the world. It doesn't replace your model — it makes your model continuous. Episodes become facts. Facts become patterns. Patterns become wisdom.</p>
-        <blockquote class="what-quote reveal">"Your AI is the brain. Stash is the life experience."</blockquote>
+        <p class="what-body">CortexIQ is a persistent cognitive layer that sits between your AI agent and the world. It doesn't replace your model — it makes your model continuous. Episodes become facts. Facts become patterns. Patterns become wisdom.</p>
+        <blockquote class="what-quote reveal">"Your AI is the brain. CortexIQ is the life experience."</blockquote>
       </div>
       <div class="stack-visual reveal">
         <div class="stack-layer dim">
@@ -1844,7 +1844,7 @@
         <div class="section-tag">Namespaces</div>
         <h2 class="ns-headline">Memory organized<br>like <em>folders.</em></h2>
         <p class="ns-body">Not all memory is equal. What your agent learns about <em>you</em> is different from what it learns about a <em>project</em>, which is different from what it knows about <em>itself</em>. Namespaces let the agent organize what it learns into clean, separate buckets — just like folders on your computer.</p>
-        <p class="ns-body">Each namespace is a path. Paths are hierarchical. Reading from <code>/projects</code> automatically includes everything under <code>/projects/stash</code>, <code>/projects/cartona</code>, and so on. You never have to think about it — the agent does.</p>
+        <p class="ns-body">Each namespace is a path. Paths are hierarchical. Reading from <code>/projects</code> automatically includes everything under <code>/projects/cortexiq</code>, <code>/projects/cartona</code>, and so on. You never have to think about it — the agent does.</p>
         <div class="ns-rule">
           <span class="ns-rule-icon">📁</span>
           <span>Write to one namespace. Read from any subtree.</span>
@@ -1929,7 +1929,7 @@
   <div class="container">
     <div class="pipeline-header reveal">
       <div class="section-tag" style="justify-content:center">See It In Action</div>
-      <h2 class="section-headline">Watch Stash <em>remember.</em></h2>
+      <h2 class="section-headline">Watch CortexIQ <em>remember.</em></h2>
       <p class="section-sub">A real conversation loop — two sessions, one agent, zero repetition. Watch what happens between them.</p>
     </div>
 
@@ -1952,9 +1952,9 @@
 
 <section id="rag">
   <div class="container">
-    <div class="section-tag reveal">Stash vs RAG</div>
+    <div class="section-tag reveal">CortexIQ vs RAG</div>
     <div class="rag-hero reveal">
-      <h2 class="rag-headline">RAG gives your AI<br>a <em>search engine.</em><br>Stash gives it a <em>life.</em></h2>
+      <h2 class="rag-headline">RAG gives your AI<br>a <em>search engine.</em><br>CortexIQ gives it a <em>life.</em></h2>
       <p class="rag-sub">You've probably heard of RAG — Retrieval Augmented Generation. It's clever. But it's not memory. Here's the difference, in plain English.</p>
     </div>
 
@@ -1977,9 +1977,9 @@
       <div class="rag-vs">VS</div>
 
       <div class="rag-side">
-        <div class="rag-label rag-good">🧠 Stash</div>
+        <div class="rag-label rag-good">🧠 CortexIQ</div>
         <div class="rag-metaphor">"A mind that grows"</div>
-        <p class="rag-desc">Stash learns from everything your agent experiences — conversations, decisions, successes, failures. It synthesizes raw observations into facts, connects facts into a knowledge graph, detects contradictions, tracks goals, and builds an understanding of you that deepens over time. You don't write anything. It figures it out.</p>
+        <p class="rag-desc">CortexIQ learns from everything your agent experiences — conversations, decisions, successes, failures. It synthesizes raw observations into facts, connects facts into a knowledge graph, detects contradictions, tracks goals, and builds an understanding of you that deepens over time. You don't write anything. It figures it out.</p>
         <ul class="rag-list good-list">
           <li>Learns from every conversation automatically</li>
           <li>Builds a knowledge graph over time</li>
@@ -2000,14 +2000,14 @@
           <div class="analogy-text">A brilliant intern who reads your files perfectly — but forgets everything the moment they leave the room.</div>
         </div>
         <div class="analogy-arrow">→</div>
-        <div class="analogy-card stash-analogy">
+        <div class="analogy-card cortexiq-analogy">
           <div class="analogy-icon">🧠</div>
-          <div class="analogy-label">Stash is like...</div>
+          <div class="analogy-label">CortexIQ is like...</div>
           <div class="analogy-text">A colleague who was there from day one, remembers every decision you ever made, and gets more valuable every single week.</div>
         </div>
       </div>
       <div class="rag-note">
-        <strong>Can you use both?</strong> Yes — RAG is great for searching documents. Stash is for remembering experience. They solve different problems. Stash just goes much, much further.
+        <strong>Can you use both?</strong> Yes — RAG is great for searching documents. CortexIQ is for remembering experience. They solve different problems. CortexIQ just goes much, much further.
       </div>
     </div>
   </div>
@@ -2017,10 +2017,10 @@
 
 <section id="unique">
   <div class="container">
-    <div class="section-tag reveal">Why Stash is Different</div>
+    <div class="section-tag reveal">Why CortexIQ is Different</div>
     <div class="unique-hero reveal">
       <h2 class="unique-headline">Everyone gave AI<br>a <em>notepad.</em><br>We gave it a <em>mind.</em></h2>
-      <p class="unique-sub">Claude.ai has memory. ChatGPT has memory. They only work for themselves — locked to one platform, one model, one company. Stash works for everyone, everywhere, forever. And it goes far deeper than any of them.</p>
+      <p class="unique-sub">Claude.ai has memory. ChatGPT has memory. They only work for themselves — locked to one platform, one model, one company. CortexIQ works for everyone, everywhere, forever. And it goes far deeper than any of them.</p>
     </div>
 
     <div class="compare-table reveal">
@@ -2028,73 +2028,73 @@
         <div class="compare-feature"></div>
         <div class="compare-col competitor">ChatGPT Memory</div>
         <div class="compare-col competitor">Claude.ai Memory</div>
-        <div class="compare-col stash-col">Stash</div>
+        <div class="compare-col cortexiq-col">CortexIQ</div>
       </div>
       <div class="compare-row">
         <div class="compare-feature">Remembers you</div>
         <div class="compare-col competitor"><span class="c-yes">✓</span></div>
         <div class="compare-col competitor"><span class="c-yes">✓</span></div>
-        <div class="compare-col stash-col"><span class="c-yes">✓</span></div>
+        <div class="compare-col cortexiq-col"><span class="c-yes">✓</span></div>
       </div>
       <div class="compare-row">
         <div class="compare-feature">Works with any AI model</div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
-        <div class="compare-col stash-col"><span class="c-yes">✓</span></div>
+        <div class="compare-col cortexiq-col"><span class="c-yes">✓</span></div>
       </div>
       <div class="compare-row">
         <div class="compare-feature">Works with local / private models</div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
-        <div class="compare-col stash-col"><span class="c-yes">✓</span></div>
+        <div class="compare-col cortexiq-col"><span class="c-yes">✓</span></div>
       </div>
       <div class="compare-row">
         <div class="compare-feature">You own your data</div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
-        <div class="compare-col stash-col"><span class="c-yes">✓</span></div>
+        <div class="compare-col cortexiq-col"><span class="c-yes">✓</span></div>
       </div>
       <div class="compare-row">
         <div class="compare-feature">Open source</div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
-        <div class="compare-col stash-col"><span class="c-yes">✓</span></div>
+        <div class="compare-col cortexiq-col"><span class="c-yes">✓</span></div>
       </div>
       <div class="compare-row">
         <div class="compare-feature">Background consolidation</div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
-        <div class="compare-col stash-col"><span class="c-yes">✓</span></div>
+        <div class="compare-col cortexiq-col"><span class="c-yes">✓</span></div>
       </div>
       <div class="compare-row">
         <div class="compare-feature">Goals &amp; intent tracking</div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
-        <div class="compare-col stash-col"><span class="c-yes">✓</span></div>
+        <div class="compare-col cortexiq-col"><span class="c-yes">✓</span></div>
       </div>
       <div class="compare-row">
         <div class="compare-feature">Learns from failures</div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
-        <div class="compare-col stash-col"><span class="c-yes">✓</span></div>
+        <div class="compare-col cortexiq-col"><span class="c-yes">✓</span></div>
       </div>
       <div class="compare-row">
         <div class="compare-feature">Causal reasoning</div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
-        <div class="compare-col stash-col"><span class="c-yes">✓</span></div>
+        <div class="compare-col cortexiq-col"><span class="c-yes">✓</span></div>
       </div>
       <div class="compare-row">
         <div class="compare-feature">Agent self-model</div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
         <div class="compare-col competitor"><span class="c-no">✗</span></div>
-        <div class="compare-col stash-col"><span class="c-yes">✓</span></div>
+        <div class="compare-col cortexiq-col"><span class="c-yes">✓</span></div>
       </div>
       <div class="compare-row highlight-row">
         <div class="compare-feature">What it gives your AI</div>
         <div class="compare-col competitor">A notepad</div>
         <div class="compare-col competitor">A notepad</div>
-        <div class="compare-col stash-col">A mind</div>
+        <div class="compare-col cortexiq-col">A mind</div>
       </div>
     </div>
   </div>
@@ -2138,7 +2138,7 @@
       <div class="qs-left">
         <div class="section-tag">Express Setup</div>
         <h2 class="qs-headline">Up and running<br>in <em>3 commands.</em></h2>
-        <p class="qs-body">No infrastructure to set up. No dependencies to install manually. Docker Compose handles everything — Postgres, pgvector, Stash, all wired together and ready.</p>
+        <p class="qs-body">No infrastructure to set up. No dependencies to install manually. Docker Compose handles everything — Postgres, pgvector, CortexIQ, all wired together and ready.</p>
         <div class="qs-steps">
           <div class="qs-step">
             <div class="qs-step-num">1</div>
@@ -2150,7 +2150,7 @@
           </div>
           <div class="qs-step">
             <div class="qs-step-num">3</div>
-            <div class="qs-step-text">Run <code>docker compose up</code> — that's it. Stash is live.</div>
+            <div class="qs-step-text">Run <code>docker compose up</code> — that's it. CortexIQ is live.</div>
           </div>
           <div class="qs-step">
             <div class="qs-step-num">4</div>
@@ -2168,19 +2168,19 @@
           </div>
           <div class="terminal-body">
             <div><span class="t-comment"># 1. clone</span></div>
-            <div><span class="t-prompt">$</span> <span class="t-cmd">git clone https://github.com/alash3al/stash</span></div>
-            <div><span class="t-prompt">$</span> <span class="t-cmd">cd stash</span></div>
+            <div><span class="t-prompt">$</span> <span class="t-cmd">git clone https://github.com/Bojanni050/cortexiq</span></div>
+            <div><span class="t-prompt">$</span> <span class="t-cmd">cd cortexiq</span></div>
             <div>&nbsp;</div>
             <div><span class="t-comment"># 2. configure</span></div>
             <div><span class="t-prompt">$</span> <span class="t-cmd">cp .env.example .env</span></div>
             <div><span class="t-dim">&nbsp;&nbsp; # edit .env with your API key,</span></div>
-            <div><span class="t-dim">&nbsp;&nbsp; # models and STASH_VECTOR_DIM</span></div>
+            <div><span class="t-dim">&nbsp;&nbsp; # models and CORTEXIQ_VECTOR_DIM</span></div>
             <div>&nbsp;</div>
             <div><span class="t-comment"># 3. launch everything</span></div>
             <div><span class="t-prompt">$</span> <span class="t-cmd">docker compose up</span></div>
             <div>&nbsp;</div>
             <div><span class="t-output">✓ postgres + pgvector ready</span></div>
-            <div><span class="t-output">✓ stash migrations applied</span></div>
+            <div><span class="t-output">✓ cortexiq migrations applied</span></div>
             <div><span class="t-output">✓ mcp server listening</span></div>
             <div><span class="t-output">✓ consolidation running in background</span></div>
             <div>&nbsp;</div>
@@ -2189,7 +2189,7 @@
         </div>
         <div class="qs-note">
           <span>⚠️</span>
-          <span>Set <code>STASH_VECTOR_DIM</code> in your <code>.env</code> before first run. It cannot be changed after initialization.</span>
+          <span>Set <code>CORTEXIQ_VECTOR_DIM</code> in your <code>.env</code> before first run. It cannot be changed after initialization.</span>
         </div>
       </div>
     </div>
@@ -2201,7 +2201,7 @@
   <div class="container">
     <div class="section-tag reveal">MCP Integration</div>
     <h2 class="section-headline reveal">Works with <em>any MCP client.</em></h2>
-    <p class="section-sub reveal" style="margin: 0 auto 48px;">Start Stash, point any MCP-compatible agent at the URL below. That's it. No SDK. No vendor lock-in.</p>
+    <p class="section-sub reveal" style="margin: 0 auto 48px;">Start CortexIQ, point any MCP-compatible agent at the URL below. That's it. No SDK. No vendor lock-in.</p>
 
     <!-- THE URL — hero of this section -->
     <div class="mcp-url-hero reveal">
@@ -2210,7 +2210,7 @@
         <span class="mcp-url-text">http://localhost:8080/sse</span>
         <button class="mcp-url-copy" type="button" data-copy="http://localhost:8080/sse">Copy</button>
       </div>
-      <div class="mcp-url-sub">Stash is already running after <code>docker compose up</code> — just copy the URL above into your agent.</div>
+      <div class="mcp-url-sub">CortexIQ is already running after <code>docker compose up</code> — just copy the URL above into your agent.</div>
     </div>
 
     <!-- INTEGRATION EXAMPLES -->
@@ -2220,7 +2220,7 @@
         <div class="terminal-dot r"></div>
         <div class="terminal-dot y"></div>
         <div class="terminal-dot g"></div>
-        <span class="terminal-title">agent session · stash connected</span>
+        <span class="terminal-title">agent session · cortexiq connected</span>
         <div class="demo-controls">
           <button class="demo-btn" id="usage-restart">↺ Replay</button>
         </div>
@@ -2240,7 +2240,7 @@
         <div class="integration-path">~/.cursor/mcp.json</div>
         <pre class="integration-code" id="cfg-cursor">{
   "mcpServers": {
-    "stash": {
+    "cortexiq": {
       "url": "http://localhost:8080/sse"
     }
   }
@@ -2255,7 +2255,7 @@
         <div class="integration-path">claude_desktop_config.json</div>
         <pre class="integration-code" id="cfg-claude">{
   "mcpServers": {
-    "stash": {
+    "cortexiq": {
       "url": "http://localhost:8080/sse"
     }
   }
@@ -2270,7 +2270,7 @@
         <div class="integration-path">~/.config/opencode/config.json</div>
         <pre class="integration-code" id="cfg-opencode">{
   "mcp": {
-    "stash": {
+    "cortexiq": {
       "type": "remote",
       "url": "http://localhost:8080/sse",
       "enabled": true
@@ -2287,7 +2287,7 @@
         <div class="integration-path">~/.codeium/windsurf/mcp_config.json</div>
         <pre class="integration-code" id="cfg-windsurf">{
   "mcpServers": {
-    "stash": {
+    "cortexiq": {
       "url": "http://localhost:8080/sse"
     }
   }
@@ -2411,7 +2411,7 @@
     <div class="self-center reveal">
       <div class="section-tag" style="justify-content:center">Agent Self-Model</div>
       <h2 class="section-headline">Your agent can<br><em>know itself.</em></h2>
-      <p class="section-sub">Call <code style="font-family:'IBM Plex Mono',monospace;color:var(--amber)">init</code> and Stash creates a <code style="font-family:'IBM Plex Mono',monospace;color:var(--amber)">/self</code> namespace scaffold. The agent uses its own memory layer to build and maintain a model of its own capabilities, limits, and preferences.</p>
+      <p class="section-sub">Call <code style="font-family:'IBM Plex Mono',monospace;color:var(--amber)">init</code> and CortexIQ creates a <code style="font-family:'IBM Plex Mono',monospace;color:var(--amber)">/self</code> namespace scaffold. The agent uses its own memory layer to build and maintain a model of its own capabilities, limits, and preferences.</p>
     </div>
     <div class="self-namespaces reveal">
       <div class="ns-card">
@@ -2442,7 +2442,7 @@
         <h2 class="what-headline">An agent that<br><em>never stops learning.</em></h2>
         <p class="what-body">Give your agent a 5-minute research loop. It orients from past memory, researches a topic it chooses itself, invents new connections, consolidates what it learned, and closes gracefully — ready to pick up next time.</p>
         <p class="what-body">Run it as a cron job. Every 5 minutes, your agent gets smarter.</p>
-        <a href="https://github.com/alash3al/stash" class="btn-primary" style="display:inline-flex;margin-top:16px">→ See the loop prompt</a>
+        <a href="https://github.com/Bojanni050/cortexiq" class="btn-primary" style="display:inline-flex;margin-top:16px">→ See the loop prompt</a>
       </div>
       <div class="loop-steps reveal">
         <div class="loop-step">
@@ -2498,13 +2498,13 @@
     <div class="pipeline-header reveal">
       <div class="section-tag" style="justify-content:center">Model Agnostic</div>
       <h2 class="section-headline">Your model. <em>Your infrastructure.</em></h2>
-      <p class="section-sub">Stash uses one provider for both embedding and reasoning — any OpenAI-compatible backend works. Cloud, local, or self-hosted. No vendor lock-in, ever.</p>
+      <p class="section-sub">CortexIQ uses one provider for both embedding and reasoning — any OpenAI-compatible backend works. Cloud, local, or self-hosted. No vendor lock-in, ever.</p>
     </div>
 
     <div class="backends-note reveal">
       <span class="note-icon">⚡</span>
       <div>
-        <strong>Stash itself runs on OpenRouter.</strong> The author runs Stash locally pointed at OpenRouter — access to hundreds of models, one API key, zero infrastructure.
+        <strong>CortexIQ itself runs on OpenRouter.</strong> The author runs CortexIQ locally pointed at OpenRouter — access to hundreds of models, one API key, zero infrastructure.
       </div>
     </div>
 
@@ -2512,24 +2512,24 @@
       <div class="problem-card">
         <span class="problem-icon">☁️</span>
         <h3 class="problem-title">Cloud APIs</h3>
-        <p class="problem-desc">OpenRouter gives you access to hundreds of models — GPT, Claude, Gemini, Mistral — all behind one OpenAI-compatible endpoint. Point Stash at it and pick any model for embedding and reasoning.</p>
+        <p class="problem-desc">OpenRouter gives you access to hundreds of models — GPT, Claude, Gemini, Mistral — all behind one OpenAI-compatible endpoint. Point CortexIQ at it and pick any model for embedding and reasoning.</p>
       </div>
       <div class="problem-card">
         <span class="problem-icon">🏠</span>
         <h3 class="problem-title">Local Models</h3>
-        <p class="problem-desc">Running Ollama locally? Stash works out of the box. Use Qwen, Llama, Mistral, or any model you've pulled — your memory stays fully private, fully offline.</p>
+        <p class="problem-desc">Running Ollama locally? CortexIQ works out of the box. Use Qwen, Llama, Mistral, or any model you've pulled — your memory stays fully private, fully offline.</p>
       </div>
       <div class="problem-card">
         <span class="problem-icon">🔧</span>
         <h3 class="problem-title">Self-Hosted</h3>
-        <p class="problem-desc">vLLM, LM Studio, llama.cpp server, Together AI, Groq — if it speaks the OpenAI API format, Stash speaks it back. Same provider serves both models.</p>
+        <p class="problem-desc">vLLM, LM Studio, llama.cpp server, Together AI, Groq — if it speaks the OpenAI API format, CortexIQ speaks it back. Same provider serves both models.</p>
       </div>
     </div>
 
     <div class="dim-warning reveal">
       <span class="dim-warning-icon">⚠️</span>
       <div>
-        <strong>Set <code>STASH_VECTOR_DIM</code> before your first run and never change it.</strong> pgvector locks the embedding dimension at initialization — changing it later requires a full database reset. The default embedding model is <code>openai/text-embedding-3-small</code> with <code>STASH_VECTOR_DIM=1536</code>.
+        <strong>Set <code>CORTEXIQ_VECTOR_DIM</code> before your first run and never change it.</strong> pgvector locks the embedding dimension at initialization — changing it later requires a full database reset. The default embedding model is <code>openai/text-embedding-3-small</code> with <code>CORTEXIQ_VECTOR_DIM=1536</code>.
       </div>
     </div>
 
@@ -2542,23 +2542,23 @@
       </div>
       <div class="terminal-body">
         <div><span class="t-comment"># ⚡ OpenRouter (recommended — what the author uses locally)</span></div>
-        <div><span class="t-prompt">STASH_OPENAI_BASE_URL</span>=<span class="t-output">https://openrouter.ai/api/v1</span></div>
-        <div><span class="t-prompt">STASH_OPENAI_API_KEY</span>=<span class="t-output">sk-or-...</span></div>
-        <div><span class="t-prompt">STASH_EMBEDDING_MODEL</span>=<span class="t-output">openai/text-embedding-3-small</span></div>
-        <div><span class="t-prompt">STASH_REASONER_MODEL</span>=<span class="t-output">anthropic/claude-3-haiku</span></div>
-        <div><span class="t-prompt">STASH_VECTOR_DIM</span>=<span class="t-output">1536</span> &nbsp;<span class="t-comment"># ⚠ set once, never change</span></div>
+        <div><span class="t-prompt">CORTEXIQ_OPENAI_BASE_URL</span>=<span class="t-output">https://openrouter.ai/api/v1</span></div>
+        <div><span class="t-prompt">CORTEXIQ_OPENAI_API_KEY</span>=<span class="t-output">sk-or-...</span></div>
+        <div><span class="t-prompt">CORTEXIQ_EMBEDDING_MODEL</span>=<span class="t-output">openai/text-embedding-3-small</span></div>
+        <div><span class="t-prompt">CORTEXIQ_REASONER_MODEL</span>=<span class="t-output">anthropic/claude-3-haiku</span></div>
+        <div><span class="t-prompt">CORTEXIQ_VECTOR_DIM</span>=<span class="t-output">1536</span> &nbsp;<span class="t-comment"># ⚠ set once, never change</span></div>
         <div>&nbsp;</div>
         <div><span class="t-comment"># 🏠 Ollama (fully local, fully private)</span></div>
-        <div><span class="t-prompt">STASH_OPENAI_BASE_URL</span>=<span class="t-output">http://localhost:11434/v1</span></div>
-        <div><span class="t-prompt">STASH_EMBEDDING_MODEL</span>=<span class="t-output">nomic-embed-text</span></div>
-        <div><span class="t-prompt">STASH_REASONER_MODEL</span>=<span class="t-output">qwen2.5:3b</span></div>
-        <div><span class="t-prompt">STASH_VECTOR_DIM</span>=<span class="t-output">768</span> &nbsp;<span class="t-comment"># ⚠ match your embedding model</span></div>
+        <div><span class="t-prompt">CORTEXIQ_OPENAI_BASE_URL</span>=<span class="t-output">http://localhost:11434/v1</span></div>
+        <div><span class="t-prompt">CORTEXIQ_EMBEDDING_MODEL</span>=<span class="t-output">nomic-embed-text</span></div>
+        <div><span class="t-prompt">CORTEXIQ_REASONER_MODEL</span>=<span class="t-output">qwen2.5:3b</span></div>
+        <div><span class="t-prompt">CORTEXIQ_VECTOR_DIM</span>=<span class="t-output">768</span> &nbsp;<span class="t-comment"># ⚠ match your embedding model</span></div>
         <div>&nbsp;</div>
         <div><span class="t-comment"># ⚡ Groq (fast inference)</span></div>
-        <div><span class="t-prompt">STASH_OPENAI_BASE_URL</span>=<span class="t-output">https://api.groq.com/openai/v1</span></div>
-        <div><span class="t-prompt">STASH_EMBEDDING_MODEL</span>=<span class="t-output">openai/text-embedding-3-small</span></div>
-        <div><span class="t-prompt">STASH_REASONER_MODEL</span>=<span class="t-output">llama-3.1-8b-instant</span></div>
-        <div><span class="t-prompt">STASH_VECTOR_DIM</span>=<span class="t-output">1536</span> &nbsp;<span class="t-comment"># ⚠ set once, never change</span></div>
+        <div><span class="t-prompt">CORTEXIQ_OPENAI_BASE_URL</span>=<span class="t-output">https://api.groq.com/openai/v1</span></div>
+        <div><span class="t-prompt">CORTEXIQ_EMBEDDING_MODEL</span>=<span class="t-output">openai/text-embedding-3-small</span></div>
+        <div><span class="t-prompt">CORTEXIQ_REASONER_MODEL</span>=<span class="t-output">llama-3.1-8b-instant</span></div>
+        <div><span class="t-prompt">CORTEXIQ_VECTOR_DIM</span>=<span class="t-output">1536</span> &nbsp;<span class="t-comment"># ⚠ set once, never change</span></div>
       </div>
     </div>
   </div>
@@ -2574,16 +2574,16 @@
     </div>
     <p class="cta-sub reveal">Open source. Apache 2.0 licensed. Backed by PostgreSQL. Works with any MCP-compatible agent.</p>
     <div class="cta-actions reveal">
-      <a href="https://github.com/alash3al/stash" class="btn-primary">→ GitHub Repository</a>
+      <a href="https://github.com/Bojanni050/cortexiq" class="btn-primary">→ GitHub Repository</a>
       <a href="https://alash3al.com" class="btn-secondary">Built by @alash3al</a>
     </div>
   </div>
 </section>
 
 <footer>
-  <span>stash — Apache 2.0 License</span>
+  <span>cortexiq — Apache 2.0 License</span>
   <span>
-    <a href="https://github.com/alash3al/stash">GitHub</a> ·
+    <a href="https://github.com/Bojanni050/cortexiq">GitHub</a> ·
     <a href="https://alash3al.com">alash3al.com</a>
   </span>
 </footer>
@@ -2676,38 +2676,38 @@ drawNeural();
 const demoLines = [
   { type: 'system', tag: '——', text: 'SESSION 1  ·  Monday morning' },
   { type: 'user',   tag: 'you',   text: "I'm building a B2B SaaS for restaurants. Help me plan the pricing model." },
-  { type: 'stash',  tag: 'stash', text: '⟳ recall("context") → nothing found, fresh start' },
+  { type: 'cortexiq',  tag: 'cortexiq', text: '⟳ recall("context") → nothing found, fresh start' },
   { type: 'agent',  tag: 'agent', text: "Sure! For restaurant B2B SaaS, I'd suggest three tiers: Starter, Growth, and Enterprise." },
   { type: 'user',   tag: 'you',   text: "Let's avoid Stripe for now, too complex. We'll use a local payment provider." },
-  { type: 'stash',  tag: 'stash', text: '✓ remember("avoid Stripe, use local payment provider")' },
-  { type: 'stash',  tag: 'stash', text: '✓ remember("building B2B SaaS for restaurants, planning pricing")' },
+  { type: 'cortexiq',  tag: 'cortexiq', text: '✓ remember("avoid Stripe, use local payment provider")' },
+  { type: 'cortexiq',  tag: 'cortexiq', text: '✓ remember("building B2B SaaS for restaurants, planning pricing")' },
   { type: 'agent',  tag: 'agent', text: "Got it. Keeping suggestions away from Stripe. Shall we define the tier limits?" },
   { type: 'user',   tag: 'you',   text: "Yes — Starter: 3 locations, Growth: 20, Enterprise: unlimited." },
-  { type: 'stash',  tag: 'stash', text: '✓ remember("Starter: 3 locations, Growth: 20, Enterprise: unlimited")' },
-  { type: 'stash',  tag: 'stash', text: '⟳ consolidate() → synthesizing episodes into facts...' },
+  { type: 'cortexiq',  tag: 'cortexiq', text: '✓ remember("Starter: 3 locations, Growth: 20, Enterprise: unlimited")' },
+  { type: 'cortexiq',  tag: 'cortexiq', text: '⟳ consolidate() → synthesizing episodes into facts...' },
   { type: 'gap',    tag: '',      text: '' },
   { type: 'divider',tag: '——',    text: 'SESSION ENDS  ·  Three days later' },
   { type: 'gap',    tag: '',      text: '' },
   { type: 'system', tag: '——',    text: 'SESSION 2  ·  Thursday afternoon' },
   { type: 'user',   tag: 'you',   text: "Hey, let's continue working on my project." },
-  { type: 'stash',  tag: 'stash', text: '⟳ recall("current project context") → 3 facts found' },
-  { type: 'stash',  tag: 'stash', text: '  → "B2B SaaS for restaurants, pricing model"' },
-  { type: 'stash',  tag: 'stash', text: '  → "Avoid Stripe, use local payment provider"' },
-  { type: 'stash',  tag: 'stash', text: '  → "Starter: 3 locations, Growth: 20, Enterprise: unlimited"' },
+  { type: 'cortexiq',  tag: 'cortexiq', text: '⟳ recall("current project context") → 3 facts found' },
+  { type: 'cortexiq',  tag: 'cortexiq', text: '  → "B2B SaaS for restaurants, pricing model"' },
+  { type: 'cortexiq',  tag: 'cortexiq', text: '  → "Avoid Stripe, use local payment provider"' },
+  { type: 'cortexiq',  tag: 'cortexiq', text: '  → "Starter: 3 locations, Growth: 20, Enterprise: unlimited"' },
   { type: 'agent',  tag: 'agent', text: "Welcome back! Last time we defined your pricing tiers for the restaurant SaaS." },
   { type: 'agent',  tag: 'agent', text: "Starter (3 locations), Growth (20), Enterprise (unlimited) — no Stripe, local payment provider." },
   { type: 'agent',  tag: 'agent', text: "Ready to work on the onboarding flow next?" },
   { type: 'user',   tag: 'you',   text: "Exactly. Let's go." },
-  { type: 'system', tag: '——',    text: 'Zero repetition. Full context. Stash remembered everything.' },
+  { type: 'system', tag: '——',    text: 'Zero repetition. Full context. CortexIQ remembered everything.' },
 ];
 
 // typing speed per type (ms per char)
 const charSpeed = {
-  user: 38, agent: 22, stash: 12, system: 10, divider: 10
+  user: 38, agent: 22, cortexiq: 12, system: 10, divider: 10
 };
 // pause after each line finishes
 const linePause = {
-  user: 420, agent: 320, stash: 80, system: 300, divider: 500, gap: 200
+  user: 420, agent: 320, cortexiq: 80, system: 300, divider: 500, gap: 200
 };
 
 let allTimers = [];
@@ -2814,24 +2814,24 @@ document.getElementById('demo-restart').addEventListener('click', () => {
 
 // USAGE SIMULATION
 const usageLines = [
-  { type: 'system',  tag: '——', text: 'User opens AI agent · Stash connected via MCP' },
+  { type: 'system',  tag: '——', text: 'User opens AI agent · CortexIQ connected via MCP' },
   { type: 'gap',     tag: '',   text: '' },
-  { type: 'user',    tag: 'you',    text: 'Hey, is Stash running?' },
+  { type: 'user',    tag: 'you',    text: 'Hey, is CortexIQ running?' },
   { type: 'agent',   tag: 'agent',  text: 'Let me check...' },
-  { type: 'stash',   tag: 'stash',  text: '→ stash_init()' },
-  { type: 'stash',   tag: 'stash',  text: '✓ connected · namespaces loaded · context ready' },
-  { type: 'agent',   tag: 'agent',  text: "Yes — Stash is running and connected. Memory is online." },
+  { type: 'cortexiq',   tag: 'cortexiq',  text: '→ cortexiq_init()' },
+  { type: 'cortexiq',   tag: 'cortexiq',  text: '✓ connected · namespaces loaded · context ready' },
+  { type: 'agent',   tag: 'agent',  text: "Yes — CortexIQ is running and connected. Memory is online." },
   { type: 'gap',     tag: '',   text: '' },
   { type: 'user',    tag: 'you',    text: "Great. I'm working on a weather forecasting app. Pull up everything we have on it." },
   { type: 'agent',   tag: 'agent',  text: 'On it — let me recall what I know about that project.' },
-  { type: 'stash',   tag: 'stash',  text: '→ stash_recall("weather forecasting app")' },
-  { type: 'stash',   tag: 'stash',  text: '✓ 6 facts found across /projects/weather-app' },
-  { type: 'stash',   tag: 'stash',  text: '  → "Using OpenWeatherMap API for data source"' },
-  { type: 'stash',   tag: 'stash',  text: '  → "Frontend: React + Recharts for visualizations"' },
-  { type: 'stash',   tag: 'stash',  text: '  → "Decided against WebSockets — polling every 5min"' },
-  { type: 'stash',   tag: 'stash',  text: '  → "Hourly forecast is done, daily view still in progress"' },
-  { type: 'stash',   tag: 'stash',  text: '  → "Failure: tried caching with Redis, had sync issues"' },
-  { type: 'stash',   tag: 'stash',  text: '  → "Goal: launch MVP by end of month"' },
+  { type: 'cortexiq',   tag: 'cortexiq',  text: '→ cortexiq_recall("weather forecasting app")' },
+  { type: 'cortexiq',   tag: 'cortexiq',  text: '✓ 6 facts found across /projects/weather-app' },
+  { type: 'cortexiq',   tag: 'cortexiq',  text: '  → "Using OpenWeatherMap API for data source"' },
+  { type: 'cortexiq',   tag: 'cortexiq',  text: '  → "Frontend: React + Recharts for visualizations"' },
+  { type: 'cortexiq',   tag: 'cortexiq',  text: '  → "Decided against WebSockets — polling every 5min"' },
+  { type: 'cortexiq',   tag: 'cortexiq',  text: '  → "Hourly forecast is done, daily view still in progress"' },
+  { type: 'cortexiq',   tag: 'cortexiq',  text: '  → "Failure: tried caching with Redis, had sync issues"' },
+  { type: 'cortexiq',   tag: 'cortexiq',  text: '  → "Goal: launch MVP by end of month"' },
   { type: 'gap',     tag: '',   text: '' },
   { type: 'agent',   tag: 'agent',  text: "Got it. Here's where we left off:" },
   { type: 'agent',   tag: 'agent',  text: "You're using OpenWeatherMap with a React + Recharts frontend, polling every 5 minutes." },
@@ -2839,7 +2839,7 @@ const usageLines = [
   { type: 'agent',   tag: 'agent',  text: "Goal is to launch the MVP by end of month. Want to pick up on the daily view?" },
   { type: 'user',    tag: 'you',    text: "Exactly. Let's go." },
   { type: 'gap',     tag: '',   text: '' },
-  { type: 'system',  tag: '——', text: 'Full context. Zero repetition. Stash remembered everything.' },
+  { type: 'system',  tag: '——', text: 'Full context. Zero repetition. CortexIQ remembered everything.' },
 ];
 
 let usageTimers = [];

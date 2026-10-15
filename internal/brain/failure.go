@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/alash3al/stash/internal/models"
+	"github.com/Bojanni050/cortexiq/internal/models"
 	"github.com/jackc/pgx/v5"
 )
 

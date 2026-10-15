@@ -36,9 +36,9 @@ func TestGroundRelationships(t *testing.T) {
 }
 
 func TestStructuredPromptSubjectAndSelfContainedRules(t *testing.T) {
-	with := structuredPrompt([]string{"it now supports X"}, "Stash — Go memory server")
+	with := structuredPrompt([]string{"it now supports X"}, "CortexIQ — Go memory server")
 	for _, want := range []string{
-		"Subject context (what the Events belong to): Stash — Go memory server",
+		"Subject context (what the Events belong to): CortexIQ — Go memory server",
 		"Use it ONLY to name the project",
 		"understandable on its own",
 		"output an empty array: []",

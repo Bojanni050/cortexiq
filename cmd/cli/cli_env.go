@@ -7,16 +7,20 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Bojanni050/cortexiq/internal/config"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/urfave/cli/v3"
 )
 
 func EnvCmd(ctx context.Context, cmd *cli.Command) error {
-	// Collect all STASH_* environment variables
-	vars := getAllStashEnvVars()
+	// Legacy STASH_* names are folded into CORTEXIQ_* so the listing is complete.
+	config.ApplyLegacyEnv()
+
+	// Collect all CORTEXIQ_* environment variables
+	vars := getAllCortexIQEnvVars()
 
 	if len(vars) == 0 {
-		fmt.Println("No STASH_* environment variables found.")
+		fmt.Println("No CORTEXIQ_* environment variables found.")
 		return nil
 	}
 
@@ -43,12 +47,12 @@ func EnvCmd(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-func getAllStashEnvVars() [][2]string {
+func getAllCortexIQEnvVars() [][2]string {
 	vars := [][2]string{}
 
-	// Get all env vars and filter for STASH_ prefix
+	// Get all env vars and filter for CORTEXIQ_ prefix
 	for _, env := range os.Environ() {
-		if strings.HasPrefix(env, "STASH_") {
+		if strings.HasPrefix(env, "CORTEXIQ_") {
 			parts := strings.SplitN(env, "=", 2)
 			if len(parts) == 2 {
 				vars = append(vars, [2]string{parts[0], parts[1]})
@@ -56,9 +60,9 @@ func getAllStashEnvVars() [][2]string {
 		}
 	}
 
-	// Include STASHCONFIG (not STASH_ prefixed but relevant)
-	if stashConfig := os.Getenv("STASHCONFIG"); stashConfig != "" {
-		vars = append(vars, [2]string{"STASHCONFIG", stashConfig})
+	// Include CORTEXIQCONFIG (not CORTEXIQ_ prefixed but relevant)
+	if configFile := os.Getenv(config.ConfigEnvVar); configFile != "" {
+		vars = append(vars, [2]string{config.ConfigEnvVar, configFile})
 	}
 
 	// Sort alphabetically for consistent output

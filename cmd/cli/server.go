@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/alash3al/stash/internal/webui"
+	"github.com/Bojanni050/cortexiq/internal/webui"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/urfave/cli/v3"
@@ -19,7 +19,7 @@ import (
 var (
 	buildInfo = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "stash_build_info",
+			Name: "cortexiq_build_info",
 			Help: "Build information, value is always 1",
 		},
 		[]string{"version"},

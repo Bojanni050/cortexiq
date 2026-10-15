@@ -31,12 +31,15 @@ func TestDecodeRecord(t *testing.T) {
 }
 
 func TestCheckHeader(t *testing.T) {
-	if err := checkHeader([]byte(`{"format":"stash-export","version":1}`)); err != nil {
-		t.Errorf("valid header rejected: %v", err)
+	// Current format and the pre-rebrand "stash-export" header are both valid.
+	for _, format := range []string{"cortexiq-export", "stash-export"} {
+		if err := checkHeader([]byte(`{"format":"` + format + `","version":1}`)); err != nil {
+			t.Errorf("valid header %q rejected: %v", format, err)
+		}
 	}
 	for name, line := range map[string]string{
 		"wrong format":   `{"format":"other","version":1}`,
-		"future version": `{"format":"stash-export","version":2}`,
+		"future version": `{"format":"cortexiq-export","version":2}`,
 		"not a header":   `{"type":"fact"}`,
 		"garbage":        `hello`,
 	} {

@@ -8,14 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alash3al/stash/internal/auth"
-	"github.com/alash3al/stash/internal/brain"
-	"github.com/alash3al/stash/internal/config"
-	"github.com/alash3al/stash/internal/db"
-	"github.com/alash3al/stash/internal/embedder"
-	"github.com/alash3al/stash/internal/observability"
-	"github.com/alash3al/stash/internal/queries"
-	"github.com/alash3al/stash/internal/reasoner"
+	"github.com/Bojanni050/cortexiq/internal/auth"
+	"github.com/Bojanni050/cortexiq/internal/brain"
+	"github.com/Bojanni050/cortexiq/internal/config"
+	"github.com/Bojanni050/cortexiq/internal/db"
+	"github.com/Bojanni050/cortexiq/internal/embedder"
+	"github.com/Bojanni050/cortexiq/internal/observability"
+	"github.com/Bojanni050/cortexiq/internal/queries"
+	"github.com/Bojanni050/cortexiq/internal/reasoner"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -134,7 +134,10 @@ func (c *Context) Close() error {
 }
 
 func loadConfig() (*config.Config, error) {
-	filename := os.Getenv("STASHCONFIG")
+	// A pre-rebrand STASHCONFIG (or STASH_* variable) still counts.
+	config.ApplyLegacyEnv()
+
+	filename := os.Getenv(config.ConfigEnvVar)
 	if filename == "" {
 		filename = ".env"
 	}

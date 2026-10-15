@@ -1,4 +1,4 @@
-# Getting Started with Stash
+# Getting Started with CortexIQ
 
 You ran `docker compose up`. Here's what to do next.
 
@@ -13,16 +13,16 @@ docker compose -f docker-compose.prod.yml up -d --build
 The explicit file is important: the default compose file is the local-development
 variant and uses different ports and database defaults.
 
-For cost protection, set `STASH_MAX_LLM_CALLS_PER_RUN=50` in the production `.env`.
+For cost protection, set `CORTEXIQ_MAX_LLM_CALLS_PER_RUN=50` in the production `.env`.
 It limits reasoner calls for one namespace consolidation; `0` means unlimited.
 Prometheus exposes `reasoner_requests_total`, `reasoner_prompt_tokens_total`,
 and `reasoner_completion_tokens_total`, each labelled by pipeline stage.
 
-## 1. Verify Stash is running
+## 1. Verify CortexIQ is running
 
 ```bash
 docker compose ps
-docker compose logs stash | tail -20
+docker compose logs cortexiq | tail -20
 ```
 
 You should see the MCP server listening on port **8080**. The SSE endpoint is:
@@ -56,20 +56,20 @@ Point any MCP-over-SSE client at `http://localhost:8080/sse`.
 ```json
 {
   "mcpServers": {
-    "stash": {
+    "cortexiq": {
       "url": "http://localhost:8080/sse"
     }
   }
 }
 ```
 
-Restart Cursor (or reload MCP). Stash should appear in your MCP tool list.
+Restart Cursor (or reload MCP). CortexIQ should appear in your MCP tool list.
 
 See [README MCP Client Setup](../README.md#mcp-client-setup) for Claude Desktop, Windsurf, and OpenCode configs.
 
 ## 3. First session workflow
 
-Once connected, ask your agent to use Stash tools in this order:
+Once connected, ask your agent to use CortexIQ tools in this order:
 
 | Step | MCP tool | What it does |
 |------|----------|--------------|
@@ -80,17 +80,17 @@ Once connected, ask your agent to use Stash tools in this order:
 
 Example prompts to your agent:
 
-- *"Call Stash `init` to set up memory namespaces."*
-- *"Use Stash `remember` to store: this project uses Stash on port 8080 with pgvector."*
-- *"Use Stash `recall` to find what you know about this project's stack."*
-- *"Run Stash `consolidate` to process recent episodes into facts."*
+- *"Call CortexIQ `init` to set up memory namespaces."*
+- *"Use CortexIQ `remember` to store: this project uses CortexIQ on port 8080 with pgvector."*
+- *"Use CortexIQ `recall` to find what you know about this project's stack."*
+- *"Run CortexIQ `consolidate` to process recent episodes into facts."*
 
 ## 4. Background consolidation
 
-When started with `mcp serve --with-consolidation` (the Docker Compose default), Stash consolidates in the background. You can also trigger manually via the `consolidate` MCP tool or CLI:
+When started with `mcp serve --with-consolidation` (the Docker Compose default), CortexIQ consolidates in the background. You can also trigger manually via the `consolidate` MCP tool or CLI:
 
 ```bash
-docker compose exec stash /stash consolidate run
+docker compose exec cortexiq /cortexiq consolidate run
 ```
 
 ## 5. Configuration checklist
@@ -99,21 +99,21 @@ If tools fail, check `.env`:
 
 | Variable | Purpose |
 |----------|---------|
-| `STASH_OPENAI_API_KEY` | Embeddings + reasoner (OpenAI, OpenRouter, or compatible) |
-| `STASH_OPENAI_BASE_URL` | API base URL |
-| `STASH_EMBEDDING_MODEL` | Must match `STASH_VECTOR_DIM` (1536 for `text-embedding-3-small`) |
-| `STASH_REASONER_MODEL` | Model used during consolidation |
+| `CORTEXIQ_OPENAI_API_KEY` | Embeddings + reasoner (OpenAI, OpenRouter, or compatible) |
+| `CORTEXIQ_OPENAI_BASE_URL` | API base URL |
+| `CORTEXIQ_EMBEDDING_MODEL` | Must match `CORTEXIQ_VECTOR_DIM` (1536 for `text-embedding-3-small`) |
+| `CORTEXIQ_REASONER_MODEL` | Model used during consolidation |
 
 **Running fully local?** See [LOCAL_OLLAMA.md](LOCAL_OLLAMA.md) — Ollama on the host, no cloud API key.
 
-**Using Atlas Cloud?** Stash already supports it through the OpenAI-compatible API:
+**Using Atlas Cloud?** CortexIQ already supports it through the OpenAI-compatible API:
 
 ```bash
-STASH_OPENAI_API_KEY=your-atlas-cloud-api-key
-STASH_OPENAI_BASE_URL=https://api.atlascloud.ai/v1
-STASH_EMBEDDING_MODEL=text-embedding-3-small
-STASH_REASONER_MODEL=deepseek-ai/DeepSeek-V3-0324
-STASH_VECTOR_DIM=1536
+CORTEXIQ_OPENAI_API_KEY=your-atlas-cloud-api-key
+CORTEXIQ_OPENAI_BASE_URL=https://api.atlascloud.ai/v1
+CORTEXIQ_EMBEDDING_MODEL=text-embedding-3-small
+CORTEXIQ_REASONER_MODEL=deepseek-ai/DeepSeek-V3-0324
+CORTEXIQ_VECTOR_DIM=1536
 ```
 
 Atlas Cloud docs: [https://www.atlascloud.ai/docs](https://www.atlascloud.ai/docs)
@@ -133,11 +133,11 @@ Atlas Cloud docs: [https://www.atlascloud.ai/docs](https://www.atlascloud.ai/doc
 **Consolidation does nothing**
 
 - Needs episodes via `remember` first.
-- Check logs: `docker compose logs stash`.
+- Check logs: `docker compose logs cortexiq`.
 
 **Provider returns auth or model errors**
 
-- Confirm `STASH_OPENAI_BASE_URL` points to the correct provider endpoint.
+- Confirm `CORTEXIQ_OPENAI_BASE_URL` points to the correct provider endpoint.
 - Confirm the embedding and reasoner model names match what your provider exposes.
 - Atlas Cloud users should use `https://api.atlascloud.ai/v1` and a valid API key.
 

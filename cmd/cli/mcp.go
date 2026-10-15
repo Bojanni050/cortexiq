@@ -18,10 +18,11 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/alash3al/stash/internal/auth"
-	"github.com/alash3al/stash/internal/bootstrap"
-	"github.com/alash3al/stash/internal/brain"
-	"github.com/alash3al/stash/internal/scope"
+	"github.com/Bojanni050/cortexiq/internal/auth"
+	"github.com/Bojanni050/cortexiq/internal/bootstrap"
+	"github.com/Bojanni050/cortexiq/internal/brain"
+	"github.com/Bojanni050/cortexiq/internal/config"
+	"github.com/Bojanni050/cortexiq/internal/scope"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/urfave/cli/v3"
@@ -49,7 +50,15 @@ func render(name string) string {
 }
 
 func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
-	mcpServer := server.NewMCPServer("stash", "0.2.8",
+	// MCP clients namespace tools by server name. The pre-rebrand name can be
+	// restored with CORTEXIQ_MCP_SERVER_NAME=stash so existing client configs
+	// keep resolving.
+	name := os.Getenv(config.EnvPrefix + "MCP_SERVER_NAME")
+	if name == "" {
+		name = "cortexiq"
+	}
+
+	mcpServer := server.NewMCPServer(name, "0.2.8",
 		server.WithToolCapabilities(true),
 		server.WithDescription(render("server_description")),
 	)

@@ -2,85 +2,140 @@ package config
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
 )
 
+// CortexIQ was released as "Stash" before the rebrand. Every knob therefore has
+// two accepted names: CORTEXIQ_* (current) and STASH_* (legacy). The current
+// name always wins; ApplyLegacyEnv copies a legacy value into its current
+// counterpart only when that counterpart is unset, so existing .env files and
+// deployments keep working unchanged.
+const (
+	EnvPrefix       = "CORTEXIQ_"
+	LegacyEnvPrefix = "STASH_"
+	ConfigEnvVar    = "CORTEXIQCONFIG"
+	LegacyConfigVar = "STASHCONFIG"
+)
+
+// ApplyLegacyEnv mirrors legacy STASH_* variables (and STASHCONFIG) onto their
+// CORTEXIQ_* counterparts. It is idempotent and safe to call more than once.
+func ApplyLegacyEnv() {
+	for _, pair := range legacyEnvPairs(os.Environ()) {
+		os.Setenv(pair[0], pair[1])
+	}
+}
+
+// legacyEnvPairs returns the CORTEXIQ_* variables that have to be set for the
+// legacy STASH_* names in environ. A name is mirrored only when its current
+// counterpart is unset or empty, so a real CORTEXIQ_* value always wins.
+func legacyEnvPairs(environ []string) [][2]string {
+	current := make(map[string]string, len(environ))
+	for _, kv := range environ {
+		if name, value, ok := strings.Cut(kv, "="); ok {
+			current[name] = value
+		}
+	}
+
+	var pairs [][2]string
+	for _, kv := range environ {
+		name, value, ok := strings.Cut(kv, "=")
+		if !ok || value == "" {
+			continue
+		}
+
+		switch {
+		case strings.HasPrefix(name, LegacyEnvPrefix):
+			target := EnvPrefix + strings.TrimPrefix(name, LegacyEnvPrefix)
+			if current[target] == "" {
+				pairs = append(pairs, [2]string{target, value})
+			}
+		case name == LegacyConfigVar && current[ConfigEnvVar] == "":
+			pairs = append(pairs, [2]string{ConfigEnvVar, value})
+		}
+	}
+	return pairs
+}
+
 type Config struct {
 	// Store (PostgreSQL only)
-	StoreDSN      string `env:"STASH_POSTGRES_DSN,required"`
-	VectorDim     int    `env:"STASH_VECTOR_DIM,required"`
-	MaxResultSize int    `env:"STASH_MAX_RESULT_SIZE,required"`
+	StoreDSN      string `env:"CORTEXIQ_POSTGRES_DSN,required"`
+	VectorDim     int    `env:"CORTEXIQ_VECTOR_DIM,required"`
+	MaxResultSize int    `env:"CORTEXIQ_MAX_RESULT_SIZE,required"`
 
 	// OpenAI (embeddings + reasoning)
-	OpenAIAPIKey   string `env:"STASH_OPENAI_API_KEY,required"`
-	OpenAIBaseURL  string `env:"STASH_OPENAI_BASE_URL,required"`
-	EmbeddingModel string `env:"STASH_EMBEDDING_MODEL,required"`
-	ReasonerModel  string `env:"STASH_REASONER_MODEL,required"`
+	OpenAIAPIKey   string `env:"CORTEXIQ_OPENAI_API_KEY,required"`
+	OpenAIBaseURL  string `env:"CORTEXIQ_OPENAI_BASE_URL,required"`
+	EmbeddingModel string `env:"CORTEXIQ_EMBEDDING_MODEL,required"`
+	ReasonerModel  string `env:"CORTEXIQ_REASONER_MODEL,required"`
 
 	// Reasoner request tuning. MaxTokens caps output tokens per call (0 =
 	// unlimited); it guards against verbose/reasoning models burning output
 	// tokens during JSON extraction. JSONMode requests a native JSON response
 	// (response_format=json_object) where the provider/model supports it.
-	ReasonerMaxTokens int  `env:"STASH_REASONER_MAX_TOKENS" envDefault:"1024"`
-	ReasonerJSONMode  bool `env:"STASH_REASONER_JSON_MODE" envDefault:"false"`
+	ReasonerMaxTokens int  `env:"CORTEXIQ_REASONER_MAX_TOKENS" envDefault:"1024"`
+	ReasonerJSONMode  bool `env:"CORTEXIQ_REASONER_JSON_MODE" envDefault:"false"`
 
 	// ModelPrices feeds the cost estimate: "model=input:output,..." per million
 	// tokens. Empty disables cost accounting; token metrics still work.
-	ModelPrices string `env:"STASH_MODEL_PRICES" envDefault:""`
+	ModelPrices string `env:"CORTEXIQ_MODEL_PRICES" envDefault:""`
 
 	// Optional overrides so embeddings can use a different endpoint (e.g. a local
 	// Ollama) than the reasoner. Fall back to the OpenAI settings above when empty.
 	// The `envDefault:""` is what keeps them optional: config parsing runs with
 	// RequiredIfNoDef, so a field with no default would otherwise be required —
 	// which is exactly what made Stash refuse to start without them.
-	EmbeddingBaseURL string `env:"STASH_EMBEDDING_BASE_URL" envDefault:""`
-	EmbeddingAPIKey  string `env:"STASH_EMBEDDING_API_KEY" envDefault:""`
+	EmbeddingBaseURL string `env:"CORTEXIQ_EMBEDDING_BASE_URL" envDefault:""`
+	EmbeddingAPIKey  string `env:"CORTEXIQ_EMBEDDING_API_KEY" envDefault:""`
 
 	// Memory
-	ContextTTL time.Duration `env:"STASH_CONTEXT_TTL,required"`
+	ContextTTL time.Duration `env:"CORTEXIQ_CONTEXT_TTL,required"`
 
 	// Server
 	// APIToken, when set, is required as a Bearer token on the dashboard API
 	// (/api/v1). Empty keeps the API open. `envDefault:""` keeps it optional.
-	APIToken string `env:"STASH_API_TOKEN" envDefault:""`
+	APIToken string `env:"CORTEXIQ_API_TOKEN" envDefault:""`
 	// APITokens is a JSON array of {name, token, scope, namespaces}. When set it
 	// replaces APIToken and lets each caller be scoped (ro/rw, namespace
 	// allowlist).
-	APITokens string `env:"STASH_API_TOKENS" envDefault:""`
-	HTTPAddr  string `env:"STASH_HTTP_ADDR,required"`
-	LogLevel  string `env:"STASH_LOG_LEVEL,required"`
-	LogFormat string `env:"STASH_LOG_FORMAT,required"`
+	APITokens string `env:"CORTEXIQ_API_TOKENS" envDefault:""`
+	HTTPAddr  string `env:"CORTEXIQ_HTTP_ADDR,required"`
+	LogLevel  string `env:"CORTEXIQ_LOG_LEVEL,required"`
+	LogFormat string `env:"CORTEXIQ_LOG_FORMAT,required"`
 
 	// Consolidation
-	ConsolidationBatchSize           int     `env:"STASH_CONSOLIDATION_BATCH_SIZE" envDefault:"100"`
-	ConsolidationSimilarityThreshold float64 `env:"STASH_CONSOLIDATION_SIMILARITY_THRESHOLD" envDefault:"0.85"`
-	ConsolidationDedupThreshold      float64 `env:"STASH_CONSOLIDATION_DEDUP_THRESHOLD" envDefault:"0.85"`
+	ConsolidationBatchSize           int     `env:"CORTEXIQ_CONSOLIDATION_BATCH_SIZE" envDefault:"100"`
+	ConsolidationSimilarityThreshold float64 `env:"CORTEXIQ_CONSOLIDATION_SIMILARITY_THRESHOLD" envDefault:"0.85"`
+	ConsolidationDedupThreshold      float64 `env:"CORTEXIQ_CONSOLIDATION_DEDUP_THRESHOLD" envDefault:"0.85"`
 	// From this similarity up to the dedup threshold the LLM decides whether a new
 	// fact is a rewording/translation of its nearest neighbour (0 = off).
-	ConsolidationDedupReviewThreshold float64 `env:"STASH_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD" envDefault:"0.80"`
-	ConsolidationWindow               string  `env:"STASH_CONSOLIDATION_WINDOW" envDefault:"168h"`
+	ConsolidationDedupReviewThreshold float64 `env:"CORTEXIQ_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD" envDefault:"0.80"`
+	ConsolidationWindow               string  `env:"CORTEXIQ_CONSOLIDATION_WINDOW" envDefault:"168h"`
 	// HybridRecall adds full-text search to recall (fused with the vector ranking).
-	HybridRecall bool `env:"STASH_HYBRID_RECALL" envDefault:"true"`
+	HybridRecall bool `env:"CORTEXIQ_HYBRID_RECALL" envDefault:"true"`
 	// RecallMinSimilarity drops vector-only recall results below this cosine
 	// similarity (results confirmed by keyword search always stay). 0 = off. The
 	// right value depends on the embedding model: measure relevant vs irrelevant
 	// queries first (bge-m3 separates around 0.40).
-	RecallMinSimilarity float32 `env:"STASH_RECALL_MIN_SIMILARITY" envDefault:"0"`
+	RecallMinSimilarity float32 `env:"CORTEXIQ_RECALL_MIN_SIMILARITY" envDefault:"0"`
 	// RelationshipBatchSize facts are sent per relationship-extraction LLM call.
-	// Keep it modest: the reply must fit in STASH_REASONER_MAX_TOKENS.
-	RelationshipBatchSize int `env:"STASH_RELATIONSHIP_BATCH_SIZE" envDefault:"5"`
+	// Keep it modest: the reply must fit in CORTEXIQ_REASONER_MAX_TOKENS.
+	RelationshipBatchSize int `env:"CORTEXIQ_RELATIONSHIP_BATCH_SIZE" envDefault:"5"`
 	// MaxLLMCallsPerRun hard-limits reasoner API calls in one namespace
 	// consolidation. 0 disables the limit.
-	MaxLLMCallsPerRun              int     `env:"STASH_MAX_LLM_CALLS_PER_RUN" envDefault:"0"`
-	DecayFactor                    float64 `env:"STASH_DECAY_FACTOR" envDefault:"0.95"`
-	ExpiryThreshold                float32 `env:"STASH_EXPIRY_THRESHOLD" envDefault:"0.1"`
-	HypothesisAutoConfirmThreshold float32 `env:"STASH_HYPOTHESIS_AUTO_CONFIRM_THRESHOLD" envDefault:"0.9"`
-	HypothesisAutoRejectThreshold  float32 `env:"STASH_HYPOTHESIS_AUTO_REJECT_THRESHOLD" envDefault:"0.9"`
+	MaxLLMCallsPerRun              int     `env:"CORTEXIQ_MAX_LLM_CALLS_PER_RUN" envDefault:"0"`
+	DecayFactor                    float64 `env:"CORTEXIQ_DECAY_FACTOR" envDefault:"0.95"`
+	ExpiryThreshold                float32 `env:"CORTEXIQ_EXPIRY_THRESHOLD" envDefault:"0.1"`
+	HypothesisAutoConfirmThreshold float32 `env:"CORTEXIQ_HYPOTHESIS_AUTO_CONFIRM_THRESHOLD" envDefault:"0.9"`
+	HypothesisAutoRejectThreshold  float32 `env:"CORTEXIQ_HYPOTHESIS_AUTO_REJECT_THRESHOLD" envDefault:"0.9"`
 }
 
+// NewFromFile loads filename into the process environment (if it exists) and
+// parses the configuration from it. Legacy STASH_* names are mirrored onto
+// their CORTEXIQ_* counterparts first, so pre-rebrand .env files keep working.
 func NewFromFile(filename string) (*Config, error) {
 	if _, err := os.Stat(filename); err == nil {
 		if err := godotenv.Load(filename); err != nil {
@@ -89,6 +144,8 @@ func NewFromFile(filename string) (*Config, error) {
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
+
+	ApplyLegacyEnv()
 
 	cfg := &Config{}
 	opts := env.Options{

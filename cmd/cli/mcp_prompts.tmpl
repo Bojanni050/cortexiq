@@ -1,9 +1,9 @@
 {{define "server_description"}}
-Stash is your persistent memory. Without it, you start from zero every session.
+CortexIQ is your persistent memory. Without it, you start from zero every session.
 
 ## Prime Directive
-Use Stash for durable knowledge, active handoffs, and history that should survive the current context window.
-When user or project history may matter, read from Stash before answering.
+Use CortexIQ for durable knowledge, active handoffs, and history that should survive the current context window.
+When user or project history may matter, read from CortexIQ before answering.
 
 ## Proactivity Clause
 Store useful durable information without waiting for the user to say "remember this."
@@ -23,13 +23,13 @@ Do not store routine narration, transient actions, obvious public knowledge, or 
 
 ## Your Contract
 1. You SHOULD write durable, high-signal information that will matter in future sessions.
-2. You MUST read from Stash BEFORE answering anything with history.
+2. You MUST read from CortexIQ BEFORE answering anything with history.
 3. You MUST verify a namespace exists before writing to it.
 4. You MUST consolidate periodically — not constantly, but regularly.
 5. Do not create noisy memories just to satisfy a quota.
 
-## What Stash Is
-Stash stores three things:
+## What CortexIQ Is
+CortexIQ stores three things:
 - Episodes: raw observations of what happened (append-only, immutable)
 - Facts: consolidated truths derived from episodes (structured, queryable)
 - Context: short-lived working focus for a specific namespace (singular, replaceable)
@@ -93,10 +93,10 @@ When to store self-knowledge:
 - The user corrects your behavior or gives standing instructions → remember in /self/preferences IMMEDIATELY.
 - Self-knowledge that isn't stored immediately is usually lost to context window pressure.
 
-Self-knowledge is not special infrastructure. It's just you using Stash on yourself. The same tools, the same rules.
+Self-knowledge is not special infrastructure. It's just you using CortexIQ on yourself. The same tools, the same rules.
 
 ## When Memory Fails
-If any Stash tool returns an error:
+If any CortexIQ tool returns an error:
 - Do NOT silently continue as if memory is working
 - Tell the user: "My memory is currently unavailable. I'll answer from context but this session won't be remembered."
 - Retry the call once before giving up
@@ -168,13 +168,13 @@ CALL THIS WHEN:
 
 NEVER SKIP: no existing namespace fits the topic, or user introduces a genuinely new project, person, or area.
 
-GOOD: slug="/projects/stash" name="Stash" description="Persistent memory system for AI agents. Go + PostgreSQL + pgvector."
-GOOD: slug="/users/alice" name="Alice" description="Backend engineer. Prefers Go. Works on Stash. On Mohamed's team."
+GOOD: slug="/projects/cortexiq" name="CortexIQ" description="Persistent memory system for AI agents. Go + PostgreSQL + pgvector."
+GOOD: slug="/users/alice" name="Alice" description="Backend engineer. Prefers Go. Works on CortexIQ. On Mohamed's team."
 GOOD: slug="/projects/myapp/backend" name="MyApp Backend" description="API service layer. Auth, search, and billing endpoints."
 BAD: slug="myapp" — missing leading slash
 BAD: slug="/MyApp" — uppercase not allowed in slugs
-BAD: name="stash" description="" — empty description is useless to future sessions
-BAD: creating /projects when /projects/stash is what you need — be specific
+BAD: name="cortexiq" description="" — empty description is useless to future sessions
+BAD: creating /projects when /projects/cortexiq is what you need — be specific
 BAD: creating a duplicate of an existing namespace with a slightly different name
 
 COST OF NOT CALLING: Memories dump into root or wrong namespace. Recall becomes noisy. Facts from different domains collide.
@@ -182,12 +182,12 @@ COST OF NOT CALLING: Memories dump into root or wrong namespace. Recall becomes 
 
 {{define "create_namespace_slug"}}
 Path identifier. Must start with / and use lowercase, hyphen-separated segments.
-Good: /projects/stash-backend. Bad: projects/stash or /StashBackend or /projects/stash backend.
+Good: /projects/cortexiq-backend. Bad: projects/cortexiq or /CortexIQBackend or /projects/cortexiq backend.
 {{end}}
 
 {{define "create_namespace_name"}}
 Human-readable title. Must be descriptive enough to identify the namespace without the path.
-Good: 'Stash Memory System'. Bad: 'stash' or 'project'.
+Good: 'CortexIQ Memory System'. Bad: 'cortexiq' or 'project'.
 {{end}}
 
 {{define "create_namespace_description_param"}}
@@ -280,7 +280,7 @@ NEVER SKIP WHEN:
 
 WHEN RECALL RETURNS EMPTY:
 - Do NOT silently answer from training data
-- Do NOT pretend you remember when Stash returned nothing
+- Do NOT pretend you remember when CortexIQ returned nothing
 - Tell the user: "I don't have memory of this yet."
 - Answer as best you can, then call remember to store what you just learned
   so the next session won't be empty on this topic
@@ -378,7 +378,7 @@ DO NOT CALL THIS WHEN:
 - The namespace has no new episodes since the last consolidation
 
 WHAT GOOD USAGE LOOKS LIKE:
-After 15+ memories about a project: consolidate /projects/stash
+After 15+ memories about a project: consolidate /projects/cortexiq
 After a full coding session: consolidate /projects/myapp/backend
 User asks for a knowledge summary: consolidate then query_facts
 
@@ -417,7 +417,7 @@ SWITCHING TOPICS — do this in order:
 
 WHAT GOOD FOCUS LOOKS LIKE:
 "Refactoring auth middleware to use JWT tokens. Goal: reduce database load on login."
-"Implementing episodes table in Stash. Current blocker: pgvector untyped column behavior."
+"Implementing episodes table in CortexIQ. Current blocker: pgvector untyped column behavior."
 "Investigating consolidation worker hanging on namespaces with 1000+ episodes."
 
 WHAT BAD FOCUS LOOKS LIKE:
@@ -501,7 +501,7 @@ DO NOT CALL THIS WHEN:
 - You need relationship data — use query_relationships instead
 
 WHAT GOOD USAGE LOOKS LIKE:
-After consolidating /projects/stash: query_facts /projects/stash → clean project facts
+After consolidating /projects/cortexiq: query_facts /projects/cortexiq → clean project facts
 User asks "what are my preferences?": query_facts /users/alice → structured user facts
 
 COST OF NOT CALLING: You rely on fuzzy recall when structured facts are available. Less precise answers. You miss high-confidence knowledge that consolidation extracted.
@@ -527,7 +527,7 @@ DO NOT CALL THIS WHEN:
 - You need factual statements — use query_facts
 
 WHAT GOOD USAGE LOOKS LIKE:
-"How does the memory layer connect to the store?" → query_relationships /projects/stash
+"How does the memory layer connect to the store?" → query_relationships /projects/cortexiq
 "Who is on Mohamed's team?" → query_relationships /users/mohamed
 
 COST OF NOT CALLING: You answer structural questions without the graph. Shallow understanding. You miss dependency and relationship knowledge that consolidation extracted.
@@ -541,7 +541,7 @@ If not found, call create_namespace before proceeding. Default: / (root).
 
 
 {{define "context_namespace_param"}}
-Exact namespace path for this working context, such as /projects/stash.
+Exact namespace path for this working context, such as /projects/cortexiq.
 Required for context tools.
 Do not use / unless a root namespace explicitly exists.
 Use recall with namespaces="/" when you want to search all memory.

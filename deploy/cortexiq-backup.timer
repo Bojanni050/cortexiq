@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily Stash Postgres backup
+Description=Daily CortexIQ Postgres backup
 
 [Timer]
 # Daily at 03:30 local time; Persistent=true catches up a missed run after reboot.

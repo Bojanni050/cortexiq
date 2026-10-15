@@ -1,7 +1,7 @@
 # Binaries
-/stash
+/cortexiq
 /cli
-stash-*
+cortexiq-*
 
 # Environment files
 .env
@@ -19,9 +19,9 @@ stash-*
 .DS_Store
 Thumbs.db
 
-# systemd units (the general stash-* rule above would otherwise hide these)
-!deploy/stash-backup.service
-!deploy/stash-backup.timer
+# systemd units (the general cortexiq-* rule above would otherwise hide these)
+!deploy/cortexiq-backup.service
+!deploy/cortexiq-backup.timer
 
 # Test coverage
 coverage.txt

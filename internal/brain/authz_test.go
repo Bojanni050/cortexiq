@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/alash3al/stash/internal/scope"
+	"github.com/Bojanni050/cortexiq/internal/scope"
 )
 
 func TestAuthorizeHelpers(t *testing.T) {

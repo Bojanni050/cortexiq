@@ -1,4 +1,4 @@
-module github.com/alash3al/stash
+module github.com/Bojanni050/cortexiq
 
 go 1.25.5
 

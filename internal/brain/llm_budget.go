@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/alash3al/stash/internal/models"
-	"github.com/alash3al/stash/internal/reasoner"
+	"github.com/Bojanni050/cortexiq/internal/models"
+	"github.com/Bojanni050/cortexiq/internal/reasoner"
 )
 
 type llmBudgetKey struct{}

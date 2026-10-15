@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alash3al/stash/internal/auth"
-	"github.com/alash3al/stash/internal/brain"
-	"github.com/alash3al/stash/internal/models"
-	"github.com/alash3al/stash/internal/scope"
+	"github.com/Bojanni050/cortexiq/internal/auth"
+	"github.com/Bojanni050/cortexiq/internal/brain"
+	"github.com/Bojanni050/cortexiq/internal/models"
+	"github.com/Bojanni050/cortexiq/internal/scope"
 )
 
 //go:embed static/index.html

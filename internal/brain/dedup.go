@@ -79,7 +79,7 @@ func (b *Brain) findDuplicate(ctx context.Context, nsID int64, vec []float32, su
 	return 0, false, 0, nil
 }
 
-// namespaceSubject names what a namespace is about ("Stash"), so a synthesized fact
+// namespaceSubject names what a namespace is about ("CortexIQ"), so a synthesized fact
 // can name its project instead of saying "the system". It is only context for the
 // LLM. It is deliberately just the NAME: a description is free text, and models
 // turned statements from it into "facts" that no episode ever stated.

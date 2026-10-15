@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/alash3al/stash/internal/models"
-	"github.com/alash3al/stash/internal/observability"
+	"github.com/Bojanni050/cortexiq/internal/models"
+	"github.com/Bojanni050/cortexiq/internal/observability"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/shared"
@@ -215,7 +215,7 @@ Output ONLY a JSON array. Each element is one fact:
 Rules:
 - Output ONE fact for EACH distinct claim or topic in the Events. Two topics in the Events means two facts. Never merge separate topics into one fact, and never drop one.
 - Do NOT split a single claim into pieces, and do not repeat the same information in two facts. At most %d facts.
-- Every summary MUST be understandable on its own, without the Events and without knowing the conversation: name the project, product or subject explicitly (e.g. "Stash", "Chronicle-Gaia"). Never use "the system", "the plugin", "the app", "it" or "this" as the subject.
+- Every summary MUST be understandable on its own, without the Events and without knowing the conversation: name the project, product or subject explicitly (e.g. "CortexIQ", "Chronicle-Gaia"). Never use "the system", "the plugin", "the app", "it" or "this" as the subject.
 - If the Events contain no durable information worth remembering (small talk, a status update without outcome, an action without subject or result, a bare question), output an empty array: []
 - Every summary MUST be specific and detailed. Do NOT echo, quote, or closely paraphrase a single Event sentence; rewrite in your own words.
 - Remove first-person markers ("I", "my", "we") — state facts about subjects, not the narrator.
@@ -226,17 +226,17 @@ Rules:
 - The entity should be the most specific subject (e.g., "pgxpool" not "the system").
 
 BAD example (vague — DO NOT do this):
-[{"entity": "Stash", "property": "components", "value": "various functionalities", "summary": "Stash comprises various components for different functionalities."}]
+[{"entity": "CortexIQ", "property": "components", "value": "various functionalities", "summary": "CortexIQ comprises various components for different functionalities."}]
 
 BAD example (verbatim copy — DO NOT do this):
-[{"entity": "I", "property": "currently_testing", "value": "the Stash memory system", "summary": "I am currently testing the Stash memory system."}]
+[{"entity": "I", "property": "currently_testing", "value": "the CortexIQ memory system", "summary": "I am currently testing the CortexIQ memory system."}]
 
 BAD example (not self-contained — DO NOT do this):
 [{"entity": "plugin", "property": "option", "value": "pastReference", "summary": "The plugin gained a pastReference option that enables recall."}]
 
 GOOD example (two topics in the Events become two specific facts):
-[{"entity": "Stash", "property": "database", "value": "PostgreSQL with pgvector", "summary": "Stash uses PostgreSQL with pgvector extension for vector storage and HNSW indexes."},
- {"entity": "Stash", "property": "consolidation interval", "value": "5 minutes", "summary": "Stash runs background consolidation every 5 minutes with at most 100 episodes per run."}]`, subjectBlock, eventsList, maxFactsPerCall)
+[{"entity": "CortexIQ", "property": "database", "value": "PostgreSQL with pgvector", "summary": "CortexIQ uses PostgreSQL with pgvector extension for vector storage and HNSW indexes."},
+ {"entity": "CortexIQ", "property": "consolidation interval", "value": "5 minutes", "summary": "CortexIQ runs background consolidation every 5 minutes with at most 100 episodes per run."}]`, subjectBlock, eventsList, maxFactsPerCall)
 }
 
 // parseStructuredFacts reads the model output into facts. It accepts the requested

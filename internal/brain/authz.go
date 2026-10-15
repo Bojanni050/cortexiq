@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/alash3al/stash/internal/scope"
+	"github.com/Bojanni050/cortexiq/internal/scope"
 )
 
 var (

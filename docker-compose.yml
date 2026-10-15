@@ -3,19 +3,19 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: stash
-      POSTGRES_USER: stash
-      POSTGRES_PASSWORD: stash_dev_password
+      POSTGRES_DB: cortexiq
+      POSTGRES_USER: cortexiq
+      POSTGRES_PASSWORD: cortexiq_dev_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U stash"]
+      test: ["CMD-SHELL", "pg_isready -U cortexiq"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Stash: MCP server + HTTP (dashboard + metrics) + background consolidation
-  stash:
+  # CortexIQ: MCP server + HTTP (dashboard + metrics) + background consolidation
+  cortexiq:
     build: .
     command: ["serve", "--http-host", "0.0.0.0", "--http-port", "9090", "--mcp-host", "0.0.0.0", "--mcp-port", "8080"]
     ports:
@@ -23,42 +23,42 @@ services:
       - "9090:9090" # web dashboard at /ui, plus /metrics, /healthz, /readyz
     environment:
       # Required
-      STASH_POSTGRES_DSN: postgresql://stash:stash_dev_password@postgres:5432/stash?sslmode=disable
-      STASH_VECTOR_DIM: 1536
-      STASH_MAX_RESULT_SIZE: 10000
-      STASH_OPENAI_API_KEY: ${STASH_OPENAI_API_KEY}
-      STASH_OPENAI_BASE_URL: ${STASH_OPENAI_BASE_URL}
-      STASH_EMBEDDING_MODEL: ${STASH_EMBEDDING_MODEL}
+      CORTEXIQ_POSTGRES_DSN: postgresql://cortexiq:cortexiq_dev_password@postgres:5432/cortexiq?sslmode=disable
+      CORTEXIQ_VECTOR_DIM: 1536
+      CORTEXIQ_MAX_RESULT_SIZE: 10000
+      CORTEXIQ_OPENAI_API_KEY: ${CORTEXIQ_OPENAI_API_KEY}
+      CORTEXIQ_OPENAI_BASE_URL: ${CORTEXIQ_OPENAI_BASE_URL}
+      CORTEXIQ_EMBEDDING_MODEL: ${CORTEXIQ_EMBEDDING_MODEL}
       # Optional embedding overrides (fall back to the OpenAI settings when empty)
-      STASH_EMBEDDING_BASE_URL: ${STASH_EMBEDDING_BASE_URL:-}
-      STASH_EMBEDDING_API_KEY: ${STASH_EMBEDDING_API_KEY:-}
-      STASH_REASONER_MODEL: ${STASH_REASONER_MODEL}
-      STASH_REASONER_MAX_TOKENS: ${STASH_REASONER_MAX_TOKENS:-1024}
-      STASH_REASONER_JSON_MODE: ${STASH_REASONER_JSON_MODE:-false}
-      STASH_MODEL_PRICES: ${STASH_MODEL_PRICES:-}
-      STASH_CONTEXT_TTL: 1h
-      STASH_HTTP_ADDR: :9090
-      STASH_API_TOKEN: ${STASH_API_TOKEN:-}
-      STASH_API_TOKENS: ${STASH_API_TOKENS:-}
-      STASH_LOG_LEVEL: info
-      STASH_LOG_FORMAT: text
+      CORTEXIQ_EMBEDDING_BASE_URL: ${CORTEXIQ_EMBEDDING_BASE_URL:-}
+      CORTEXIQ_EMBEDDING_API_KEY: ${CORTEXIQ_EMBEDDING_API_KEY:-}
+      CORTEXIQ_REASONER_MODEL: ${CORTEXIQ_REASONER_MODEL}
+      CORTEXIQ_REASONER_MAX_TOKENS: ${CORTEXIQ_REASONER_MAX_TOKENS:-1024}
+      CORTEXIQ_REASONER_JSON_MODE: ${CORTEXIQ_REASONER_JSON_MODE:-false}
+      CORTEXIQ_MODEL_PRICES: ${CORTEXIQ_MODEL_PRICES:-}
+      CORTEXIQ_CONTEXT_TTL: 1h
+      CORTEXIQ_HTTP_ADDR: :9090
+      CORTEXIQ_API_TOKEN: ${CORTEXIQ_API_TOKEN:-}
+      CORTEXIQ_API_TOKENS: ${CORTEXIQ_API_TOKENS:-}
+      CORTEXIQ_LOG_LEVEL: info
+      CORTEXIQ_LOG_FORMAT: text
       # Optional consolidation configs
-      STASH_CONSOLIDATION_BATCH_SIZE: 100
-      STASH_RECALL_MIN_SIMILARITY: ${STASH_RECALL_MIN_SIMILARITY:-0}
-      STASH_HYBRID_RECALL: ${STASH_HYBRID_RECALL:-true}
-      STASH_RELATIONSHIP_BATCH_SIZE: ${STASH_RELATIONSHIP_BATCH_SIZE:-5}
-      STASH_MAX_LLM_CALLS_PER_RUN: ${STASH_MAX_LLM_CALLS_PER_RUN:-0}
-      STASH_CONSOLIDATION_SIMILARITY_THRESHOLD: 0.85
-      STASH_CONSOLIDATION_DEDUP_THRESHOLD: ${STASH_CONSOLIDATION_DEDUP_THRESHOLD:-0.90}
-      STASH_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD: ${STASH_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD:-0.80}
-      STASH_CONSOLIDATION_WINDOW: 168h
-      STASH_DECAY_FACTOR: 0.95
-      STASH_EXPIRY_THRESHOLD: 0.1
+      CORTEXIQ_CONSOLIDATION_BATCH_SIZE: 100
+      CORTEXIQ_RECALL_MIN_SIMILARITY: ${CORTEXIQ_RECALL_MIN_SIMILARITY:-0}
+      CORTEXIQ_HYBRID_RECALL: ${CORTEXIQ_HYBRID_RECALL:-true}
+      CORTEXIQ_RELATIONSHIP_BATCH_SIZE: ${CORTEXIQ_RELATIONSHIP_BATCH_SIZE:-5}
+      CORTEXIQ_MAX_LLM_CALLS_PER_RUN: ${CORTEXIQ_MAX_LLM_CALLS_PER_RUN:-0}
+      CORTEXIQ_CONSOLIDATION_SIMILARITY_THRESHOLD: 0.85
+      CORTEXIQ_CONSOLIDATION_DEDUP_THRESHOLD: ${CORTEXIQ_CONSOLIDATION_DEDUP_THRESHOLD:-0.90}
+      CORTEXIQ_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD: ${CORTEXIQ_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD:-0.80}
+      CORTEXIQ_CONSOLIDATION_WINDOW: 168h
+      CORTEXIQ_DECAY_FACTOR: 0.95
+      CORTEXIQ_EXPIRY_THRESHOLD: 0.1
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "/stash", "env"]
+      test: ["CMD", "/cortexiq", "env"]
       interval: 30s
       timeout: 10s
       retries: 3

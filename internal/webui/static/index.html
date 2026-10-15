@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stash Dashboard</title>
+<title>CortexIQ Dashboard</title>
 <style>
 :root {
   --bg: #0b0e14; --bg-2: #0f131b; --panel: #131824; --panel-2: #181e2c; --border: #232b3d; --border-2: #2d374d;
@@ -143,7 +143,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top
 <body>
 <div class="app">
   <aside>
-    <div class="brand"><div class="logo">S</div><div><b>Stash</b><small>agent memory</small></div></div>
+    <div class="brand"><div class="logo">C</div><div><b>CortexIQ</b><small>agent memory</small></div></div>
     <div>
       <div class="label">Namespace</div>
       <select id="ns-select" onchange="state.ns=this.value;refresh()"></select>
@@ -211,9 +211,24 @@ function toast(msg, err) {
   clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500);
 }
 
+const TOKEN_KEY = 'cortexiq_token';
+// Tokens saved before the rebrand live under the old key; keep reading it so an
+// upgrade does not log anyone out, and copy it over the first time.
+const LEGACY_TOKEN_KEY = 'stash_token';
+
+function readToken() {
+  try {
+    let t = localStorage.getItem(TOKEN_KEY);
+    if (!t) {
+      t = localStorage.getItem(LEGACY_TOKEN_KEY);
+      if (t) localStorage.setItem(TOKEN_KEY, t);
+    }
+    return t || '';
+  } catch (e) { return ''; }
+}
+
 function authHeaders() {
-  let t = '';
-  try { t = localStorage.getItem('stash_token') || ''; } catch (e) {}
+  const t = readToken();
   return t ? {'Authorization': 'Bearer ' + t} : {};
 }
 async function api(path, opts, retried) {
@@ -222,9 +237,9 @@ async function api(path, opts, retried) {
     headers: Object.assign({'Content-Type': 'application/json'}, authHeaders(), opts.headers || {})
   }));
   if (res.status === 401 && !retried) {
-    const t = prompt('This Stash server requires an API token (STASH_API_TOKEN):');
+    const t = prompt('This CortexIQ server requires an API token (CORTEXIQ_API_TOKEN):');
     if (t) {
-      try { localStorage.setItem('stash_token', t.trim()); } catch (e) {}
+      try { localStorage.setItem(TOKEN_KEY, t.trim()); } catch (e) {}
       return api(path, opts, true);
     }
   }
@@ -628,7 +643,7 @@ async function renderMetrics() {
   const costRows = [...byStage.entries()].sort((a, b) => b[1] - a[1])
     .map(([stage, v]) => `<tr><td class="mono">${esc(stage)}</td><td class="mono">${money(v)}</td></tr>`);
   const hint = unpriced > 0
-    ? `<div class="muted">${unpriced.toLocaleString()} call(s) used a model without a configured price — set STASH_MODEL_PRICES to price them.</div>` : '';
+    ? `<div class="muted">${unpriced.toLocaleString()} call(s) used a model without a configured price — set CORTEXIQ_MODEL_PRICES to price them.</div>` : '';
   document.getElementById('content').innerHTML =
     `<div class="stats">
       ${stat('metrics', 'var(--green)', money(cost), 'Estimated reasoner cost')}

@@ -29,7 +29,7 @@ ARG TARGETARCH
 # -ldflags="-s -w" strips debug info for a smaller binary.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -ldflags="-s -w" \
-    -o /out/stash \
+    -o /out/cortexiq \
     ./cmd/cli/
 
 # ------------------------------------------
@@ -44,11 +44,11 @@ FROM gcr.io/distroless/static:nonroot
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 # Copy the static binary.
-COPY --from=builder /out/stash /stash
+COPY --from=builder /out/cortexiq /cortexiq
 
 # Security: Run as non-root user (provided by distroless image).
 USER nonroot:nonroot
 
 # Default command - show help
-ENTRYPOINT ["/stash"]
+ENTRYPOINT ["/cortexiq"]
 CMD ["--help"]

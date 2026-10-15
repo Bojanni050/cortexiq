@@ -4,7 +4,7 @@ package reasoner
 import (
 	"context"
 
-	"github.com/alash3al/stash/internal/models"
+	"github.com/Bojanni050/cortexiq/internal/models"
 )
 
 // StructuredFact represents an extracted fact with entity, property, and value.

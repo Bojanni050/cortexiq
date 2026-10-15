@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/alash3al/stash/internal/models"
+	"github.com/Bojanni050/cortexiq/internal/models"
 )
 
 func (b *Brain) consolidateGoalProgress(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (annotated, suggestedComplete, llmCalls int, errs []string) {

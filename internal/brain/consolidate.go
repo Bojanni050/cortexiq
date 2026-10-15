@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alash3al/stash/internal/models"
-	"github.com/alash3al/stash/internal/observability"
-	"github.com/alash3al/stash/internal/reasoner"
+	"github.com/Bojanni050/cortexiq/internal/models"
+	"github.com/Bojanni050/cortexiq/internal/observability"
+	"github.com/Bojanni050/cortexiq/internal/reasoner"
 	"github.com/pgvector/pgvector-go"
 )
 

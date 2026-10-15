@@ -1,9 +1,9 @@
 package brain
 
 // Integration tests against a real Postgres (with pgvector). They are skipped
-// unless STASH_TEST_DSN is set, e.g.
+// unless CORTEXIQ_TEST_DSN is set, e.g.
 //
-//	STASH_TEST_DSN=postgres://stash:stash@localhost:5432/stash_test?sslmode=disable go test ./internal/brain/
+//	CORTEXIQ_TEST_DSN=postgres://stash:stash@localhost:5432/stash_test?sslmode=disable go test ./internal/brain/
 //
 // Use a throw-away database: migrations are applied and every test creates its
 // own uniquely named namespace, but nothing is cleaned up afterwards. CI runs
@@ -22,10 +22,10 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/alash3al/stash/internal/db"
-	"github.com/alash3al/stash/internal/models"
-	"github.com/alash3al/stash/internal/queries"
-	"github.com/alash3al/stash/internal/reasoner"
+	"github.com/Bojanni050/cortexiq/internal/db"
+	"github.com/Bojanni050/cortexiq/internal/models"
+	"github.com/Bojanni050/cortexiq/internal/queries"
+	"github.com/Bojanni050/cortexiq/internal/reasoner"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -129,9 +129,9 @@ type testEnv struct {
 
 func newEnv(t *testing.T, mutate func(*Config)) *testEnv {
 	t.Helper()
-	dsn := os.Getenv("STASH_TEST_DSN")
+	dsn := os.Getenv("CORTEXIQ_TEST_DSN")
 	if dsn == "" {
-		t.Skip("STASH_TEST_DSN not set; skipping integration test")
+		t.Skip("CORTEXIQ_TEST_DSN not set; skipping integration test")
 	}
 	ctx := context.Background()
 

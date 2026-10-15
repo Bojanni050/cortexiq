@@ -6,14 +6,14 @@ import (
 	"os"
 	"time"
 
-	"github.com/alash3al/stash/internal/bootstrap"
+	"github.com/Bojanni050/cortexiq/internal/bootstrap"
 	"github.com/urfave/cli/v3"
 )
 
 func main() {
 	cmd := &cli.Command{
-		Name:  "stash",
-		Usage: "Stash - Persistent Memory for AI",
+		Name:  "cortexiq",
+		Usage: "CortexIQ - Persistent Memory for AI",
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
 			if _, ok := cmd.Root().Metadata["bootstrapCtx"]; ok {
 				return ctx, nil
@@ -182,7 +182,7 @@ func main() {
 				Action: dedupeCmd,
 				Flags: []cli.Flag{
 					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to clean (each includes descendants; default /)"},
-					&cli.FloatFlag{Name: "threshold", Usage: "Merge facts at or above this cosine similarity (default: STASH_CONSOLIDATION_DEDUP_THRESHOLD)"},
+					&cli.FloatFlag{Name: "threshold", Usage: "Merge facts at or above this cosine similarity (default: CORTEXIQ_CONSOLIDATION_DEDUP_THRESHOLD)"},
 					&cli.BoolFlag{Name: "review", Usage: "Let the LLM review pairs between the review threshold and --threshold"},
 					&cli.IntFlag{Name: "max-reviews", Value: 100, Usage: "Maximum LLM review calls"},
 					&cli.BoolFlag{Name: "apply", Usage: "Write the merge (without it nothing is changed)"},

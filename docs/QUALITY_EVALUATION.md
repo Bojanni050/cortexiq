@@ -1,4 +1,4 @@
-# Stash quality evaluation
+# CortexIQ quality evaluation
 
 Use this procedure before changing the reasoner model, prompts, consolidation
 thresholds, or relationship batch size. It keeps model quality separate from

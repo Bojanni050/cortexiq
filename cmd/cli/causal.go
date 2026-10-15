@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/alash3al/stash/internal/brain"
+	"github.com/Bojanni050/cortexiq/internal/brain"
 	"github.com/urfave/cli/v3"
 )
 

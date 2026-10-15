@@ -22,13 +22,13 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg16
         env:
-          POSTGRES_USER: stash
-          POSTGRES_PASSWORD: stash
-          POSTGRES_DB: stash_test
+          POSTGRES_USER: cortexiq
+          POSTGRES_PASSWORD: cortexiq
+          POSTGRES_DB: cortexiq_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U stash -d stash_test"
+          --health-cmd "pg_isready -U cortexiq -d cortexiq_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -64,14 +64,14 @@ jobs:
 
       - name: Test
         env:
-          STASH_TEST_DSN: postgres://stash:stash@localhost:5432/stash_test?sslmode=disable
+          CORTEXIQ_TEST_DSN: postgres://cortexiq:cortexiq@localhost:5432/cortexiq_test?sslmode=disable
         run: go test ./...
 
       # Guard: the integration tests skip themselves without a database, which
       # would silently turn them into no-ops. Fail if any of them was skipped.
       - name: Integration tests ran (not skipped)
         env:
-          STASH_TEST_DSN: postgres://stash:stash@localhost:5432/stash_test?sslmode=disable
+          CORTEXIQ_TEST_DSN: postgres://cortexiq:cortexiq@localhost:5432/cortexiq_test?sslmode=disable
         run: |
           go test -count=1 -v -run Integration ./internal/brain/ | tee integration.log
           if grep -q -- '--- SKIP' integration.log; then

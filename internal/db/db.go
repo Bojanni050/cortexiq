@@ -192,7 +192,7 @@ func validateDimensionLock(ctx context.Context, pool *pgxpool.Pool, expectedDim 
 			return fmt.Errorf("invalid stored dimension value: %w", err)
 		}
 		if storedDim != expectedDim {
-			return fmt.Errorf("vector dimension mismatch: database has %d, config expects %d. You can switch between different embedding models as long as they output the same dimension. Change STASH_VECTOR_DIM to match the database, or delete the database and restart", storedDim, expectedDim)
+			return fmt.Errorf("vector dimension mismatch: database has %d, config expects %d. You can switch between different embedding models as long as they output the same dimension. Change CORTEXIQ_VECTOR_DIM to match the database, or delete the database and restart", storedDim, expectedDim)
 		}
 	}
 

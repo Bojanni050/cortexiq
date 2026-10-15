@@ -1,0 +1,13 @@
+[Unit]
+Description=CortexIQ full Postgres backup
+Documentation=file:/opt/cortexiq/docs/BACKUP.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/cortexiq
+ExecStart=/opt/cortexiq/scripts/backup-prod.sh
+# install-backup-timer.sh rewrites /opt/cortexiq to the real deployment
+# directory (CORTEXIQ_DIR). Failures are visible in
+# journalctl -u cortexiq-backup.service
