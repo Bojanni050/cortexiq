@@ -20,8 +20,11 @@ type StructuredFact struct {
 type StructuredRelationship struct {
 	FromEntity   string
 	RelationType string
-	ToEntity     string
-	Confidence   float32
+	// CanonicalType is the relation type mapped onto RelationVocabulary, or "" when
+	// there is no confident mapping (see CanonicalRelationType).
+	CanonicalType string
+	ToEntity      string
+	Confidence    float32
 }
 
 // StructuredPattern represents an abstract pattern derived from facts and relationships.

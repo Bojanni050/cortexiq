@@ -98,11 +98,14 @@ type jsonFact struct {
 }
 
 type jsonRelationship struct {
-	FactID       int64   `json:"fact_id"`
-	From         string  `json:"from"`
-	RelationType string  `json:"relation_type"`
-	To           string  `json:"to"`
-	Confidence   float32 `json:"confidence"`
+	FactID       int64  `json:"fact_id"`
+	From         string `json:"from"`
+	RelationType string `json:"relation_type"`
+	// CanonicalType is the model's optional pick from RelationVocabulary; it is
+	// validated (and may be overridden by a reviewed mapping) in CanonicalRelationType.
+	CanonicalType string  `json:"canonical_type"`
+	To            string  `json:"to"`
+	Confidence    float32 `json:"confidence"`
 }
 
 type jsonPattern struct {
@@ -357,16 +360,18 @@ func (o *OpenAI) ReasonRelationshipsBatch(ctx context.Context, facts []models.Fa
 Facts:
 %s
 Output ONLY a JSON array of objects:
-[{"fact_id": 0, "from": "subject entity", "relation_type": "lowercase_type", "to": "object entity", "confidence": 0.0}]
+[{"fact_id": 0, "from": "subject entity", "relation_type": "lowercase_type", "canonical_type": "vocabulary_type_or_null", "to": "object entity", "confidence": 0.0}]
 
 Rules:
 - "fact_id" must be the id of the fact the relationship is stated in. Treat every fact independently; never combine facts.
 - Only extract relationships DIRECTLY stated in that fact.
 - Do NOT infer transitive or implied relationships (e.g., if "Alice works at TechCorp in Paris", do NOT output Alice --located_in--> Paris).
 - "from" and "to" must be entity names mentioned verbatim in that fact.
-- relation_type must be a simple lowercase identifier (e.g., works_at, manages, knows).
+- relation_type must be a simple lowercase identifier (e.g., works_at, manages, knows). Prefer one of the vocabulary words below when it says exactly the same thing.
+- "canonical_type" must be one of these words, or null: %s.
+  Use it ONLY when it means the same as the relationship, in the same direction (from -> to), and the relationship is not negated. If the relationship is negated ("does not use"), reversed ("used by"), or no word fits exactly, use null. Never guess and never invent words.
 - confidence must be between 0.7 and 1.0.
-- If no relationships are explicitly stated in any fact, output: []`, list.String())
+- If no relationships are explicitly stated in any fact, output: []`, list.String(), relationVocabularyList())
 
 	msgs := []openai.ChatCompletionMessageParamUnion{
 		openai.SystemMessage(systemPrompt),
@@ -412,10 +417,11 @@ func groundRelationships(jrels []jsonRelationship, contents map[int64]string) ma
 			conf = 1.0
 		}
 		out[jr.FactID] = append(out[jr.FactID], &StructuredRelationship{
-			FromEntity:   jr.From,
-			RelationType: jr.RelationType,
-			ToEntity:     jr.To,
-			Confidence:   conf,
+			FromEntity:    jr.From,
+			RelationType:  jr.RelationType,
+			CanonicalType: CanonicalRelationType(jr.RelationType, jr.CanonicalType),
+			ToEntity:      jr.To,
+			Confidence:    conf,
 		})
 	}
 	return out

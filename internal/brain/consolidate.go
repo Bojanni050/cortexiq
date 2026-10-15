@@ -3,6 +3,7 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/Bojanni050/cortexiq/internal/models"
 	"github.com/Bojanni050/cortexiq/internal/observability"
 	"github.com/Bojanni050/cortexiq/internal/reasoner"
+	"github.com/jackc/pgx/v5"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -570,23 +572,15 @@ func (b *Brain) consolidateFactsToRelationships(ctx context.Context, nsID int64,
 					continue
 				}
 
-				// Check for existing relationship from this fact
-				exists, _ := b.relationshipExists(ctx, nsID, rel.FromEntity, rel.RelationType, rel.ToEntity, fact.ID)
-				if exists {
-					continue
-				}
-
-				_, err := b.pool.Exec(ctx,
-					`INSERT INTO relationships (namespace_id, from_entity, relation_type, to_entity, confidence, source_fact_id)
-					 VALUES ($1, $2, $3, $4, $5, $6)`,
-					nsID, rel.FromEntity, rel.RelationType, rel.ToEntity, rel.Confidence, fact.ID,
-				)
+				created, err := b.storeRelationship(ctx, nsID, fact.ID, rel)
 				if err != nil {
-					errs = append(errs, fmt.Sprintf("insert relationship: %v", err))
+					errs = append(errs, fmt.Sprintf("store relationship: %v", err))
 					batchOK = false
 					continue
 				}
-				count++
+				if created {
+					count++
+				}
 			}
 		}
 		if batchOK {
@@ -604,16 +598,48 @@ func (b *Brain) consolidateFactsToRelationships(ctx context.Context, nsID int64,
 	return
 }
 
-func (b *Brain) relationshipExists(ctx context.Context, nsID int64, from, relType, to string, sourceFactID int64) (bool, error) {
+// storeRelationship inserts an extracted relationship unless the same statement is
+// already stored. "The same" ignores which fact it was extracted from, the case of
+// the entities and, via canonical_type, the exact wording of the relation
+// ("includes" vs "contains"): the same edge stated by several facts used to be
+// stored once per fact (e.g. "Bo uses Kilo Code" six times). A repeat only raises
+// the stored confidence; source_fact_id keeps pointing at the first fact. Returns
+// whether a new row was created.
+func (b *Brain) storeRelationship(ctx context.Context, nsID, factID int64, rel *reasoner.StructuredRelationship) (bool, error) {
+	// Rows without a canonical_type are compared by their lowercased relation_type.
+	key := rel.CanonicalType
+	if key == "" {
+		key = strings.ToLower(strings.TrimSpace(rel.RelationType))
+	}
+
 	var id int64
+	var conf float32
 	err := b.pool.QueryRow(ctx,
-		`SELECT id FROM relationships
-		 WHERE namespace_id = $1 AND from_entity = $2 AND relation_type = $3 AND to_entity = $4
-		 AND source_fact_id = $5 AND deleted_at IS NULL LIMIT 1`,
-		nsID, from, relType, to, sourceFactID,
-	).Scan(&id)
-	if err != nil {
+		`SELECT id, confidence FROM relationships
+		 WHERE namespace_id = $1 AND lower(from_entity) = lower($2) AND lower(to_entity) = lower($3)
+		   AND COALESCE(canonical_type, lower(btrim(relation_type))) = $4
+		   AND deleted_at IS NULL
+		 ORDER BY id LIMIT 1`,
+		nsID, rel.FromEntity, rel.ToEntity, key,
+	).Scan(&id, &conf)
+	switch {
+	case err == nil:
+		if rel.Confidence > conf {
+			if _, err := b.pool.Exec(ctx, "UPDATE relationships SET confidence = $2 WHERE id = $1", id, rel.Confidence); err != nil {
+				return false, fmt.Errorf("raise relationship confidence: %w", err)
+			}
+		}
 		return false, nil
+	case !errors.Is(err, pgx.ErrNoRows):
+		return false, fmt.Errorf("look up relationship: %w", err)
+	}
+
+	if _, err := b.pool.Exec(ctx,
+		`INSERT INTO relationships (namespace_id, from_entity, relation_type, canonical_type, to_entity, confidence, source_fact_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		nsID, rel.FromEntity, rel.RelationType, strPtrOrNull(rel.CanonicalType), rel.ToEntity, rel.Confidence, factID,
+	); err != nil {
+		return false, fmt.Errorf("insert relationship: %w", err)
 	}
 	return true, nil
 }

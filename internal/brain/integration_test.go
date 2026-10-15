@@ -67,6 +67,7 @@ type fakeReasoner struct {
 	subjects    []string  // subject passed to each ReasonStructured call
 	sameAnswer  bool      // what ReasonSameFact answers
 	sameCalls   int
+	rels        map[int64][]*reasoner.StructuredRelationship // what ReasonRelationshipsBatch returns, by fact ID
 }
 
 // ReasonStructured fakes the synthesis: the text is split on " || " into one fact
@@ -91,7 +92,7 @@ func (r *fakeReasoner) ReasonSameFact(context.Context, string, string) (bool, er
 	return r.sameAnswer, nil
 }
 func (r *fakeReasoner) ReasonRelationshipsBatch(context.Context, []models.Fact) (map[int64][]*reasoner.StructuredRelationship, error) {
-	return nil, nil
+	return r.rels, nil
 }
 func (r *fakeReasoner) ReasonPatterns(context.Context, []models.Fact, []models.Relationship) ([]*reasoner.StructuredPattern, error) {
 	return nil, nil
