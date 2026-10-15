@@ -22,7 +22,10 @@ type RecallResult struct {
 	// Score ranks results; higher is better. With hybrid recall it is the
 	// reciprocal-rank-fusion score normalised to 0..1 (1 = top of both lists).
 	Score float32 `json:"score"`
-	// Similarity is the cosine similarity of a vector hit (absent for keyword-only hits).
+	// Similarity is the cosine similarity of a vector hit (absent for keyword-only
+	// hits). It is model dependent and not comparable across queries, so rank and
+	// filter on Score: identifiers matching a fact exactly have measured 0.51-0.74
+	// here while their Score was 0.81-0.89.
 	Similarity float32 `json:"similarity,omitempty"`
 	// Match says how the result was found: "vector", "keyword" or "hybrid" (both).
 	Match string `json:"match,omitempty"`

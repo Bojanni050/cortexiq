@@ -1,8 +1,9 @@
 # CortexIQ quality evaluation
 
 Use this procedure before changing the reasoner model, prompts, consolidation
-thresholds, or relationship batch size. It keeps model quality separate from
-real user memory and produces a comparable result.
+thresholds, or relationship batch size. Section 4 covers the recall side, for
+changes to the embedding model, hybrid recall, or the recall weights. It keeps
+model quality separate from real user memory and produces a comparable result.
 
 ## 1. Use an isolated namespace
 
@@ -55,7 +56,54 @@ reasoner_completion_tokens_total{stage}
 
 Consolidation results also expose `llm_calls` and `llm_calls_limited`.
 
-## 4. Clean up
+## 4. Recall ranking regression (fast)
+
+Run this whenever the embedding model, `CORTEXIQ_HYBRID_RECALL`, the recall
+weights (`CORTEXIQ_RECALL_*`), or `CORTEXIQ_RECALL_MIN_SIMILARITY` changes. It
+takes a minute and catches both a broken keyword ranker and a shifted RRF
+weighting.
+
+1. Pick eight identifiers that occur exactly once in the corpus — a doc name, an
+   env var, a file path, a function name. Confirm uniqueness first:
+
+```sql
+SELECT count(*) FROM facts WHERE deleted_at IS NULL AND content ILIKE '%GETTING_STARTED%';
+```
+
+2. Query each one verbatim and record the top hit:
+
+```bash
+curl -s -X POST http://localhost:9090/api/v1/recall \
+  -H 'Content-Type: application/json' -d '{"query":"GETTING_STARTED","namespaces":["/"]}' \
+  | jq '.results[0] | {content, score, similarity, match}'
+```
+
+3. Passing means, for every identifier:
+
+| Check | Target |
+|---|---:|
+| The fact containing the identifier | rank 1 |
+| `score` | >= 0.8 |
+| `match` | `hybrid` (or `vector` with hybrid recall off) |
+
+A rare identifier that comes back as keyword-only means the vector ranker
+missed something it should find; the candidate pool is only `limit * 3` per
+ranker (capped at 300), so that can happen for a common term but not for one
+that occurs once.
+
+Measured 2026-10-15 (qwen3 embedder, hybrid on, 344 facts): 8/8 top-1, all
+`hybrid`, scores 0.81–0.89.
+
+4. Never filter on `similarity` instead of `score`. In that same run the matching
+   facts spanned 0.51–0.74 on `similarity` while their `score` was 0.81–0.89, so
+   a `similarity >= 0.6` filter would have dropped four of the eight, including
+   the best hit. `similarity` is the raw cosine of the vector ranker (absent
+   entirely on keyword-only hits, which is why it must never drive ranking);
+   `score` is the fused 0..1 rank score. Keyword-only rows — a stopword query
+   such as "een" returns them at about 0.42 — are exactly what a score threshold
+   is meant to drop.
+
+## 5. Clean up
 
 After scoring, remove the isolated namespace and its exported evaluation file.
 Never leave synthetic evaluation data mixed into production namespaces.
