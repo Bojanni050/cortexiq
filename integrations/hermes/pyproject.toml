@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cortexiq-hermes"
+version = "0.1.0"
+description = "CortexIQ memory provider for Hermes Agent — recall before each turn, capture after it"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Bojanni050", url = "https://github.com/Bojanni050" }]
+keywords = ["hermes-agent", "memory", "cortexiq", "memory-provider"]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+# Geen dependencies: dit is een pure stdlib-client die tegen je HTTP-API praat.
+# Alle embeddings, opslag en consolidatie blijven server-side.
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/Bojanni050/cortexiq"
+
+# Hermes scant deze groep en matcht op de entry-point NAAM: die moet gelijk zijn
+# aan de waarde die de gebruiker in `memory.provider` zet.
+[project.entry-points."hermes_agent.memory_providers"]
+cortexiq = "cortexiq_hermes"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cortexiq_hermes"]
