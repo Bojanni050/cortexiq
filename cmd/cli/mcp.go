@@ -107,8 +107,13 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("query", mcp.Description(render("recall_query")), mcp.Required()),
 		mcp.WithString("namespaces", mcp.Description(render("recall_namespaces"))),
 		mcp.WithNumber("limit", mcp.Description(render("limit_param")), mcp.DefaultNumber(10)),
+		mcp.WithString("as_of", mcp.Description(render("as_of_param"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query := request.GetString("query", "")
+		asOf, err := parseAsOf(request.GetString("as_of", ""))
+		if err != nil {
+			return nil, err
+		}
 		nsRaw := request.GetString("namespaces", "/")
 		limit := request.GetInt("limit", 10)
 
@@ -119,7 +124,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			}
 		}
 
-		results, err := bc.Brain.Recall(ctx, namespaces, query, limit)
+		results, err := bc.Brain.RecallAsOf(ctx, namespaces, query, limit, asOf)
 		if err != nil {
 			return nil, err
 		}
@@ -314,6 +319,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("namespaces", mcp.Description(render("namespaces_param"))),
 		mcp.WithNumber("limit", mcp.Description(render("pagination_limit")), mcp.DefaultNumber(100)),
 		mcp.WithNumber("offset", mcp.Description(render("pagination_offset")), mcp.DefaultNumber(0)),
+		mcp.WithString("as_of", mcp.Description(render("as_of_param"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		nsRaw := request.GetString("namespaces", "/")
 		var namespaces []string
@@ -327,8 +333,12 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			Limit:  request.GetInt("limit", 100),
 			Offset: request.GetInt("offset", 0),
 		}
+		asOf, err := parseAsOf(request.GetString("as_of", ""))
+		if err != nil {
+			return nil, err
+		}
 
-		facts, err := bc.Brain.QueryFacts(ctx, namespaces, nil, nil, page)
+		facts, err := bc.Brain.QueryFactsAsOf(ctx, namespaces, nil, nil, asOf, page)
 		if err != nil {
 			return nil, err
 		}

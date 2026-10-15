@@ -10,6 +10,9 @@ SELECT
     1 - (embedding <=> {{.Bind .Args.vector}}) AS score
 FROM episodes
 WHERE deleted_at IS NULL
+{{if .Args.as_of}}
+    AND created_at <= {{.Bind .Args.as_of}}
+{{end}}
     AND embedding IS NOT NULL
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
@@ -29,7 +32,12 @@ SELECT
     1 - (embedding <=> {{.Bind .Args.vector}}) AS score
 FROM facts
 WHERE deleted_at IS NULL
+{{if .Args.as_of}}
+    AND COALESCE(valid_from, created_at) <= {{.Bind .Args.as_of}}
+    AND (valid_until IS NULL OR valid_until > {{.Bind .Args.as_of}})
+{{else}}
     AND (valid_until IS NULL OR valid_until > now())
+{{end}}
     AND embedding IS NOT NULL
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
@@ -49,6 +57,9 @@ SELECT
     ts_rank_cd(content_tsv, websearch_to_tsquery('simple', {{.Bind .Args.query}})) AS score
 FROM episodes
 WHERE deleted_at IS NULL
+{{if .Args.as_of}}
+    AND created_at <= {{.Bind .Args.as_of}}
+{{end}}
     AND content_tsv @@ websearch_to_tsquery('simple', {{.Bind .Args.query}})
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
@@ -68,7 +79,12 @@ SELECT
     ts_rank_cd(content_tsv, websearch_to_tsquery('simple', {{.Bind .Args.query}})) AS score
 FROM facts
 WHERE deleted_at IS NULL
+{{if .Args.as_of}}
+    AND COALESCE(valid_from, created_at) <= {{.Bind .Args.as_of}}
+    AND (valid_until IS NULL OR valid_until > {{.Bind .Args.as_of}})
+{{else}}
     AND (valid_until IS NULL OR valid_until > now())
+{{end}}
     AND content_tsv @@ websearch_to_tsquery('simple', {{.Bind .Args.query}})
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})

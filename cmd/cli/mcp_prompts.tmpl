@@ -254,6 +254,10 @@ Good: 'User prefers React with TypeScript and shadcn/ui. Rejected plain CSS due 
 Bad: 'react thing' or 'see above' or 'user preference'.
 {{end}}
 
+{{define "as_of_param"}}
+Optional point in time (RFC3339, e.g. 2026-09-01T00:00:00Z, or a date like 2026-09-01). Answers "what did we know then": facts that were valid at that moment, including ones that have since been replaced or expired. Omit for the current state.
+{{end}}
+
 {{define "remember_importance"}}
 How much this memory matters, 0 to 1. Default 0.5 (neutral). Use ~0.8-1.0 for decisions, standing preferences and corrections; ~0.1-0.3 for passing detail. Only affects ranking when the server has importance weighting enabled.
 {{end}}

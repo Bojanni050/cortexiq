@@ -54,6 +54,17 @@ const (
 // (names, versions, ports) are found even when embeddings miss them.
 // Each namespace path matches itself and all descendants. Namespaces is required.
 func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, limit int) ([]RecallResult, error) {
+	return b.RecallAsOf(ctx, namespaces, query, limit, nil)
+}
+
+// RecallAsOf is Recall for a point in time: it answers "what did we know at asOf".
+// Facts count when they were valid then (valid_from <= asOf < valid_until, a
+// missing valid_from falling back to created_at), so a fact that was later
+// superseded or expired is still found for a moment before that. Episodes count
+// when they had been stored by then. Recency decay is measured from asOf, and the
+// recall is not counted as use of a fact (historical lookups must not keep facts
+// from decaying). A nil asOf is the normal "valid now" recall.
+func (b *Brain) RecallAsOf(ctx context.Context, namespaces []string, query string, limit int, asOf *time.Time) ([]RecallResult, error) {
 	if err := validateContent(query); err != nil {
 		return nil, err
 	}
@@ -90,9 +101,12 @@ func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, l
 		}
 	}
 	now := time.Now()
+	if asOf != nil {
+		now = *asOf
+	}
 
 	// Search facts first (higher quality, consolidated)
-	factSQL, factArgs, err := b.queries.RecallFacts(nsIDs, pgVec, candidates)
+	factSQL, factArgs, err := b.queries.RecallFacts(nsIDs, pgVec, candidates, asOf)
 	if err != nil {
 		return nil, fmt.Errorf("build fact query: %w", err)
 	}
@@ -103,7 +117,7 @@ func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, l
 
 	var factKw []RecallResult
 	if kwQuery != "" {
-		kwSQL, kwArgs, err := b.queries.RecallFactsKeyword(nsIDs, kwQuery, candidates)
+		kwSQL, kwArgs, err := b.queries.RecallFactsKeyword(nsIDs, kwQuery, candidates, asOf)
 		if err != nil {
 			return nil, fmt.Errorf("build fact keyword query: %w", err)
 		}
@@ -123,7 +137,7 @@ func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, l
 				epCandidates = maxCandidates
 			}
 		}
-		epSQL, epArgs, err := b.queries.RecallEpisodes(nsIDs, pgVec, epCandidates)
+		epSQL, epArgs, err := b.queries.RecallEpisodes(nsIDs, pgVec, epCandidates, asOf)
 		if err != nil {
 			return nil, fmt.Errorf("build episode query: %w", err)
 		}
@@ -134,7 +148,7 @@ func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, l
 
 		var epKw []RecallResult
 		if kwQuery != "" {
-			kwSQL, kwArgs, err := b.queries.RecallEpisodesKeyword(nsIDs, kwQuery, epCandidates)
+			kwSQL, kwArgs, err := b.queries.RecallEpisodesKeyword(nsIDs, kwQuery, epCandidates, asOf)
 			if err != nil {
 				return nil, fmt.Errorf("build episode keyword query: %w", err)
 			}
@@ -155,7 +169,9 @@ func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, l
 		results = results[:limit]
 	}
 
-	b.touchRecalledFacts(ctx, results)
+	if asOf == nil {
+		b.touchRecalledFacts(ctx, results)
+	}
 
 	return results, nil
 }

@@ -110,6 +110,7 @@ func main() {
 				Flags: []cli.Flag{
 					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to search (each includes descendants)"},
 					&cli.IntFlag{Name: "limit", Value: 10, Usage: "Max results"},
+					&cli.StringFlag{Name: "as-of", Usage: "Recall what was known at this time (RFC3339 or YYYY-MM-DD)"},
 				},
 			},
 			{
@@ -144,6 +145,7 @@ func main() {
 					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to query (each includes descendants)"},
 					&cli.StringFlag{Name: "since", Usage: "Since timestamp (RFC3339)"},
 					&cli.StringFlag{Name: "until", Usage: "Until timestamp (RFC3339)"},
+					&cli.StringFlag{Name: "as-of", Usage: "Only facts valid at this time (RFC3339 or YYYY-MM-DD)"},
 					&cli.IntFlag{Name: "limit", Value: 100, Usage: "Max results"},
 					&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
 				},

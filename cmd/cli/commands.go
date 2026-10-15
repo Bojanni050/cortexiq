@@ -55,9 +55,13 @@ func recallCmd(ctx context.Context, cmd *cli.Command) error {
 
 	namespaces := cmd.StringSlice("namespaces")
 	limit := cmd.Int("limit")
+	asOf, err := parseAsOf(cmd.String("as-of"))
+	if err != nil {
+		return err
+	}
 
 	bc := getBootstrap(cmd)
-	results, err := bc.Brain.Recall(ctx, namespaces, query, limit)
+	results, err := bc.Brain.RecallAsOf(ctx, namespaces, query, limit, asOf)
 	if err != nil {
 		return err
 	}
@@ -136,17 +140,37 @@ func factsListCmd(ctx context.Context, cmd *cli.Command) error {
 		until = &t
 	}
 
+	asOf, err := parseAsOf(cmd.String("as-of"))
+	if err != nil {
+		return err
+	}
+
 	page := brain.Pagination{
 		Offset: cmd.Int("offset"),
 		Limit:  cmd.Int("limit"),
 	}
 
 	bc := getBootstrap(cmd)
-	facts, err := bc.Brain.QueryFacts(ctx, namespaces, since, until, page)
+	facts, err := bc.Brain.QueryFactsAsOf(ctx, namespaces, since, until, asOf, page)
 	if err != nil {
 		return err
 	}
 	return printJSON(facts)
+}
+
+// parseAsOf reads an optional point in time: RFC3339 or a plain date (midnight UTC).
+// An empty string means "now" and returns nil.
+func parseAsOf(s string) (*time.Time, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return &t, nil
+		}
+	}
+	return nil, fmt.Errorf("invalid as-of %q: use RFC3339 (2026-09-01T12:00:00Z) or a date (2026-09-01)", s)
 }
 
 func getBootstrap(cmd *cli.Command) *bootstrap.Context {

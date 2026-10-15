@@ -7,6 +7,7 @@ import (
 	"embed"
 	"fmt"
 	"text/template"
+	"time"
 
 	"github.com/alash3al/sqltmpl"
 	"github.com/pgvector/pgvector-go"
@@ -35,8 +36,9 @@ func New() (*Queries, error) {
 }
 
 // RecallEpisodes returns SQL + args for episode vector search.
-// If namespaceIDs is nil, searches all namespaces.
-func (q *Queries) RecallEpisodes(namespaceIDs []int64, vector pgvector.Vector, limit int) (string, []any, error) {
+// If namespaceIDs is nil, searches all namespaces. A non-nil asOf restricts the
+// search to what existed at that moment (the other Recall* queries do the same).
+func (q *Queries) RecallEpisodes(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf *time.Time) (string, []any, error) {
 	args := map[string]any{
 		"vector": vector,
 		"limit":  limit,
@@ -44,12 +46,13 @@ func (q *Queries) RecallEpisodes(namespaceIDs []int64, vector pgvector.Vector, l
 	if len(namespaceIDs) > 0 {
 		args["namespace_ids"] = namespaceIDs
 	}
+	setAsOf(args, asOf)
 	return q.tpl.Execute("recall_episodes", args)
 }
 
 // RecallFacts returns SQL + args for fact vector search.
 // If namespaceIDs is nil, searches all namespaces.
-func (q *Queries) RecallFacts(namespaceIDs []int64, vector pgvector.Vector, limit int) (string, []any, error) {
+func (q *Queries) RecallFacts(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf *time.Time) (string, []any, error) {
 	args := map[string]any{
 		"vector": vector,
 		"limit":  limit,
@@ -57,21 +60,22 @@ func (q *Queries) RecallFacts(namespaceIDs []int64, vector pgvector.Vector, limi
 	if len(namespaceIDs) > 0 {
 		args["namespace_ids"] = namespaceIDs
 	}
+	setAsOf(args, asOf)
 	return q.tpl.Execute("recall_facts", args)
 }
 
 // RecallEpisodesKeyword returns SQL + args for episode full-text search.
 // query is a websearch-syntax string (see brain.keywordQuery).
-func (q *Queries) RecallEpisodesKeyword(namespaceIDs []int64, query string, limit int) (string, []any, error) {
-	return q.tpl.Execute("recall_episodes_keyword", keywordArgs(namespaceIDs, query, limit))
+func (q *Queries) RecallEpisodesKeyword(namespaceIDs []int64, query string, limit int, asOf *time.Time) (string, []any, error) {
+	return q.tpl.Execute("recall_episodes_keyword", keywordArgs(namespaceIDs, query, limit, asOf))
 }
 
 // RecallFactsKeyword returns SQL + args for fact full-text search.
-func (q *Queries) RecallFactsKeyword(namespaceIDs []int64, query string, limit int) (string, []any, error) {
-	return q.tpl.Execute("recall_facts_keyword", keywordArgs(namespaceIDs, query, limit))
+func (q *Queries) RecallFactsKeyword(namespaceIDs []int64, query string, limit int, asOf *time.Time) (string, []any, error) {
+	return q.tpl.Execute("recall_facts_keyword", keywordArgs(namespaceIDs, query, limit, asOf))
 }
 
-func keywordArgs(namespaceIDs []int64, query string, limit int) map[string]any {
+func keywordArgs(namespaceIDs []int64, query string, limit int, asOf *time.Time) map[string]any {
 	args := map[string]any{
 		"query": query,
 		"limit": limit,
@@ -79,7 +83,16 @@ func keywordArgs(namespaceIDs []int64, query string, limit int) map[string]any {
 	if len(namespaceIDs) > 0 {
 		args["namespace_ids"] = namespaceIDs
 	}
+	setAsOf(args, asOf)
 	return args
+}
+
+// setAsOf switches a recall template to point-in-time mode: facts valid at that
+// moment (instead of "valid now") and episodes the system already knew then.
+func setAsOf(args map[string]any, asOf *time.Time) {
+	if asOf != nil {
+		args["as_of"] = asOf.UTC()
+	}
 }
 
 // FetchEpisodes returns SQL + args for batch episode read after a checkpoint.

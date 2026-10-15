@@ -13,6 +13,14 @@ import (
 // QueryFacts returns facts across namespaces matching the given slug paths, within an optional time range.
 // Each path matches itself and all descendants.
 func (b *Brain) QueryFacts(ctx context.Context, namespaceSlugs []string, since, until *time.Time, page Pagination) ([]models.Fact, error) {
+	return b.QueryFactsAsOf(ctx, namespaceSlugs, since, until, nil, page)
+}
+
+// QueryFactsAsOf is QueryFacts restricted to the facts that were valid at asOf
+// (valid_from <= asOf < valid_until; a missing valid_from falls back to
+// created_at), which includes facts that were valid then but are superseded or
+// expired now. A nil asOf lists every fact, like QueryFacts.
+func (b *Brain) QueryFactsAsOf(ctx context.Context, namespaceSlugs []string, since, until, asOf *time.Time, page Pagination) ([]models.Fact, error) {
 	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
 	if err != nil {
 		return nil, err
@@ -35,6 +43,11 @@ func (b *Brain) QueryFacts(ctx context.Context, namespaceSlugs []string, since, 
 		argN++
 		query += fmt.Sprintf(" AND created_at <= $%d", argN)
 		args = append(args, *until)
+	}
+	if asOf != nil {
+		argN++
+		query += fmt.Sprintf(" AND COALESCE(valid_from, created_at) <= $%d AND (valid_until IS NULL OR valid_until > $%d)", argN, argN)
+		args = append(args, *asOf)
 	}
 
 	argN++
