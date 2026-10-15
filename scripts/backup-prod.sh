@@ -5,22 +5,19 @@ set -euo pipefail
 # Run on the VPS from the deployment directory, or set CORTEXIQ_DIR.
 #
 # Env:
-#   CORTEXIQ_DIR           deployment dir; defaults to /opt/stash when that
-#                          exists (pre-rebrand layout), otherwise /opt/cortexiq
+#   CORTEXIQ_DIR           deployment dir; default /opt/cortexiq
 #   COMPOSE_FILE           default docker-compose.prod.yml
 #   BACKUP_DIR             default $CORTEXIQ_DIR/backups
 #   BACKUP_RETENTION_DAYS  default 7  (0 keeps everything)
 #   BACKUP_REMOTE          optional rsync target, e.g. user@host:/srv/cortexiq-backups/
-#   CORTEXIQ_DB_USER       Postgres role; default stash (live DB predates the rebrand)
-#   CORTEXIQ_DB_NAME       Postgres database; default stash
-if [[ -z "${CORTEXIQ_DIR:-}" ]]; then
-  if [[ -d /opt/stash ]]; then CORTEXIQ_DIR=/opt/stash; else CORTEXIQ_DIR=/opt/cortexiq; fi
-fi
+#   CORTEXIQ_DB_USER       Postgres role; default cortexiq
+#   CORTEXIQ_DB_NAME       Postgres database; default cortexiq
+CORTEXIQ_DIR="${CORTEXIQ_DIR:-/opt/cortexiq}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 BACKUP_DIR="${BACKUP_DIR:-$CORTEXIQ_DIR/backups}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
-DB_USER="${CORTEXIQ_DB_USER:-stash}"
-DB_NAME="${CORTEXIQ_DB_NAME:-stash}"
+DB_USER="${CORTEXIQ_DB_USER:-cortexiq}"
+DB_NAME="${CORTEXIQ_DB_NAME:-cortexiq}"
 
 cd "$CORTEXIQ_DIR"
 mkdir -p "$BACKUP_DIR"
@@ -57,7 +54,7 @@ fi
 # Retention: drop local dumps (and their sidecars) older than RETENTION_DAYS.
 if [[ "$RETENTION_DAYS" -gt 0 ]]; then
   find "$BACKUP_DIR" -maxdepth 1 -type f \
-    \( -name 'cortexiq-*.dump*' -o -name 'stash-*.dump*' \) -mtime +"$RETENTION_DAYS" -delete
+    \( -name 'cortexiq-*.dump*' \) -mtime +"$RETENTION_DAYS" -delete
   echo "Pruned local backups older than ${RETENTION_DAYS}d"
 fi
 

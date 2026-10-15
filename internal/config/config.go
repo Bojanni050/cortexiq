@@ -3,63 +3,18 @@ package config
 
 import (
 	"os"
-	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
 )
 
-// CortexIQ was released as "Stash" before the rebrand. Every knob therefore has
-// two accepted names: CORTEXIQ_* (current) and STASH_* (legacy). The current
-// name always wins; ApplyLegacyEnv copies a legacy value into its current
-// counterpart only when that counterpart is unset, so existing .env files and
-// deployments keep working unchanged.
+// Config keys are read from CORTEXIQ_* environment variables; CORTEXIQCONFIG
+// names the .env file to load.
 const (
-	EnvPrefix       = "CORTEXIQ_"
-	LegacyEnvPrefix = "STASH_"
-	ConfigEnvVar    = "CORTEXIQCONFIG"
-	LegacyConfigVar = "STASHCONFIG"
+	EnvPrefix    = "CORTEXIQ_"
+	ConfigEnvVar = "CORTEXIQCONFIG"
 )
-
-// ApplyLegacyEnv mirrors legacy STASH_* variables (and STASHCONFIG) onto their
-// CORTEXIQ_* counterparts. It is idempotent and safe to call more than once.
-func ApplyLegacyEnv() {
-	for _, pair := range legacyEnvPairs(os.Environ()) {
-		os.Setenv(pair[0], pair[1])
-	}
-}
-
-// legacyEnvPairs returns the CORTEXIQ_* variables that have to be set for the
-// legacy STASH_* names in environ. A name is mirrored only when its current
-// counterpart is unset or empty, so a real CORTEXIQ_* value always wins.
-func legacyEnvPairs(environ []string) [][2]string {
-	current := make(map[string]string, len(environ))
-	for _, kv := range environ {
-		if name, value, ok := strings.Cut(kv, "="); ok {
-			current[name] = value
-		}
-	}
-
-	var pairs [][2]string
-	for _, kv := range environ {
-		name, value, ok := strings.Cut(kv, "=")
-		if !ok || value == "" {
-			continue
-		}
-
-		switch {
-		case strings.HasPrefix(name, LegacyEnvPrefix):
-			target := EnvPrefix + strings.TrimPrefix(name, LegacyEnvPrefix)
-			if current[target] == "" {
-				pairs = append(pairs, [2]string{target, value})
-			}
-		case name == LegacyConfigVar && current[ConfigEnvVar] == "":
-			pairs = append(pairs, [2]string{ConfigEnvVar, value})
-		}
-	}
-	return pairs
-}
 
 type Config struct {
 	// Store (PostgreSQL only)
@@ -88,7 +43,7 @@ type Config struct {
 	// Ollama) than the reasoner. Fall back to the OpenAI settings above when empty.
 	// The `envDefault:""` is what keeps them optional: config parsing runs with
 	// RequiredIfNoDef, so a field with no default would otherwise be required —
-	// which is exactly what made Stash refuse to start without them.
+	// which is exactly what made the server refuse to start without them.
 	EmbeddingBaseURL string `env:"CORTEXIQ_EMBEDDING_BASE_URL" envDefault:""`
 	EmbeddingAPIKey  string `env:"CORTEXIQ_EMBEDDING_API_KEY" envDefault:""`
 
@@ -135,8 +90,7 @@ type Config struct {
 }
 
 // NewFromFile loads filename into the process environment (if it exists) and
-// parses the configuration from it. Legacy STASH_* names are mirrored onto
-// their CORTEXIQ_* counterparts first, so pre-rebrand .env files keep working.
+// parses the configuration from it.
 func NewFromFile(filename string) (*Config, error) {
 	if _, err := os.Stat(filename); err == nil {
 		if err := godotenv.Load(filename); err != nil {
@@ -145,8 +99,6 @@ func NewFromFile(filename string) (*Config, error) {
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-
-	ApplyLegacyEnv()
 
 	cfg := &Config{}
 	opts := env.Options{

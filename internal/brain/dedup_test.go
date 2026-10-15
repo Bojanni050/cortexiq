@@ -74,10 +74,10 @@ func TestReinforcedConfidence(t *testing.T) {
 
 func TestFormatSubject(t *testing.T) {
 	tests := []struct{ slug, name, want string }{
-		{"/projects/stash", "Stash", "Stash"},
-		{"/projects/stash", "  Stash (codebase)  ", "Stash (codebase)"},
-		{"/projects/stash", "/projects/stash", "stash"}, // name is just the slug: use the last segment
-		{"/projects/stash", "", "stash"},
+		{"/projects/cortexiq", "CortexIQ", "CortexIQ"},
+		{"/projects/cortexiq", "  CortexIQ (codebase)  ", "CortexIQ (codebase)"},
+		{"/projects/cortexiq", "/projects/cortexiq", "cortexiq"}, // name is just the slug: use the last segment
+		{"/projects/cortexiq", "", "cortexiq"},
 		{"/clients/white-vision", "White Vision (klant)", "White Vision (klant)"},
 		{"/", "/", ""},
 	}

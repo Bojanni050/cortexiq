@@ -212,18 +212,10 @@ function toast(msg, err) {
 }
 
 const TOKEN_KEY = 'cortexiq_token';
-// Tokens saved before the rebrand live under the old key; keep reading it so an
-// upgrade does not log anyone out, and copy it over the first time.
-const LEGACY_TOKEN_KEY = 'stash_token';
 
 function readToken() {
   try {
-    let t = localStorage.getItem(TOKEN_KEY);
-    if (!t) {
-      t = localStorage.getItem(LEGACY_TOKEN_KEY);
-      if (t) localStorage.setItem(TOKEN_KEY, t);
-    }
-    return t || '';
+    return localStorage.getItem(TOKEN_KEY) || '';
   } catch (e) { return ''; }
 }
 

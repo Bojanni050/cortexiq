@@ -3,15 +3,13 @@ set -euo pipefail
 
 # Destructive full restore. A backup path and --confirm are both required.
 #   CORTEXIQ_DIR, CORTEXIQ_DB_USER, CORTEXIQ_DB_NAME and CORTEXIQ_APP_SERVICE/
-#   CORTEXIQ_UI_SERVICE default to the pre-rebrand production values.
-if [[ -z "${CORTEXIQ_DIR:-}" ]]; then
-  if [[ -d /opt/stash ]]; then CORTEXIQ_DIR=/opt/stash; else CORTEXIQ_DIR=/opt/cortexiq; fi
-fi
+#   CORTEXIQ_UI_SERVICE default to the production values.
+CORTEXIQ_DIR="${CORTEXIQ_DIR:-/opt/cortexiq}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
-DB_USER="${CORTEXIQ_DB_USER:-stash}"
-DB_NAME="${CORTEXIQ_DB_NAME:-stash}"
-APP_SERVICE="${CORTEXIQ_APP_SERVICE:-stash}"
-UI_SERVICE="${CORTEXIQ_UI_SERVICE:-stash-ui}"
+DB_USER="${CORTEXIQ_DB_USER:-cortexiq}"
+DB_NAME="${CORTEXIQ_DB_NAME:-cortexiq}"
+APP_SERVICE="${CORTEXIQ_APP_SERVICE:-cortexiq}"
+UI_SERVICE="${CORTEXIQ_UI_SERVICE:-cortexiq-ui}"
 
 if [[ "${2:-}" != "--confirm" || -z "${1:-}" ]]; then
   echo "Usage: $0 $CORTEXIQ_DIR/backups/cortexiq-<timestamp>.dump --confirm" >&2

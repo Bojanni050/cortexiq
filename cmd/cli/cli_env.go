@@ -14,9 +14,6 @@ import (
 )
 
 func EnvCmd(ctx context.Context, cmd *cli.Command) error {
-	// Legacy STASH_* names are folded into CORTEXIQ_* so the listing is complete.
-	config.ApplyLegacyEnv()
-
 	// Collect all CORTEXIQ_* environment variables
 	vars := getAllCortexIQEnvVars()
 

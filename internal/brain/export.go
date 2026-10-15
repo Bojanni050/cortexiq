@@ -18,11 +18,9 @@ import (
 // embedding model, so Import recomputes them with whatever model is configured.
 // That makes an export portable across embedding models and vector dimensions.
 const (
-	// exportFormat identifies CortexIQ export files. Files written before the
-	// rebrand carry legacyExportFormat and are still accepted on import.
-	exportFormat       = "cortexiq-export"
-	legacyExportFormat = "stash-export"
-	exportVersion      = 1
+	// exportFormat identifies CortexIQ export files.
+	exportFormat  = "cortexiq-export"
+	exportVersion = 1
 
 	RecordEpisode = "episode"
 	RecordFact    = "fact"
@@ -321,8 +319,7 @@ func checkHeader(line []byte) error {
 	if err := json.Unmarshal(line, &h); err != nil {
 		return fmt.Errorf("import: not a %s file (missing header line)", exportFormat)
 	}
-	// Exports written before the rebrand are still readable.
-	if h.Format != exportFormat && h.Format != legacyExportFormat {
+	if h.Format != exportFormat {
 		return fmt.Errorf("import: not a %s file (missing header line)", exportFormat)
 	}
 	if h.Version != exportVersion {

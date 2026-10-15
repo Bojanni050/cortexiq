@@ -11,11 +11,9 @@ are worth backing up and they live in different places:
 `cortexiq export` (JSON Lines) is for *migration* between instances, not for
 disaster recovery: it excludes embeddings and operational tables.
 
-> **Upgrading a deployment created before the rebrand?** It lives in `/opt/stash`
-> with the Postgres role and database named `stash`. The scripts detect that
-> directory, default `CORTEXIQ_DB_USER`/`CORTEXIQ_DB_NAME` to `stash`, and the
-> timer installer retires the old `stash-backup.*` units. Nothing has to move
-> until you choose to.
+> **Upgrading a deployment created before the rebrand?** See
+> [`docs/MIGRATION.md`](MIGRATION.md) for the move off the old `/opt/stash`
+> layout, database and systemd units.
 
 ## Daily backup
 

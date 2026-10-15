@@ -6,12 +6,12 @@ import (
 )
 
 func TestDecodeRecord(t *testing.T) {
-	ok := `{"type":"fact","namespace":"/projects/stash","content":"Stash runs on port 8080","confidence":0.8}`
+	ok := `{"type":"fact","namespace":"/projects/cortexiq","content":"CortexIQ runs on port 8080","confidence":0.8}`
 	rec, err := decodeRecord([]byte(ok))
 	if err != nil {
 		t.Fatalf("valid record rejected: %v", err)
 	}
-	if rec.Type != RecordFact || rec.Namespace != "/projects/stash" || rec.Confidence == nil || *rec.Confidence != 0.8 {
+	if rec.Type != RecordFact || rec.Namespace != "/projects/cortexiq" || rec.Confidence == nil || *rec.Confidence != 0.8 {
 		t.Errorf("unexpected record: %+v", rec)
 	}
 
@@ -31,11 +31,8 @@ func TestDecodeRecord(t *testing.T) {
 }
 
 func TestCheckHeader(t *testing.T) {
-	// Current format and the pre-rebrand "stash-export" header are both valid.
-	for _, format := range []string{"cortexiq-export", "stash-export"} {
-		if err := checkHeader([]byte(`{"format":"` + format + `","version":1}`)); err != nil {
-			t.Errorf("valid header %q rejected: %v", format, err)
-		}
+	if err := checkHeader([]byte(`{"format":"cortexiq-export","version":1}`)); err != nil {
+		t.Errorf("valid header rejected: %v", err)
 	}
 	for name, line := range map[string]string{
 		"wrong format":   `{"format":"other","version":1}`,

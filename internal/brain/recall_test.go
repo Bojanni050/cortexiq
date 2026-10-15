@@ -11,9 +11,9 @@ func TestKeywordQuery(t *testing.T) {
 	}{
 		{"empty", "", ""},
 		{"only stopwords", "the of a", ""},
-		{"dutch question", "Welke poort draait stash?", "welke or poort or draait or stash"},
-		{"numbers kept", "stash port 8445", "stash or port or 8445"},
-		{"deduplicated", "stash  stash STASH", "stash"},
+		{"dutch question", "Welke poort draait cortexiq?", "welke or poort or draait or cortexiq"},
+		{"numbers kept", "cortexiq port 8445", "cortexiq or port or 8445"},
+		{"deduplicated", "cortexiq  cortexiq CORTEXIQ", "cortexiq"},
 		{"punctuation stripped", `Bo's "server" (v1.2)`, "bo or server or v1"},
 		{"tsquery syntax neutralised", "x or y; DROP TABLE facts", "drop or table or facts"},
 		{"single characters dropped", "a b c", ""},

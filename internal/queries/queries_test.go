@@ -14,8 +14,8 @@ func TestRecallKeywordTemplatesRender(t *testing.T) {
 	}
 
 	for name, build := range map[string]func([]int64) (string, []any, error){
-		"facts":    func(ns []int64) (string, []any, error) { return q.RecallFactsKeyword(ns, "stash or port", 30) },
-		"episodes": func(ns []int64) (string, []any, error) { return q.RecallEpisodesKeyword(ns, "stash or port", 30) },
+		"facts":    func(ns []int64) (string, []any, error) { return q.RecallFactsKeyword(ns, "cortexiq or port", 30) },
+		"episodes": func(ns []int64) (string, []any, error) { return q.RecallEpisodesKeyword(ns, "cortexiq or port", 30) },
 	} {
 		sql, args, err := build([]int64{1, 2, 3})
 		if err != nil {

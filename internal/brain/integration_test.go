@@ -3,7 +3,7 @@ package brain
 // Integration tests against a real Postgres (with pgvector). They are skipped
 // unless CORTEXIQ_TEST_DSN is set, e.g.
 //
-//	CORTEXIQ_TEST_DSN=postgres://stash:stash@localhost:5432/stash_test?sslmode=disable go test ./internal/brain/
+//	CORTEXIQ_TEST_DSN=postgres://cortexiq:cortexiq@localhost:5432/cortexiq_test?sslmode=disable go test ./internal/brain/
 //
 // Use a throw-away database: migrations are applied and every test creates its
 // own uniquely named namespace, but nothing is cleaned up afterwards. CI runs
@@ -211,10 +211,10 @@ func TestIntegrationCausalStageSeesNewFactsOnce(t *testing.T) {
 func TestIntegrationRecallSkipsExpiredFacts(t *testing.T) {
 	e := newEnv(t, nil)
 	past := time.Now().Add(-time.Hour)
-	live := e.insertFact(t, "stash dashboard runs on port 8445", nil)
-	expired := e.insertFact(t, "stash dashboard runs on port 9999", &past)
+	live := e.insertFact(t, "cortexiq dashboard runs on port 8445", nil)
+	expired := e.insertFact(t, "cortexiq dashboard runs on port 9999", &past)
 
-	res, err := e.b.Recall(e.ctx, []string{e.ns}, "stash dashboard port", 10)
+	res, err := e.b.Recall(e.ctx, []string{e.ns}, "cortexiq dashboard port", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestIntegrationRecallIsCountedAndDelaysDecay(t *testing.T) {
 
 func TestIntegrationDedupReinforcesExistingFact(t *testing.T) {
 	e := newEnv(t, nil)
-	text := "the stash server listens on port 8080"
+	text := "the cortexiq server listens on port 8080"
 
 	if _, err := e.b.Remember(e.ctx, e.ns, text, nil); err != nil {
 		t.Fatal(err)

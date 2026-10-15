@@ -135,9 +135,6 @@ func (c *Context) Close() error {
 }
 
 func loadConfig() (*config.Config, error) {
-	// A pre-rebrand STASHCONFIG (or STASH_* variable) still counts.
-	config.ApplyLegacyEnv()
-
 	filename := os.Getenv(config.ConfigEnvVar)
 	if filename == "" {
 		filename = ".env"
