@@ -111,7 +111,7 @@ Verify the two endpoints that the MCP client and the dashboard use:
   client at the same URL as before and confirm a tool call succeeds (for example
   `memory_stats`). The Bearer token is unchanged; only its environment variable
   name changed.
-- **Dashboard:** `https://server.taile3931a.ts.net:8445` — log in (token is saved
+- **Dashboard:** `https://server.taile3931a.ts.net:8445/ui` — log in (token is saved
   under the `cortexiq_token` localStorage key) and confirm the memory counts match
   the old instance (start from the **Stats** tab).
 
