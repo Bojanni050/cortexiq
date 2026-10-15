@@ -39,7 +39,7 @@ func TestRequireToken(t *testing.T) {
 }
 
 func TestParseSet(t *testing.T) {
-	set, err := ParseSet(`[{"name":"ro","token":"t1","scope":"ro","namespaces":["/projects"]},{"name":"rw","token":"t2"}]`, "")
+	set, err := ParseSet(`[{"name":"ro","token":"t1","scope":"ro"},{"name":"rw","token":"t2"}]`, "")
 	if err != nil {
 		t.Fatalf("ParseSet: %v", err)
 	}
@@ -51,11 +51,28 @@ func TestParseSet(t *testing.T) {
 		t.Fatalf("rw token lookup: ok=%v tok=%+v", ok, tok)
 	}
 	tok, ok = set.authenticate("t1")
-	if !ok || tok.Scope != "ro" || len(tok.Namespaces) != 1 || tok.Namespaces[0] != "/projects" {
+	if !ok || tok.Scope != "ro" {
 		t.Fatalf("ro token lookup: ok=%v tok=%+v", ok, tok)
 	}
 	if _, ok := set.authenticate("nope"); ok {
 		t.Fatal("unknown secret must not authenticate")
+	}
+	if names := set.LegacyNamespaces(); len(names) != 0 {
+		t.Fatalf("LegacyNamespaces() = %v, want none", names)
+	}
+}
+
+// The namespace allowlist is gone. A config that still carries it must keep
+// working, so that nobody is locked out by an old .env, but the field is
+// reported instead of silently ignored.
+func TestParseSetReportsLegacyNamespaces(t *testing.T) {
+	set, err := ParseSet(`[{"name":"agent","token":"t1","scope":"ro","namespaces":["/projects"]},{"token":"t2"}]`, "")
+	if err != nil {
+		t.Fatalf("ParseSet: %v", err)
+	}
+	names := set.LegacyNamespaces()
+	if len(names) != 1 || names[0] != "agent" {
+		t.Fatalf("LegacyNamespaces() = %v, want [agent]", names)
 	}
 }
 
@@ -79,7 +96,7 @@ func TestParseSetFallbackAndErrors(t *testing.T) {
 }
 
 func TestRequireInjectsPrincipal(t *testing.T) {
-	set, err := ParseSet(`[{"name":"reader","token":"ro-token","scope":"ro","namespaces":["/projects"]}]`, "")
+	set, err := ParseSet(`[{"name":"reader","token":"ro-token","scope":"ro"}]`, "")
 	if err != nil {
 		t.Fatalf("ParseSet: %v", err)
 	}
@@ -99,7 +116,7 @@ func TestRequireInjectsPrincipal(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("code = %d, want 204", rec.Code)
 	}
-	if !ok || got.Name != "reader" || !got.ReadOnly || len(got.Namespaces) != 1 {
+	if !ok || got.Name != "reader" || !got.ReadOnly {
 		t.Fatalf("principal not injected: ok=%v principal=%+v", ok, got)
 	}
 }

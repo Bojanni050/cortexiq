@@ -26,8 +26,8 @@ var staticFS embed.FS
 type Handler struct {
 	Brain *brain.Brain
 	// Auth, when enabled, requires a Bearer token on every /api/v1 call and
-	// carries the token's scope and namespace allowlist. The static dashboard
-	// shell itself holds no data and stays public.
+	// carries the token's read/write scope. The static dashboard shell itself
+	// holds no data and stays public.
 	Auth *auth.Set
 }
 
@@ -133,7 +133,7 @@ func errStatus(err error) int {
 		errors.Is(err, brain.ErrContradictionNotFound),
 		errors.Is(err, brain.ErrCausalLinkNotFound):
 		return http.StatusBadRequest
-	case errors.Is(err, brain.ErrForbidden), errors.Is(err, brain.ErrReadOnly):
+	case errors.Is(err, brain.ErrReadOnly):
 		return http.StatusForbidden
 	default:
 		return http.StatusInternalServerError
@@ -403,7 +403,7 @@ func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	id, err := h.Brain.RememberWithImportance(r.Context(), rememberNamespace(r, body.Namespace, body.Namespaces), body.Content, occurredAt, importance)
+	id, err := h.Brain.RememberWithImportance(r.Context(), rememberNamespace(body.Namespace, body.Namespaces), body.Content, occurredAt, importance)
 	if !hdl(w, err) {
 		return
 	}
@@ -411,10 +411,8 @@ func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
 }
 
 // rememberNamespace picks the target namespace for a write: the first explicit
-// slug in the request, or the token's first allowed namespace when the caller
-// named none. A scoped token must not fall back to "/", which its own allowlist
-// would reject.
-func rememberNamespace(r *http.Request, single string, many []string) string {
+// slug in the request, or the first entry of the array, or the root namespace.
+func rememberNamespace(single string, many []string) string {
 	if s := strings.TrimSpace(single); s != "" {
 		return s
 	}
@@ -422,9 +420,6 @@ func rememberNamespace(r *http.Request, single string, many []string) string {
 		if s = strings.TrimSpace(s); s != "" {
 			return s
 		}
-	}
-	if p, ok := scope.From(r.Context()); ok && len(p.Namespaces) > 0 {
-		return p.Namespaces[0]
 	}
 	return "/"
 }

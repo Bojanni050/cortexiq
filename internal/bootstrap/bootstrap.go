@@ -58,6 +58,10 @@ func New(ctx context.Context) (*Context, error) {
 	if err != nil {
 		return nil, fmt.Errorf("api tokens: %w", err)
 	}
+	if names := tokenSet.LegacyNamespaces(); len(names) > 0 {
+		logger.Warn("CORTEXIQ_API_TOKENS still sets a namespace allowlist, which is no longer enforced; these tokens can reach every namespace - remove the \"namespaces\" field",
+			"tokens", names)
+	}
 
 	pool, err := db.Open(ctx, cfg.StoreDSN, cfg.EmbeddingModel, cfg.VectorDim)
 	if err != nil {

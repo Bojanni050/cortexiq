@@ -152,29 +152,21 @@ func TestRememberMethodAndScope(t *testing.T) {
 	}
 }
 
-// An explicit slug wins; otherwise a scoped token writes into its own first
-// allowed namespace instead of the "/" it is not allowed to touch.
+// An explicit slug wins; otherwise the first entry of the array; otherwise the
+// root namespace.
 func TestRememberNamespace(t *testing.T) {
-	plain := httptest.NewRequest(http.MethodPost, "/api/v1/remember", nil)
 	cases := []struct {
-		req      *http.Request
 		single   string
 		many     []string
 		wantSlug string
 	}{
-		{plain, "/projects/gaia", nil, "/projects/gaia"},
-		{plain, "", []string{"", "/projects/gaia"}, "/projects/gaia"},
-		{plain, "", nil, "/"},
+		{"/projects/gaia", nil, "/projects/gaia"},
+		{"", []string{"", "/projects/gaia"}, "/projects/gaia"},
+		{"", nil, "/"},
 	}
 	for _, c := range cases {
-		if got := rememberNamespace(c.req, c.single, c.many); got != c.wantSlug {
+		if got := rememberNamespace(c.single, c.many); got != c.wantSlug {
 			t.Errorf("rememberNamespace(%q, %v) = %q, want %q", c.single, c.many, got, c.wantSlug)
 		}
-	}
-
-	scoped := httptest.NewRequest(http.MethodPost, "/api/v1/remember", nil).WithContext(
-		scope.With(context.Background(), scope.Principal{Name: "agent", Namespaces: []string{"/projects"}}))
-	if got := rememberNamespace(scoped, "", nil); got != "/projects" {
-		t.Errorf("scoped rememberNamespace() = %q, want /projects", got)
 	}
 }

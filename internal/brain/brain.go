@@ -190,9 +190,6 @@ func likePatternForDescendants(path string) string {
 // resolveNamespaceID returns the namespace ID for an exact path.
 // Returns ErrNamespaceNotFound if no matching namespace exists.
 func (b *Brain) resolveNamespaceID(ctx context.Context, path string) (int64, error) {
-	if err := checkReadAllowed(ctx, path); err != nil {
-		return 0, err
-	}
 	var id int64
 	err := b.pool.QueryRow(ctx,
 		"SELECT id FROM namespaces WHERE slug = $1", path,
@@ -222,9 +219,6 @@ func (b *Brain) resolveNamespaceIDs(ctx context.Context, paths []string) ([]int6
 
 	for _, p := range paths {
 		if err := validatePath(p); err != nil {
-			return nil, fmt.Errorf("namespace %q: %w", p, err)
-		}
-		if err := checkReadAllowed(ctx, p); err != nil {
 			return nil, fmt.Errorf("namespace %q: %w", p, err)
 		}
 		expanded, err := b.resolveNamespaceIDWithDescendants(ctx, p)

@@ -19,9 +19,6 @@ func (b *Brain) CreateNamespace(ctx context.Context, slug, name, description str
 	if err := validatePath(slug); err != nil {
 		return 0, err
 	}
-	if err := checkReadAllowed(ctx, slug); err != nil {
-		return 0, err
-	}
 
 	segments := splitPath(slug)
 	if len(segments) == 0 {
@@ -79,10 +76,6 @@ func (b *Brain) GetNamespace(ctx context.Context, slug string) (*models.Namespac
 // Each path matches itself and all descendants.
 func (b *Brain) ListNamespaces(ctx context.Context, slugs []string, page Pagination) ([]models.Namespace, error) {
 	page = page.Sanitize()
-	slugs, err := withAllowedSlugs(ctx, slugs)
-	if err != nil {
-		return nil, err
-	}
 
 	if len(slugs) == 0 {
 		rows, err := b.pool.Query(ctx,

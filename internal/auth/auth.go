@@ -1,7 +1,6 @@
 // Package auth provides the shared Bearer-token check used by the dashboard API
-// and the MCP server. Tokens can carry a scope (rw/ro) and a namespace
-// allowlist; the resulting principal is put on the request context for the brain
-// to enforce.
+// and the MCP server. A token is either read-write or read-only; the resulting
+// principal is put on the request context for the brain to enforce.
 package auth
 
 import (
@@ -18,15 +17,19 @@ import (
 // Token is one API token definition. Tokens are configured as a JSON array in
 // CORTEXIQ_API_TOKENS.
 type Token struct {
-	Name       string   `json:"name"`
-	Secret     string   `json:"token"`
-	Scope      string   `json:"scope"`      // "rw" (default) or "ro"
-	Namespaces []string `json:"namespaces"` // allowlist; empty = all
+	Name   string `json:"name"`
+	Secret string `json:"token"`
+	Scope  string `json:"scope"` // "rw" (default) or "ro"
+	// LegacyNamespaces parses the removed namespace allowlist, which is no
+	// longer enforced. It is kept so start-up can point at a config that still
+	// carries it instead of dropping the restriction silently.
+	LegacyNamespaces []string `json:"namespaces"`
 }
 
 // Set is an immutable collection of tokens.
 type Set struct {
 	tokens []Token
+	legacy []string
 }
 
 // ParseSet builds the token set from CORTEXIQ_API_TOKENS (a JSON array of Token)
@@ -34,6 +37,7 @@ type Set struct {
 // authentication (the historical behaviour).
 func ParseSet(spec, fallback string) (*Set, error) {
 	var tokens []Token
+	var legacy []string
 	if strings.TrimSpace(spec) != "" {
 		if err := json.Unmarshal([]byte(spec), &tokens); err != nil {
 			return nil, fmt.Errorf("CORTEXIQ_API_TOKENS is not a JSON array of tokens: %w", err)
@@ -51,12 +55,29 @@ func ParseSet(spec, fallback string) (*Set, error) {
 		default:
 			return nil, fmt.Errorf("token %d (%q) has invalid scope %q (want rw or ro)", i, t.Name, t.Scope)
 		}
+		if len(t.LegacyNamespaces) > 0 {
+			name := t.Name
+			if name == "" {
+				name = fmt.Sprintf("token %d", i)
+			}
+			legacy = append(legacy, name)
+		}
 	}
-	return &Set{tokens: tokens}, nil
+	return &Set{tokens: tokens, legacy: legacy}, nil
 }
 
 // Enabled reports whether any token is configured.
 func (s *Set) Enabled() bool { return s != nil && len(s.tokens) > 0 }
+
+// LegacyNamespaces lists the tokens whose definition still carries the removed
+// "namespaces" allowlist. Callers log it, so a config that looks restricted but
+// is not gets noticed.
+func (s *Set) LegacyNamespaces() []string {
+	if s == nil {
+		return nil
+	}
+	return s.legacy
+}
 
 // authenticate finds the token whose secret matches. Every token is compared in
 // constant time and the loop never exits early, so lookup does not reveal which
@@ -94,9 +115,8 @@ func Require(set *Set, next http.Handler) http.Handler {
 			return
 		}
 		ctx := scope.With(r.Context(), scope.Principal{
-			Name:       token.Name,
-			ReadOnly:   token.Scope == "ro",
-			Namespaces: token.Namespaces,
+			Name:     token.Name,
+			ReadOnly: token.Scope == "ro",
 		})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

@@ -99,26 +99,22 @@ To protect CortexIQ, set `CORTEXIQ_API_TOKEN` in `.env`. It guards both the dash
 
 ### Scoped tokens
 
-For several callers, use `CORTEXIQ_API_TOKENS` instead: a JSON array where each
-token can be read-only and/or restricted to a namespace subtree. It replaces
-`CORTEXIQ_API_TOKEN` when set.
+For several callers, use `CORTEXIQ_API_TOKENS` instead: a JSON array of tokens
+with a name and a scope. It replaces `CORTEXIQ_API_TOKEN` when set, so keep an
+entry for the dashboard.
 
 ```json
 [
   {"name": "dashboard", "token": "<hex>", "scope": "rw"},
-  {"name": "agent", "token": "<hex>", "scope": "ro", "namespaces": ["/projects", "/user"]}
+  {"name": "agent", "token": "<hex>", "scope": "ro"}
 ]
 ```
 
-- `scope`: `rw` (default) or `ro`. Read-only tokens may only run read operations;
-  the dashboard allows `GET`/`HEAD` and `POST /api/v1/recall`, and the MCP server
-  allows only read tools (`recall`, `query_*`, `list_*`, `get_context`,
-  `trace_causal_chain`).
-- `namespaces`: allowlist of namespace paths. A token may only see and touch
-  those paths and their descendants. Omit it for full access.
-
-Namespace enforcement happens in the brain layer, so it applies to every entry
-point (dashboard API, MCP tools, export) rather than per endpoint.
+- `scope`: `rw` (default, read and write) or `ro` (read only). Read-only tokens
+  may only run read operations; the dashboard allows `GET`/`HEAD` and
+  `POST /api/v1/recall`, and the MCP server allows only read tools (`recall`,
+  `query_*`, `list_*`, `get_context`, `trace_causal_chain`).
+- `name`: only used in logs and error messages.
 
 Point any MCP-compatible client at that URL. Example configs:
 
