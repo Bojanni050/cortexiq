@@ -50,8 +50,8 @@ Alles via omgevingsvariabelen (in `$HERMES_HOME/.env`):
 | `CORTEXIQ_INGEST_PATH` | `/api/v1/remember` | pas aan als je route anders heet |
 | `CORTEXIQ_TURN_IMPORTANCE` | `0.5` | importance bij capture |
 | `CORTEXIQ_CAPTURE_ASSISTANT` | `false` | ook het antwoord opslaan (rijkere episodes) |
-| `CORTEXIQ_ASSISTANT_MAX_CHARS` | `600` | afkapgrens voor dat antwoord |
-| `CORTEXIQ_CAPTURE_MAX_CHARS` | `2000` | harde grens op een hele episode |
+| `CORTEXIQ_ASSISTANT_MAX_CHARS` | `0` | afkapgrens voor dat antwoord; `0` = geen |
+| `CORTEXIQ_CAPTURE_MAX_CHARS` | `4000` | harde grens op een hele episode |
 
 **Twee namespaces, en dat is expres.** `/` is de root: voor **lezen** betekent het
 "zoek in alles", maar er bestaat geen namespace-rij voor — schrijven naar `/`
@@ -75,10 +75,17 @@ user: hoe staat mijn dashboard er nu voor?
 assistant: Het dashboard bindt op 127.0.0.1 en zit achter Tailscale Serve…
 ```
 
-Het antwoord wordt afgekapt op `CORTEXIQ_ASSISTANT_MAX_CHARS` (600) en de hele
-episode op `CORTEXIQ_CAPTURE_MAX_CHARS` (2000); afgekapte stukken eindigen op
-`…[afgekapt]`. Reken op meer opslag en meer embeddings per episode — dat is de
-prijs van rijkere herinneringen.
+Standaard wordt er **niets** afgekapt (`CORTEXIQ_ASSISTANT_MAX_CHARS=0`); de enige
+rem is `CORTEXIQ_CAPTURE_MAX_CHARS` (4000) op de hele episode. Moet er toch
+gekapt worden, dan gebeurt dat op een zins- of alineagrens — nooit midden in een
+woord, en nooit midden in een open code-blok (dat wordt netjes gesloten). Er
+blijft **kop én staart** bewaard (60/40), want de conclusie van een antwoord staat
+meestal aan het eind; het weggelaten stuk wordt gemarkeerd met `…[afgekapt]…`.
+
+Dat is geen detail. Kapte een antwoord midden in een open ```-blok af, dan kreeg
+de extractor onafgesloten markdown te verwerken en kon daar een verminkte — of
+zelfs misleidende — fact uit halen. En een antwoord waarvan net het slot
+verdwijnt, levert een herinnering op die de verkeerde vraag beantwoordt.
 
 ## Twee dingen die je moet weten
 

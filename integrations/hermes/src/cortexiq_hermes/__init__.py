@@ -26,8 +26,11 @@ Configuratie via omgevingsvariabelen (Hermes laadt ~/.hermes/.env):
   CORTEXIQ_MAX_CHARS     default 1400   (cap op wat er per turn in de prompt gaat)
   CORTEXIQ_INGEST_PATH   default /api/v1/remember
   CORTEXIQ_CAPTURE_ASSISTANT  default false  ook het antwoord opslaan (rijkere episodes)
-  CORTEXIQ_ASSISTANT_MAX_CHARS default 600   afkapgrens voor dat antwoord
-  CORTEXIQ_CAPTURE_MAX_CHARS  default 2000   harde grens op een hele episode
+  CORTEXIQ_ASSISTANT_MAX_CHARS default 0     afkapgrens voor dat antwoord (0 = geen)
+  CORTEXIQ_CAPTURE_MAX_CHARS  default 4000   harde grens op een hele episode
+                                             (afkappen gebeurt op een zins- of
+                                             paragraafgrens, bewaart kop en staart,
+                                             en sluit een open code-blok)
 """
 
 from __future__ import annotations
@@ -35,6 +38,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -63,6 +67,52 @@ def _env(name: str, default: str = "") -> str:
 def _truthy(value: str) -> bool:
     """Env-vlag -> bool. Alleen deze waarden gelden als aan."""
     return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+# Grenzen waarop afkappen netjes is: zinseinde, regelovergang, puntkomma.
+_BOUNDARY = re.compile(r"(?:[.!?]\s|\n\n|\n|;\s)")
+
+
+def _trim_to_boundary(chunk: str, *, from_end: bool) -> str:
+    """Snijd een chunk terug naar de dichtstbijzijnde nette grens.
+
+    Neemt de LAATSTE grens voor de kop en de EERSTE voor de staart; zo valt er
+    nooit een half woord of een halve zin in de opgeslagen herinnering.
+    """
+    best = None
+    for m in _BOUNDARY.finditer(chunk):
+        best = m
+        if from_end:
+            break
+    if best is not None:
+        return chunk[:best.end()] if not from_end else chunk[best.start():]
+    space = chunk.rfind(" ") if not from_end else chunk.find(" ")
+    if space <= 0:
+        return chunk
+    return chunk[:space] if not from_end else chunk[space + 1:]
+
+
+def _clip(text: str, cap: int) -> str:
+    """Kap af op een nette grens; bewaar kop EN staart.
+
+    cap <= 0 betekent: niet afkappen. Bij afkappen krijgt de kop 60% en de
+    staart 40% van het budget, want de conclusie van een antwoord staat
+    doorgaans aan het eind. Een open code-blok wordt gesloten, zodat een
+    extractor geen onafgesloten markdown te verwerken krijgt.
+    """
+    if cap <= 0 or len(text) <= cap:
+        return text
+    marker = " …[afgekapt]… "
+    budget = max(cap - len(marker), 40)
+    head_len = int(budget * 0.6)
+    tail_len = budget - head_len
+
+    head = _trim_to_boundary(text[: head_len + 1], from_end=False)
+    tail = _trim_to_boundary(text[len(text) - tail_len - 1:], from_end=True)
+    out = (head.rstrip() + marker + tail.lstrip()).strip()
+    if out.count("```") % 2:
+        out += "\n```"
+    return out
 
 
 def _token() -> str:
@@ -255,14 +305,12 @@ class CortexIQProvider(MemoryProvider):
         if _truthy(_env("CORTEXIQ_CAPTURE_ASSISTANT", "false")):
             answer = (assistant_content or "").strip()
             if answer:
-                cap = int(_env("CORTEXIQ_ASSISTANT_MAX_CHARS", "600"))
-                if len(answer) > cap:
-                    answer = answer[:cap].rstrip() + " …[afgekapt]"
+                # 0 = geen aparte assistant-grens; de harde episode-grens hieronder
+                # is dan de enige rem.
+                answer = _clip(answer, int(_env("CORTEXIQ_ASSISTANT_MAX_CHARS", "0")))
                 content = f"user: {user_content}\n\nassistant: {answer}"
 
-        hard = int(_env("CORTEXIQ_CAPTURE_MAX_CHARS", "2000"))
-        if len(content) > hard:
-            content = content[:hard].rstrip() + " …[afgekapt]"
+        content = _clip(content, int(_env("CORTEXIQ_CAPTURE_MAX_CHARS", "4000")))
 
         spawn_context_thread(self._store, name=f"{PROVIDER_NAME}-sync",
                              args=(content, "turn", session_id or self._session_id)).start()
