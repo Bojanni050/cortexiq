@@ -813,6 +813,8 @@ func readOnlyMCP(next http.Handler) http.Handler {
 
 func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 	bc := getBootstrap(cmd)
+	// Fetch the embedding model now, so the first recall after a restart is warm.
+	bc.WarmEmbedder(ctx)
 	mcpServer := newMCPServer(bc)
 
 	host := cmd.String("host")

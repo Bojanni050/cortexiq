@@ -34,6 +34,8 @@ func init() {
 
 func serveHTTP(ctx context.Context, cmd *cli.Command) error {
 	bc := getBootstrap(cmd)
+	// Fetch the embedding model now, so the first recall after a restart is warm.
+	bc.WarmEmbedder(ctx)
 
 	host := cmd.String("host")
 	port := cmd.String("port")

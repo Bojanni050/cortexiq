@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Bojanni050/cortexiq/internal/auth"
@@ -27,6 +28,12 @@ type Context struct {
 	Pool   *pgxpool.Pool
 	Logger *slog.Logger
 	Auth   *auth.Set
+
+	// embedder is the raw (uncached) embedder, kept for the start-up warm-up.
+	embedder embedder.Embedder
+	// warmOnce makes sure the warm-up runs at most once per process, however
+	// many servers call it.
+	warmOnce sync.Once
 }
 
 // MustNew panics on bootstrap failure.
@@ -117,12 +124,46 @@ func New(ctx context.Context) (*Context, error) {
 	}
 
 	return &Context{
-		Config: cfg,
-		Brain:  br,
-		Pool:   pool,
-		Logger: logger,
-		Auth:   tokenSet,
+		Config:   cfg,
+		Brain:    br,
+		Pool:     pool,
+		Logger:   logger,
+		Auth:     tokenSet,
+		embedder: emb,
 	}, nil
+}
+
+// embedWarmupText is embedded once at start-up; only the call matters, not the
+// text, so a fixed short string is enough.
+const embedWarmupText = "cortexiq embedder warm-up"
+
+// embedWarmupTimeout bounds that call, so an unreachable backend cannot keep a
+// goroutine alive forever.
+const embedWarmupTimeout = 30 * time.Second
+
+// WarmEmbedder pulls the embedding model into memory at start-up instead of
+// during the first recall: loading it costs ~1.8s against ~5ms once warm, and a
+// background prefetch (as agent plugins do) otherwise pays that on the user's
+// first question after a long idle period.
+//
+// It runs in the background, at most once per process, and never fails the
+// caller: recall reports backend problems itself, with a better context.
+func (c *Context) WarmEmbedder(ctx context.Context) {
+	if c == nil || c.embedder == nil {
+		return
+	}
+	c.warmOnce.Do(func() {
+		go func() {
+			warmCtx, cancel := context.WithTimeout(ctx, embedWarmupTimeout)
+			defer cancel()
+			start := time.Now()
+			if _, err := c.embedder.Embed(warmCtx, embedWarmupText); err != nil {
+				c.Logger.Warn("embedder warm-up failed; the first recall will pay for it", "err", err)
+				return
+			}
+			c.Logger.Info("embedder warm", "took", time.Since(start).String())
+		}()
+	})
 }
 
 // Close releases all resources.
