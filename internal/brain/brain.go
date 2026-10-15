@@ -74,6 +74,11 @@ type Config struct {
 	// MinRecallSimilarity is the minimum cosine similarity for a result that was only
 	// found by the vector search. 0 disables the cutoff. Model dependent.
 	MinRecallSimilarity float32
+	// RecencyWeight (0..1) is how much of a result's score recency can take away:
+	// a very old result keeps 1-RecencyWeight of its score. 0 disables recency.
+	RecencyWeight float64
+	// RecencyHalfLife is the age at which half of that recency effect has worn off.
+	RecencyHalfLife time.Duration
 }
 
 const defaultRelationshipBatchSize = 5

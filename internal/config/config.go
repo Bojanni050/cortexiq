@@ -77,6 +77,11 @@ type Config struct {
 	// right value depends on the embedding model: measure relevant vs irrelevant
 	// queries first (bge-m3 separates around 0.40).
 	RecallMinSimilarity float32 `env:"CORTEXIQ_RECALL_MIN_SIMILARITY" envDefault:"0"`
+	// RecallRecencyWeight (0..1) lets recall prefer newer results: a very old
+	// result keeps 1-weight of its score. 0 = off (default, ranking unchanged).
+	RecallRecencyWeight float64 `env:"CORTEXIQ_RECALL_RECENCY_WEIGHT" envDefault:"0"`
+	// RecallRecencyHalfLife is the age at which half of the recency effect is gone.
+	RecallRecencyHalfLife time.Duration `env:"CORTEXIQ_RECALL_RECENCY_HALFLIFE" envDefault:"168h"`
 	// RelationshipBatchSize facts are sent per relationship-extraction LLM call.
 	// Keep it modest: the reply must fit in CORTEXIQ_REASONER_MAX_TOKENS.
 	RelationshipBatchSize int `env:"CORTEXIQ_RELATIONSHIP_BATCH_SIZE" envDefault:"5"`

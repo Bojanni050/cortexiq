@@ -1,8 +1,10 @@
 package brain
 
 import (
+	"math"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestKeywordQuery(t *testing.T) {
@@ -124,5 +126,45 @@ func TestRelevantDropsWeakVectorOnlyHits(t *testing.T) {
 	}
 	if got := fuse(weak, nil, 10, true, 0); len(got) != 2 {
 		t.Errorf("cutoff 0 must disable filtering, got %d", len(got))
+	}
+}
+
+func TestRecencyFactor(t *testing.T) {
+	hl := 168 * time.Hour
+	if got := recencyFactor(0, 0, hl); got != 1 {
+		t.Errorf("weight 0 must not change scores, got %v", got)
+	}
+	if got := recencyFactor(0, 0.3, hl); math.Abs(got-1) > 1e-9 {
+		t.Errorf("brand new result keeps full score, got %v", got)
+	}
+	// One half-life: half of the 0.3 recency effect is gone.
+	if got := recencyFactor(hl, 0.3, hl); math.Abs(got-0.85) > 1e-9 {
+		t.Errorf("one half-life: want 0.85, got %v", got)
+	}
+	// Very old results converge on 1-weight, never below it.
+	if got := recencyFactor(100*hl, 0.3, hl); got < 0.7 || got > 0.7001 {
+		t.Errorf("very old: want ~0.7, got %v", got)
+	}
+	if got := recencyFactor(-time.Hour, 0.3, hl); got != 1 {
+		t.Errorf("future timestamps count as brand new, got %v", got)
+	}
+}
+
+func TestApplyRecencyReordersAndTruncates(t *testing.T) {
+	now := time.Now()
+	b := &Brain{config: Config{RecencyWeight: 0.5, RecencyHalfLife: 24 * time.Hour}}
+	rs := []RecallResult{
+		{ID: 1, Score: 0.9, refTime: now.Add(-30 * 24 * time.Hour)},
+		{ID: 2, Score: 0.8, refTime: now},
+	}
+	got := b.applyRecency(rs, 1, now)
+	if len(got) != 1 || got[0].ID != 2 {
+		t.Fatalf("recent result should overtake a stale one, got %+v", got)
+	}
+
+	off := &Brain{}
+	got = off.applyRecency([]RecallResult{{ID: 1, Score: 0.9}, {ID: 2, Score: 0.95}}, 5, now)
+	if got[0].ID != 1 || got[0].Score != 0.9 {
+		t.Errorf("disabled recency must leave order and scores alone, got %+v", got)
 	}
 }

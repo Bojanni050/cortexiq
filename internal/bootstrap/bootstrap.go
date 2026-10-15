@@ -107,6 +107,8 @@ func New(ctx context.Context) (*Context, error) {
 		MaxLLMCallsPerRun:              cfg.MaxLLMCallsPerRun,
 		HybridRecall:                   cfg.HybridRecall,
 		MinRecallSimilarity:            cfg.RecallMinSimilarity,
+		RecencyWeight:                  cfg.RecallRecencyWeight,
+		RecencyHalfLife:                cfg.RecallRecencyHalfLife,
 	})
 	if err != nil {
 		pool.Close()
