@@ -42,8 +42,10 @@ Alles via omgevingsvariabelen (in `$HERMES_HOME/.env`):
 | --- | --- | --- |
 | `CORTEXIQ_API_URL` | `http://127.0.0.1:18101` | basis-URL van de HTTP-API |
 | `CORTEXIQ_API_TOKEN` | — | **verplicht**; gebruik een token met write-rechten in één namespace |
-| `CORTEXIQ_NAMESPACE` | `/` | recall-scope; `/` = **alle** namespaces |
-| `CORTEXIQ_INGEST_NAMESPACE` | = `CORTEXIQ_NAMESPACE` | capture-scope; **moet bestaan**, `/` kan niet |
+| `CORTEXIQ_RECALL_SCOPE` | `global` | wat recall doorzoekt: `global`, `base` of `profile` |
+| `CORTEXIQ_NAMESPACE_BASE` | `/hermes` | waaronder alle agent-profielen leven |
+| `CORTEXIQ_NAMESPACE` | — | zet één recall-namespace (wint van de scope) |
+| `CORTEXIQ_INGEST_NAMESPACE` | `<base>/<profiel>` | capture-namespace; **moet bestaan**, `/` kan niet |
 | `CORTEXIQ_RECALL_LIMIT` | `5` | hoeveel treffers per turn worden opgehaald |
 | `CORTEXIQ_MIN_SCORE` | `0.6` | drempel op de RRF-rangscore (zie hieronder) |
 | `CORTEXIQ_MAX_CHARS` | `1400` | maximum aan geïnjecteerde context per turn |
@@ -59,6 +61,44 @@ geeft dus 400 (`namespace not found`). Standaard leest de plugin daarom globaal
 over al je namespaces, terwijl capture naar één concreet namespace gaat. Dat
 namespace moet bestaan (`POST /api/v1/namespaces`); ontbreekt het, dan faalt de
 write en zegt de plugin dat één keer hardop in plaats van stil data te verliezen.
+
+## Meerdere profielen
+
+Hermes kan meerdere profielen uit één proces bedienen (`gateway.multiplex_profiles`,
+default `true`). Twee dingen zijn daarvoor essentieel, en allebei zitten ze erin:
+
+- **Config per profiel** via `<hermes_home>/cortexiq.json` (of
+  `cortexiq/config.json`). Voorrang: **JSON → omgeving → default.** `hermes profile
+  clone` copieert dit bestand mee, dus een kloon neemt zijn instellingen mee. Zie
+  `examples/cortexiq.json`.
+- **Credentials via de profiel-scope.** Een multiplex-gateway zet de `.env` van een
+  profiel bewust *niet* in `os.environ` — anders lekten de sleutels van profiel A in
+  de turns van B. De provider leest daarom via `agent.secret_scope.get_secret()`, dat
+  de context-local scope volgt en bij één profiel terugvalt op `os.environ`. Zonder
+  dat is het token van een tweede profiel onzichtbaar en krijg je 401's.
+
+Waar het schrijft en wat het leest, per profiel:
+
+| `recall_scope` | recall doorzoekt | capture schrijft naar |
+| --- | --- | --- |
+| `global` (default) | alles — je hele corpus | `<base>/<profiel>` |
+| `base` | `<base>` en alles daaronder | `<base>/<profiel>` |
+| `profile` | alleen `<base>/<profiel>` | `<base>/<profiel>` |
+
+Met `base_namespace: /hermes` wordt dat `/hermes/default`, `/hermes/werk`,
+enzovoort. Dat namespace maakt de provider zelf aan bij de eerste write — per
+profiel handmatig namespaces aanmaken zou onwerkbaar zijn.
+
+**Eén valkuil, en het is de voor de hand liggende.** Een instelling in de
+*omgeving* geldt voor élk profiel. Zet je `CORTEXIQ_INGEST_NAMESPACE=/hermes` in
+`~/.hermes/.env`, dan schrijven alle profielen daarheen, ook als de JSON van een
+profiel iets anders zegt. Zet per-profiel-dingen dus in de JSON van dát profiel en
+gebruik de omgeving alleen voor wat voor de hele installatie geldt.
+
+En de afweging bij `recall_scope`: `global` geeft de rijkste herinneringen, maar
+profielen zijn vaak juist bedoeld als scheiding. Kies `profile` als "werk" de
+herinneringen van "privé" niet hoort op te halen. `base` zit ertussenin: alle
+agent-profielen, maar niet je `/projects/*` of `/self`.
 
 ## Wat er per turn wordt opgeslagen
 

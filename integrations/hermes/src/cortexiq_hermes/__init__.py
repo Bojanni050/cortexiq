@@ -18,8 +18,19 @@ hun eigen variabele, zodat je globaal kunt blijven lezen.
 Configuratie via omgevingsvariabelen (Hermes laadt ~/.hermes/.env):
   CORTEXIQ_API_TOKEN       verplicht
   CORTEXIQ_API_URL         default http://127.0.0.1:18101
-  CORTEXIQ_NAMESPACE       default "/"   recall-scope; '/' = alle namespaces
-  CORTEXIQ_INGEST_NAMESPACE default = CORTEXIQ_NAMESPACE; moet BESTAAN om te kunnen schrijven
+  CORTEXIQ_RECALL_SCOPE    global | base | profile   (default global = alles)
+  CORTEXIQ_NAMESPACE_BASE  default /hermes  waaronder de agent-profielen leven
+  CORTEXIQ_NAMESPACE       zet één recall-namespace (wint van de scope)
+  CORTEXIQ_INGEST_NAMESPACE default <base>/<profiel>; moet BESTAAN om te schrijven
+
+Per profiel kan dit ook in <hermes_home>/cortexiq.json (of cortexiq/config.json),
+wat `hermes profile clone` mee-copieert. De JSON wint van de omgeving:
+
+  {"recall_scope": "profile", "base_namespace": "/hermes",
+   "recall_limit": 8, "min_score": 0.65, "capture_assistant": true}
+
+Zo bedient één proces meerdere profielen zonder dat ze in elkaars geheugen
+schrijven: capture gaat naar <base>/<profiel>, en recall bepaalt de scope.
   CORTEXIQ_RECALL_LIMIT  default 5
   CORTEXIQ_MIN_SCORE     default 0.6    (gemeten: ruis plafonneert ~0.43,
                                          relevante treffers beginnen ~0.70)
@@ -61,12 +72,177 @@ _TOKEN_CACHE: dict[str, str] = {}
 
 
 def _env(name: str, default: str = "") -> str:
-    return (os.environ.get(name) or "").strip() or default
+    """Env-waarde, via de profiel-scope van Hermes als die er is.
+
+    Een multiplex-gateway bedient meerdere profielen uit ÉÉN proces en zet de
+    .env van een profiel bewust niet in os.environ — anders zouden de sleutels
+    van profiel A in de turns van B lekken. get_secret() leest die context-local
+    scope en valt bij één profiel gewoon terug op os.environ, dus dit is voor
+    beide situaties de juiste route.
+    """
+    value = None
+    try:
+        from agent.secret_scope import get_secret
+
+        value = get_secret(name)
+    except Exception:
+        pass                      # geen scope actief, of een oudere Hermes
+    if value is None:
+        value = os.environ.get(name)
+    return (value or "").strip() or default
 
 
 def _truthy(value: str) -> bool:
     """Env-vlag -> bool. Alleen deze waarden gelden als aan."""
     return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+# -- configuratie per profiel ------------------------------------------------
+#
+# Hermes' eigen conventie: provider-config in <hermes_home>/cortexiq.json (of
+# <hermes_home>/cortexiq/config.json). `hermes profile clone` copieert dat mee,
+# dus een gekloond profiel neemt zijn instellingen mee. Volgorde: JSON ->
+# omgeving (profiel-scoped) -> default.
+
+_JSON_KEYS: dict[str, str] = {
+    "api_url": "CORTEXIQ_API_URL",
+    "base_namespace": "CORTEXIQ_NAMESPACE_BASE",
+    "namespace": "CORTEXIQ_NAMESPACE",
+    "ingest_namespace": "CORTEXIQ_INGEST_NAMESPACE",
+    "ingest_path": "CORTEXIQ_INGEST_PATH",
+    "recall_scope": "CORTEXIQ_RECALL_SCOPE",
+    "recall_limit": "CORTEXIQ_RECALL_LIMIT",
+    "min_score": "CORTEXIQ_MIN_SCORE",
+    "max_chars": "CORTEXIQ_MAX_CHARS",
+    "turn_importance": "CORTEXIQ_TURN_IMPORTANCE",
+    "capture_assistant": "CORTEXIQ_CAPTURE_ASSISTANT",
+    "assistant_max_chars": "CORTEXIQ_ASSISTANT_MAX_CHARS",
+    "capture_max_chars": "CORTEXIQ_CAPTURE_MAX_CHARS",
+}
+
+_CONFIG_CACHE: dict[str, dict] = {}
+
+
+def _home(home: str | Path | None = None) -> Path:
+    """De home van dit profiel. Bij voorkeur de geïnjecteerde, niet HERMES_HOME:
+    in een multiplex-gateway is die laatste de home van het proces, niet van het
+    profiel dat deze turn bedient."""
+    return Path(home or _env("HERMES_HOME") or (Path.home() / ".hermes"))
+
+
+def _config(home: str | Path | None = None) -> dict:
+    """De cortexiq.json van dit profiel, of {}."""
+    base = _home(home)
+    key = str(base)
+    if key in _CONFIG_CACHE:
+        return _CONFIG_CACHE[key]
+    cfg: dict = {}
+    for candidate in (base / "cortexiq.json", base / "cortexiq" / "config.json"):
+        try:
+            if not candidate.is_file():
+                continue
+            data = json.loads(candidate.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                cfg = data
+                logger.info("%s: config gelezen uit %s", PROVIDER_NAME, candidate)
+            else:
+                logger.warning("%s: %s is geen JSON-object — genegeerd", PROVIDER_NAME, candidate)
+        except Exception as exc:
+            logger.warning("%s: %s onleesbaar (%s) — genegeerd", PROVIDER_NAME, candidate, exc)
+        break
+    _CONFIG_CACHE[key] = cfg
+    return cfg
+
+
+def _setting(name: str, default: str = "", *, home: str | Path | None = None) -> str:
+    """Eén instelling: JSON -> omgeving -> default."""
+    value = _config(home).get(name)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    env_name = _JSON_KEYS.get(name)
+    return _env(env_name, default) if env_name else default
+
+
+def _profile(home: str | Path | None = None) -> str:
+    """Profielnaam: <...>/profiles/<naam> -> <naam>, anders 'default'."""
+    base = _home(home)
+    return base.name if base.parent.name == "profiles" and base.name else "default"
+
+
+def _base_namespace(home: str | Path | None = None) -> str:
+    """Namespace waaronder alle agent-profielen leven (default /hermes)."""
+    ns = (_setting("base_namespace", "/hermes", home=home) or "/hermes").strip()
+    return ns if ns.startswith("/") else "/" + ns
+
+
+def _recall_namespaces(home: str | Path | None = None) -> Optional[list[str]]:
+    """Wat recall doorzoekt. None = geen filter, dus de root: alles.
+
+    recall_scope:
+      global  (default) -> None              alles, je hele corpus
+      base              -> ['/hermes']       de subtree: alle agent-profielen
+      profile           -> ['/hermes/<prof>'] strikt dit profiel
+
+    Het namespace-filter van CortexIQ is hiërarchisch: '/projects' levert ook
+    '/projects/stash' en '/projects/gaia' op. Daarom is 'base' één pad.
+
+    Een expliciete `namespaces`-lijst in de JSON wint van de scope, en een
+    expliciete `namespace` zet één namespace (het gedrag van vóór de scopes).
+    """
+    explicit = _config(home).get("namespaces")
+    if isinstance(explicit, list) and explicit:
+        return [str(x) for x in explicit]
+    single = _setting("namespace", "", home=home).strip()
+    if single and single != "/":
+        return [single]
+    scope = _setting("recall_scope", "global", home=home).strip().lower()
+    if scope == "profile":
+        return [f"{_base_namespace(home)}/{_profile(home)}"]
+    if scope == "base":
+        return [_base_namespace(home)]
+    if scope not in ("global", "/", ""):
+        logger.warning("%s: onbekende recall_scope %r — val terug op 'global'",
+                       PROVIDER_NAME, scope)
+    return None
+
+
+def _ingest_namespace(home: str | Path | None = None) -> str:
+    """Capture-namespace: expliciet, anders <base>/<profiel>.
+
+    Moet een BESTAAND namespace zijn. '/' is de root: lezen mag daar, schrijven
+    niet (geen rij in de namespaces-tabel -> 400). Bestaat het nog niet, dan
+    maakt de provider hem bij de eerste write zelf aan.
+    """
+    explicit = _setting("ingest_namespace", "", home=home).strip()
+    ns = explicit or f"{_base_namespace(home)}/{_profile(home)}"
+    return ns if ns.startswith("/") else "/" + ns
+
+
+def _ensure_namespace(ns: str) -> bool:
+    """Maak het namespace aan als het ontbreekt. True als het nu bestaat."""
+    base = _env("CORTEXIQ_API_URL", _DEFAULT_API).rstrip("/")
+    req = urllib.request.Request(
+        f"{base}/api/v1/namespaces",
+        data=json.dumps({"slug": ns, "name": f"Hermes agent ({ns.lstrip('/')})"}).encode(),
+        method="POST",
+        headers={"Authorization": f"Bearer {_token()}",
+                 "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=_INGEST_TIMEOUT) as resp:
+            logger.info("%s: namespace %s aangemaakt (HTTP %s)", PROVIDER_NAME, ns, resp.status)
+        return True
+    except urllib.error.HTTPError as exc:
+        if exc.code in (400, 409):              # bestaat al: prima
+            return True
+        logger.warning("%s: kon namespace %s niet aanmaken (HTTP %s)", PROVIDER_NAME, ns, exc.code)
+    except Exception as exc:
+        logger.warning("%s: kon namespace %s niet aanmaken (%s)", PROVIDER_NAME, ns, exc)
+    return False
 
 
 # Grenzen waarop afkappen netjes is: zinseinde, regelovergang, puntkomma.
@@ -115,55 +291,33 @@ def _clip(text: str, cap: int) -> str:
     return out
 
 
-def _token() -> str:
-    """CORTEXIQ_API_TOKEN uit de omgeving, anders uit $HERMES_HOME/.env."""
-    if "v" in _TOKEN_CACHE:
-        return _TOKEN_CACHE["v"]
+def _token(home: str | Path | None = None) -> str:
+    """CORTEXIQ_API_TOKEN: eerst de (profiel-scoped) omgeving, dan <home>/.env.
+
+    De cache is per home: één proces kan meerdere profielen bedienen, en dan mag
+    het token van profiel A niet voor profiel B blijven hangen.
+    """
     tok = _env("CORTEXIQ_API_TOKEN")
-    if not tok:
-        home = Path(_env("HERMES_HOME") or str(Path.home() / ".hermes"))
+    if tok:
+        return tok
+    base = _home(home)
+    key = str(base)
+    if key not in _TOKEN_CACHE:
+        found = ""
         try:
-            for line in (home / ".env").read_text(encoding="utf-8").splitlines():
+            for line in (base / ".env").read_text(encoding="utf-8").splitlines():
                 if line.startswith("CORTEXIQ_API_TOKEN="):
-                    tok = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    found = line.split("=", 1)[1].strip().strip('"').strip("'")
                     break
         except OSError:
             pass
-    _TOKEN_CACHE["v"] = tok
-    return tok
+        _TOKEN_CACHE[key] = found
+    return _TOKEN_CACHE[key]
 
 
-def _namespace() -> str:
-    """Namespace, genormaliseerd naar een leading '/'.
-
-    CortexIQ weigert paden zonder leading slash ("brain: namespace path must
-    start with /"), en zo'n fout komt als HTTP 500 terug. Normaliseren hier
-    voorkomt dat een typefout in .env stil elke write laat mislukken.
-    """
-    ns = _env("CORTEXIQ_NAMESPACE", "/").strip()
-    if not ns.startswith("/"):
-        ns = "/" + ns
-    return ns or "/"
-
-
-def _ingest_namespace() -> str:
-    """Namespace voor capture — moet een BESTAAND namespace zijn.
-
-    Recall mag '/': dat is de root en betekent "zoek in alles". Schrijven kan
-    daar niet, want '/' heeft geen rij in de namespaces-tabel; remember geeft
-    dan 400 "namespace not found". Vandaar een eigen variabele, met
-    CORTEXIQ_NAMESPACE als terugval. Zo kun je globaal blijven lezen terwijl
-    capture naar een concreet namespace gaat.
-    """
-    ns = (_env("CORTEXIQ_INGEST_NAMESPACE", "").strip()
-          or _env("CORTEXIQ_NAMESPACE", "/"))
-    if not ns.startswith("/"):
-        ns = "/" + ns
-    return ns or "/"
-
-
-def _post(path: str, payload: dict[str, Any], *, timeout: float) -> dict[str, Any]:
-    base = _env("CORTEXIQ_API_URL", _DEFAULT_API).rstrip("/")
+def _post(path: str, payload: dict[str, Any], *, timeout: float,
+          home: str | Path | None = None) -> dict[str, Any]:
+    base = _setting("api_url", _DEFAULT_API, home=home).rstrip("/")
     req = urllib.request.Request(
         f"{base}{path}",
         data=json.dumps(payload).encode(),
@@ -221,14 +375,16 @@ class CortexIQProvider(MemoryProvider):
         self._home = Path(home)
         self._session_id = session_id or ""
         self._agent_context = kwargs.get("agent_context") or "primary"
-        logger.info("%s: gestart (home=%s, context=%s, recall-namespace=%s, capture-namespace=%s)",
-                    PROVIDER_NAME, self._home, self._agent_context,
-                    _namespace(), _ingest_namespace())
-        if _ingest_namespace() == "/":
+        scope = _setting("recall_scope", "global", home=self._home)
+        logger.info("%s: gestart (home=%s, profiel=%s, context=%s, recall=%s%s, capture=%s)",
+                    PROVIDER_NAME, self._home, _profile(self._home), self._agent_context,
+                    scope, f" {_recall_namespaces(self._home)}" if _recall_namespaces(self._home) else " (alles)",
+                    _ingest_namespace(self._home))
+        if _ingest_namespace(self._home) == "/":
             logger.warning("%s: capture-namespace staat op '/' en daar kan niet in geschreven "
                            "worden ('/' is de root, geen namespace-rij -> remember geeft 400). "
                            "Recall blijft werken; capture staat uit tot je een bestaande namespace "
-                           "opgeeft, bijv. CORTEXIQ_INGEST_NAMESPACE=/hermes.",
+                           "opgeeft, bijv. CORTEXIQ_INGEST_NAMESPACE=/hermes, of zet \"ingest_namespace\" in cortexiq.json.",
                            PROVIDER_NAME)
 
     def shutdown(self) -> None:
@@ -270,7 +426,7 @@ class CortexIQProvider(MemoryProvider):
         if not rows:
             self._cache, self._cache_count = "", 0
             return
-        max_chars = int(_env("CORTEXIQ_MAX_CHARS", "1400"))
+        max_chars = int(_setting("max_chars", "1400", home=self._home))
         lines, used, kept = [], 0, 0
         for content in rows:
             if used + len(content) > max_chars:
@@ -302,15 +458,15 @@ class CortexIQProvider(MemoryProvider):
             return
 
         content = user_content
-        if _truthy(_env("CORTEXIQ_CAPTURE_ASSISTANT", "false")):
+        if _truthy(_setting("capture_assistant", "false", home=self._home)):
             answer = (assistant_content or "").strip()
             if answer:
                 # 0 = geen aparte assistant-grens; de harde episode-grens hieronder
                 # is dan de enige rem.
-                answer = _clip(answer, int(_env("CORTEXIQ_ASSISTANT_MAX_CHARS", "0")))
+                answer = _clip(answer, int(_setting("assistant_max_chars", "0", home=self._home)))
                 content = f"user: {user_content}\n\nassistant: {answer}"
 
-        content = _clip(content, int(_env("CORTEXIQ_CAPTURE_MAX_CHARS", "4000")))
+        content = _clip(content, int(_setting("capture_max_chars", "4000", home=self._home)))
 
         spawn_context_thread(self._store, name=f"{PROVIDER_NAME}-sync",
                              args=(content, "turn", session_id or self._session_id)).start()
@@ -359,13 +515,13 @@ class CortexIQProvider(MemoryProvider):
     # -- transport ----------------------------------------------------------
 
     def _search(self, query: str, *, limit: Optional[int] = None) -> list[str]:
-        limit = limit or int(_env("CORTEXIQ_RECALL_LIMIT", "5"))
-        namespace = _namespace()
+        limit = limit or int(_setting("recall_limit", "5", home=self._home))
         payload: dict[str, Any] = {"query": query, "limit": limit}
-        if namespace != "/":
-            payload["namespaces"] = [namespace]
+        namespaces = _recall_namespaces(self._home)
+        if namespaces:
+            payload["namespaces"] = namespaces
 
-        data = _post(_RECALL_PATH, payload, timeout=_RECALL_TIMEOUT)
+        data = _post(_RECALL_PATH, payload, timeout=_RECALL_TIMEOUT, home=self._home)
         rows = data.get("results") or []
 
         # WAAROM OP `score` FILTEREN EN NOOIT OP `similarity`:
@@ -381,7 +537,7 @@ class CortexIQProvider(MemoryProvider):
         #
         # Ontbreekt `score` (geen numerieke waarde), dan houden we de rij: liever
         # een keertje extra dan een exacte treffer weggooien.
-        min_score = float(_env("CORTEXIQ_MIN_SCORE", "0.6"))
+        min_score = float(_setting("min_score", "0.6", home=self._home))
         out: list[str] = []
         for row in rows:
             content = str(row.get("content") or "").strip()
@@ -401,12 +557,12 @@ class CortexIQProvider(MemoryProvider):
             return
         payload = {
             "content": content,
-            "namespace": _ingest_namespace(),
-            "importance": float(_env("CORTEXIQ_TURN_IMPORTANCE", "0.5")),
+            "namespace": _ingest_namespace(self._home),
+            "importance": float(_setting("turn_importance", "0.5", home=self._home)),
         }
-        path = _env("CORTEXIQ_INGEST_PATH", "/api/v1/remember")
+        path = _setting("ingest_path", "/api/v1/remember", home=self._home)
         try:
-            _post(path, payload, timeout=_INGEST_TIMEOUT)
+            _post(path, payload, timeout=_INGEST_TIMEOUT, home=self._home)
         except urllib.error.HTTPError as exc:
             try:
                 detail = exc.read()[:200].decode(errors="replace").strip()
@@ -417,7 +573,18 @@ class CortexIQProvider(MemoryProvider):
                 logger.info("%s: geen ingest-endpoint op %s (HTTP %s) — capture staat uit "
                             "tot je die route toevoegt. Recall blijft werken.",
                             PROVIDER_NAME, path, exc.code)
-            elif not self._ingest_warned:
+            elif exc.code == 400 and "namespace not found" in detail.lower():
+                # Per-profiel namespaces kun je niet vooraf voor elk profiel
+                # aanmaken; doe het bij de eerste write en probeer één keer opnieuw.
+                if _ensure_namespace(payload["namespace"]):
+                    try:
+                        _post(path, payload, timeout=_INGEST_TIMEOUT, home=self._home)
+                        logger.info("%s: namespace %s aangemaakt en eerste capture gelukt",
+                                    PROVIDER_NAME, payload["namespace"])
+                        return
+                    except Exception as retry_exc:
+                        detail = f"{detail} | retry: {retry_exc}"
+            if not self._ingest_warned:
                 # Bijv. 500 door een niet-bestaande namespace: dat mag niet stil zijn.
                 self._ingest_warned = True
                 logger.warning("%s: capture faalt (HTTP %s) %s — maak de namespace aan "

@@ -1,0 +1,27 @@
+{
+  "_comment": "Per-profiel configuratie voor de CortexIQ memory provider. Zet dit als <hermes_home>/cortexiq.json, dus ~/.hermes/cortexiq.json voor het default-profiel en ~/.hermes/profiles/<naam>/cortexiq.json voor een ander. Hermes' eigen `hermes profile clone` copieert dit bestand mee. De JSON wint van de omgevingsvariabelen; laat een sleutel weg om de omgeving of de default te laten gelden.",
+
+  "recall_scope": "profile",
+
+  "_recall_scope": "global = doorzoek alles (default), base = alleen <base_namespace> en alles daaronder, profile = alleen <base_namespace>/<profiel>. CortexIQ's namespace-filter is hiërarchisch: '/hermes' levert ook '/hermes/werk' op.",
+
+  "base_namespace": "/hermes",
+
+  "_base_namespace": "Waaronder alle agent-profielen leven. Capture gaat naar <base_namespace>/<profiel>, en dat namespace maakt de provider zelf aan bij de eerste write.",
+
+  "ingest_namespace": "/hermes/werk",
+
+  "_ingest_namespace": "Optioneel. Zet dit alleen als je capture ergens anders wilt dan <base>/<profiel>. Moet bestaan (of wordt aangemaakt). Leeg laten = afgeleid.",
+
+  "recall_limit": 8,
+  "min_score": 0.6,
+  "max_chars": 1400,
+
+  "_scores": "min_score is de drempel op de RRF-rangscore, niet op similarity: rangpositie is gekalibreerd, rauwe cosine niet. Gemeten: ruis plafonneert rond 0.43, relevante treffers beginnen rond 0.70.",
+
+  "capture_assistant": true,
+  "assistant_max_chars": 0,
+  "capture_max_chars": 4000,
+
+  "_capture": "capture_assistant slaat ook het antwoord op, met rol-labels. assistant_max_chars 0 = geen aparte grens; capture_max_chars is de harde rem op de hele episode. Afkappen gebeurt op een zins- of alineagrens en bewaart kop én staart."
+}
