@@ -42,15 +42,20 @@ Alles via omgevingsvariabelen (in `$HERMES_HOME/.env`):
 | --- | --- | --- |
 | `CORTEXIQ_API_URL` | `http://127.0.0.1:18101` | basis-URL van de HTTP-API |
 | `CORTEXIQ_API_TOKEN` | — | **verplicht**; gebruik een token met write-rechten in één namespace |
-| `CORTEXIQ_NAMESPACE` | `/` | namespace voor recall én capture (leading `/` wordt afgedwongen) |
+| `CORTEXIQ_NAMESPACE` | `/` | recall-scope; `/` = **alle** namespaces |
+| `CORTEXIQ_INGEST_NAMESPACE` | = `CORTEXIQ_NAMESPACE` | capture-scope; **moet bestaan**, `/` kan niet |
 | `CORTEXIQ_RECALL_LIMIT` | `5` | hoeveel treffers per turn worden opgehaald |
 | `CORTEXIQ_MIN_SCORE` | `0.6` | drempel op de RRF-rangscore (zie hieronder) |
 | `CORTEXIQ_MAX_CHARS` | `1400` | maximum aan geïnjecteerde context per turn |
 | `CORTEXIQ_INGEST_PATH` | `/api/v1/remember` | pas aan als je route anders heet |
 | `CORTEXIQ_TURN_IMPORTANCE` | `0.5` | importance bij capture |
 
-De namespace moet **bestaan** voordat er geschreven wordt
-(`POST /api/v1/namespaces`); een onbekende namespace laat de write falen.
+**Twee namespaces, en dat is expres.** `/` is de root: voor **lezen** betekent het
+"zoek in alles", maar er bestaat geen namespace-rij voor — schrijven naar `/`
+geeft dus 400 (`namespace not found`). Standaard leest de plugin daarom globaal
+over al je namespaces, terwijl capture naar één concreet namespace gaat. Dat
+namespace moet bestaan (`POST /api/v1/namespaces`); ontbreekt het, dan faalt de
+write en zegt de plugin dat één keer hardop in plaats van stil data te verliezen.
 
 ## Twee dingen die je moet weten
 

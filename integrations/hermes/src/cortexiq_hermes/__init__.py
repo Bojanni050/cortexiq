@@ -6,19 +6,20 @@ al in `mcp_servers` staat — deze plugin voegt daar bewust GEEN tools aan toe, 
 dat zou elke tool-definitie dubbel in elke request proppen.
 
 Transport:
-  - lezen : POST http://127.0.0.1:18101/api/v1/recall      (bestaat, geverifieerd)
-  - schrijven: POST <CORTEXIQ_INGEST_PATH>                  (bestaat NOG NIET in je REST-API)
+  - lezen    : POST http://127.0.0.1:18101/api/v1/recall    (recall-lus, hybrid RRF)
+  - schrijven: POST <CORTEXIQ_INGEST_PATH> = /api/v1/remember (maakt een episode; de
+               extractor consolideert die later tot facts, dus niet synchroon)
 
-Over dat tweede: in CortexIQ ís er geen REST-ingest. Schrijven kan alleen via de
-MCP-tool `remember`, die intern `Brain.RememberWithImportance(ctx, namespace,
-content, nil, importance)` aanroept. Zet daar een dunne REST-wrapper op
-(zie README) en deze plugin werkt volledig — tot die tijd faalt de write stil en
-doet de recall-lus het gewoon.
+Over de namespace: recall mag '/' — dat is de root en betekent "zoek in alles".
+Schrijven vereist een BESTAAND namespace, want '/' heeft geen rij in de
+namespaces-tabel (remember geeft dan 400). Recall en capture hebben daarom elk
+hun eigen variabele, zodat je globaal kunt blijven lezen.
 
 Configuratie via omgevingsvariabelen (Hermes laadt ~/.hermes/.env):
-  CORTEXIQ_API_TOKEN     verplicht
-  CORTEXIQ_API_URL       default http://127.0.0.1:18101
-  CORTEXIQ_NAMESPACE     default "/"
+  CORTEXIQ_API_TOKEN       verplicht
+  CORTEXIQ_API_URL         default http://127.0.0.1:18101
+  CORTEXIQ_NAMESPACE       default "/"   recall-scope; '/' = alle namespaces
+  CORTEXIQ_INGEST_NAMESPACE default = CORTEXIQ_NAMESPACE; moet BESTAAN om te kunnen schrijven
   CORTEXIQ_RECALL_LIMIT  default 5
   CORTEXIQ_MIN_SCORE     default 0.6    (gemeten: ruis plafonneert ~0.43,
                                          relevante treffers beginnen ~0.70)
@@ -87,6 +88,22 @@ def _namespace() -> str:
     return ns or "/"
 
 
+def _ingest_namespace() -> str:
+    """Namespace voor capture — moet een BESTAAND namespace zijn.
+
+    Recall mag '/': dat is de root en betekent "zoek in alles". Schrijven kan
+    daar niet, want '/' heeft geen rij in de namespaces-tabel; remember geeft
+    dan 400 "namespace not found". Vandaar een eigen variabele, met
+    CORTEXIQ_NAMESPACE als terugval. Zo kun je globaal blijven lezen terwijl
+    capture naar een concreet namespace gaat.
+    """
+    ns = (_env("CORTEXIQ_INGEST_NAMESPACE", "").strip()
+          or _env("CORTEXIQ_NAMESPACE", "/"))
+    if not ns.startswith("/"):
+        ns = "/" + ns
+    return ns or "/"
+
+
 def _post(path: str, payload: dict[str, Any], *, timeout: float) -> dict[str, Any]:
     base = _env("CORTEXIQ_API_URL", _DEFAULT_API).rstrip("/")
     req = urllib.request.Request(
@@ -146,8 +163,15 @@ class CortexIQProvider(MemoryProvider):
         self._home = Path(home)
         self._session_id = session_id or ""
         self._agent_context = kwargs.get("agent_context") or "primary"
-        logger.info("%s: gestart (home=%s, context=%s, namespace=%s)",
-                    PROVIDER_NAME, self._home, self._agent_context, _env("CORTEXIQ_NAMESPACE", "/"))
+        logger.info("%s: gestart (home=%s, context=%s, recall-namespace=%s, capture-namespace=%s)",
+                    PROVIDER_NAME, self._home, self._agent_context,
+                    _namespace(), _ingest_namespace())
+        if _ingest_namespace() == "/":
+            logger.warning("%s: capture-namespace staat op '/' en daar kan niet in geschreven "
+                           "worden ('/' is de root, geen namespace-rij -> remember geeft 400). "
+                           "Recall blijft werken; capture staat uit tot je een bestaande namespace "
+                           "opgeeft, bijv. CORTEXIQ_INGEST_NAMESPACE=/hermes.",
+                           PROVIDER_NAME)
 
     def shutdown(self) -> None:
         return
@@ -299,7 +323,7 @@ class CortexIQProvider(MemoryProvider):
             return
         payload = {
             "content": content,
-            "namespace": _namespace(),
+            "namespace": _ingest_namespace(),
             "importance": float(_env("CORTEXIQ_TURN_IMPORTANCE", "0.5")),
         }
         path = _env("CORTEXIQ_INGEST_PATH", "/api/v1/remember")
@@ -319,7 +343,7 @@ class CortexIQProvider(MemoryProvider):
                 # Bijv. 500 door een niet-bestaande namespace: dat mag niet stil zijn.
                 self._ingest_warned = True
                 logger.warning("%s: capture faalt (HTTP %s) %s — maak de namespace aan "
-                               "(POST /api/v1/namespaces) of zet CORTEXIQ_NAMESPACE goed. "
+                               "(POST /api/v1/namespaces) of zet CORTEXIQ_INGEST_NAMESPACE goed. "
                                "Verdere fouten blijven stil.",
                                PROVIDER_NAME, exc.code, detail)
         except Exception as exc:
