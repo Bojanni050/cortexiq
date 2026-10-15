@@ -130,6 +130,37 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top
 #toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 18px; border-radius: var(--radius-sm); background: var(--panel-2); border: 1px solid var(--border-2); border-left: 3px solid var(--green); box-shadow: 0 12px 32px rgba(0,0,0,.4); display: none; z-index: 100; max-width: 380px; }
 #toast.err { border-left-color: var(--red); }
 
+/* graph */
+.gmeta { color: var(--muted); font-size: 12.5px; margin: -4px 0 10px; }
+.gmeta b { color: var(--fg); }
+.gwrap { position: relative; }
+#cy { height: calc(100vh - 270px); min-height: 480px; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+  background: radial-gradient(900px 520px at 30% 20%, rgba(124,140,255,.09), transparent 60%), radial-gradient(700px 400px at 85% 90%, rgba(167,139,250,.07), transparent 60%), var(--bg-2); }
+.gpanel { position: absolute; top: 12px; right: 12px; width: 320px; max-height: calc(100% - 24px); overflow-y: auto; padding: 16px; background: rgba(19,24,36,.98);
+  backdrop-filter: blur(8px); border: 1px solid var(--border-2); border-radius: var(--radius); box-shadow: 0 12px 32px rgba(0,0,0,.45); animation: fade .2s ease; }
+.gpanel[hidden] { display: none; }
+.gpanel h4 { margin: 0 24px 4px 0; font-size: 15px; line-height: 1.35; letter-spacing: -.01em; word-break: break-word; }
+.gx { position: absolute; top: 8px; right: 10px; background: none; border: 0; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; }
+.gx:hover { color: var(--fg); }
+.gactions { margin: 12px 0 8px; }
+.gactions .btn { padding: 6px 12px; font-size: 12.5px; }
+.glist { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.grow { padding: 6px 8px; border-radius: 8px; cursor: pointer; font-size: 13px; word-break: break-word; }
+.grow:hover { background: rgba(255,255,255,.05); }
+.pill { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 500; color: #fff; background: color-mix(in srgb, var(--c) 28%, transparent); border: 1px solid color-mix(in srgb, var(--c) 60%, transparent); }
+.gkv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: center; margin-top: 12px; font-size: 13px; }
+.gkv span:nth-child(odd) { color: var(--dim); font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; }
+.gquote { margin-top: 2px; padding: 10px 12px; border-left: 3px solid var(--accent); background: rgba(255,255,255,.03); border-radius: 0 8px 8px 0; color: var(--fg); font-size: 13px; }
+.gsrc { margin-top: 14px; }
+.glegend { position: absolute; left: 12px; bottom: 12px; max-width: calc(100% - 360px); display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font: inherit; font-size: 11.5px; color: var(--muted);
+  background: rgba(19,24,36,.88); border: 1px solid var(--border-2); cursor: pointer; backdrop-filter: blur(6px); }
+.chip i { width: 8px; height: 8px; border-radius: 50%; }
+.chip:hover:not(:disabled) { color: var(--fg); border-color: var(--dim); }
+.chip.on { color: #fff; border-color: var(--accent); background: var(--accent-soft); }
+.chip:disabled { cursor: default; }
+@media (max-width: 860px) { .gpanel { position: static; width: auto; margin-top: 10px; } .glegend { position: static; max-width: none; margin-top: 10px; } #cy { height: 60vh; } }
+
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }
   aside { position: static; height: auto; flex-direction: column; border-right: 0; border-bottom: 1px solid var(--border); }
@@ -174,6 +205,7 @@ const icons = {
   hypotheses: '<path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2V17h6v-.3c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z"/>',
   contradictions: '<path d="m13 2-9 12h7l-1 8 9-12h-7z"/>',
   failures: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  graph: '<circle cx="6" cy="6" r="2.6"/><circle cx="18" cy="8" r="2.6"/><circle cx="9" cy="18" r="2.6"/><path d="M8.4 6.4l7.1 1.2M7.2 8.3l1.1 7.3M16.6 10.2l-5.7 6.1"/>',
   links: '<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>',
   namespaces: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   runs: '<path d="M3 12a9 9 0 1 0 2.6-6.4"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/>',
@@ -187,6 +219,7 @@ const tabs = [
   ['episodes', 'Episodes', 'Raw memories, before they are consolidated into facts'],
   ['recall', 'Recall', 'Semantic search across episodes and facts'],
   ['facts', 'Facts', 'Stored facts with confidence'],
+  ['graph', 'Graph', 'How entities relate: the knowledge graph (drag, zoom, click for details)'],
   ['goals', 'Goals', 'What the agent is working towards'],
   ['hypotheses', 'Hypotheses', 'Unverified beliefs waiting for evidence'],
   ['contradictions', 'Contradictions', 'Facts that disagree with each other'],
@@ -721,7 +754,265 @@ async function renderRuns() {
       <td>${r.errors ? `<span class="badge abandoned">${r.errors}</span>${r.error_sample ? `<div class="muted">${esc(r.error_sample)}</div>` : ''}` : '<span class="muted">—</span>'}</td>
     </tr>`));
 }
-const renderers = { overview: renderOverview, episodes: renderEpisodes, recall: renderRecall, facts: renderFacts,
+/* ---------- Graph tab (Cytoscape.js, bundled under /ui/vendor) ---------- */
+const GRAPH_LIBS = ['cytoscape.min.js', 'layout-base.js', 'cose-base.js', 'cytoscape-fcose.js'];
+let graphLibsPromise = null;
+function loadGraphLibs() {
+  if (window.cytoscape && window.__fcoseReady) return Promise.resolve();
+  if (graphLibsPromise) return graphLibsPromise;
+  // Order matters: each file registers a global the next one needs.
+  graphLibsPromise = GRAPH_LIBS.reduce((p, file) => p.then(() => new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = '/ui/vendor/' + file;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Could not load ' + file));
+    document.head.appendChild(s);
+  })), Promise.resolve()).then(() => { window.cytoscape.use(window.cytoscapeFcose); window.__fcoseReady = true; });
+  graphLibsPromise.catch(() => { graphLibsPromise = null; });
+  return graphLibsPromise;
+}
+
+const graphState = { q: '', canonical: '', limit: 150, minConf: 0, data: null };
+const NS_COLORS = ['#7c8cff', '#34d399', '#fbbf24', '#f472b6', '#60a5fa', '#a78bfa', '#fb923c', '#2dd4bf', '#f87171', '#a3e635'];
+const REL_COLORS = ['#7c8cff', '#34d399', '#fbbf24', '#f472b6', '#60a5fa', '#a78bfa', '#fb923c', '#2dd4bf', '#f87171', '#a3e635',
+  '#e879f9', '#22d3ee', '#facc15', '#4ade80', '#c084fc', '#fda4af'];
+const UNMAPPED_COLOR = '#5d677c';
+let relColor = () => UNMAPPED_COLOR;
+
+function destroyGraph() {
+  if (state.cy) { try { state.cy.destroy(); } catch (e) {} state.cy = null; }
+}
+
+async function renderGraph() {
+  destroyGraph();
+  document.getElementById('content').innerHTML = `
+    ${toolbar(`
+      <input id="g-q" placeholder="Focus on an entity (e.g. CortexIQ)…" value="${esc(graphState.q)}"
+        onkeydown="if(event.key==='Enter'){graphState.q=this.value.trim();loadGraph()}">
+      <select id="g-type" title="Relation type" onchange="graphState.canonical=this.value;loadGraph()"></select>
+      <select id="g-conf" title="Minimum confidence" onchange="graphState.minConf=Number(this.value);loadGraph()">
+        ${[0, 0.8, 0.9].map(v => `<option value="${v}"${graphState.minConf === v ? ' selected' : ''}>${v ? 'Confidence ≥ ' + v : 'Any confidence'}</option>`).join('')}
+      </select>
+      <select id="g-limit" title="Maximum number of entities" onchange="graphState.limit=Number(this.value);loadGraph()">
+        ${[50, 100, 150, 300, 500].map(v => `<option value="${v}"${graphState.limit === v ? ' selected' : ''}>${v} entities</option>`).join('')}
+      </select>
+      <button onclick="graphLayout(true)" title="Shake the layout">Re-layout</button>
+      <button onclick="state.cy && state.cy.animate({fit:{padding:30}, duration:350})">Fit</button>`)}
+    <div class="gmeta" id="g-meta"></div>
+    <div class="gwrap">
+      <div id="cy"></div>
+      <div class="gpanel" id="g-panel" hidden></div>
+      <div class="glegend" id="g-legend"></div>
+    </div>`;
+  await loadGraphLibs();
+  await loadGraph();
+}
+
+function graphColors(data) {
+  // Most used relation types get the first (most distinct) colours.
+  const types = Object.entries(data.canonical_counts || {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(x => x[0]);
+  relColor = c => { const i = types.indexOf(c); return i < 0 ? UNMAPPED_COLOR : REL_COLORS[i % REL_COLORS.length]; };
+}
+
+async function loadGraph() {
+  const meta = document.getElementById('g-meta');
+  if (meta) meta.textContent = 'Loading…';
+  const p = new URLSearchParams({ namespaces: state.ns, limit: graphState.limit });
+  if (graphState.q) p.set('q', graphState.q);
+  if (graphState.minConf) p.set('min_confidence', graphState.minConf);
+  if (graphState.canonical === '@mapped') p.set('mapped', '1');
+  else if (graphState.canonical) p.set('canonical', graphState.canonical);
+  const data = await api('/graph?' + p.toString());
+  graphState.data = data;
+  graphColors(data);
+  drawGraphChrome(data);
+  drawGraph(data);
+}
+
+function drawGraphChrome(data) {
+  const sel = document.getElementById('g-type');
+  if (sel) {
+    const counts = Object.entries(data.canonical_counts || {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    sel.innerHTML = `<option value="">All relation types</option><option value="@mapped">Only normalised types</option>` +
+      counts.map(([c, n]) => `<option value="${esc(c)}">${esc(c)} (${n})</option>`).join('');
+    sel.value = graphState.canonical;
+    if (sel.value !== graphState.canonical) { graphState.canonical = ''; sel.value = ''; }
+  }
+  const meta = document.getElementById('g-meta');
+  if (meta) {
+    const mapped = Object.values(data.canonical_counts || {}).reduce((a, b) => a + b, 0);
+    meta.innerHTML = `Showing <b>${data.nodes.length}</b> of ${data.total_nodes} entities and <b>${data.edges.length}</b> of ${data.total_edges} relations` +
+      (data.truncated ? ' <span class="muted">· cut to the best-connected entities, raise the limit or focus on one</span>' : '') +
+      ` · ${mapped} normalised, ${data.unmapped} free-text relation${data.unmapped === 1 ? '' : 's'} <span class="muted">(dashed)</span>`;
+  }
+  const legend = document.getElementById('g-legend');
+  if (legend) {
+    const used = new Map();
+    data.edges.forEach(e => used.set(e.canonical || '', (used.get(e.canonical || '') || 0) + 1));
+    const items = [...used.entries()].sort((a, b) => b[1] - a[1]);
+    legend.innerHTML = items.slice(0, 14).map(([c, n]) => {
+      const name = c || 'free text';
+      const on = graphState.canonical === c && c;
+      return `<button class="chip${on ? ' on' : ''}" ${c ? `onclick="graphPickType('${esc(c)}')"` : 'disabled'} title="${n} relation${n === 1 ? '' : 's'} shown">
+        <i style="background:${relColor(c)}${c ? '' : ';opacity:.6'}"></i>${esc(name)}</button>`;
+    }).join('');
+  }
+}
+
+function graphPickType(c) {
+  graphState.canonical = graphState.canonical === c ? '' : c;
+  loadGraph();
+}
+
+function graphElements(data) {
+  const maxDeg = Math.max(1, ...data.nodes.map(n => n.degree));
+  const nodes = data.nodes.map(n => ({ group: 'nodes', data: {
+    id: n.id, label: n.label, degree: n.degree, ns: n.namespace_id, size: 16 + 40 * Math.sqrt(n.degree / maxDeg),
+    color: NS_COLORS[Math.abs(n.namespace_id) % NS_COLORS.length] } }));
+  const edges = data.edges.map((e, i) => ({ group: 'edges', data: {
+    id: 'e' + i, source: e.source, target: e.target, label: e.label, canonical: e.canonical || '', count: e.count,
+    conf: e.confidence, types: e.types, factId: e.fact_id || 0, ns: e.namespace_id, color: relColor(e.canonical || '') } }));
+  return nodes.concat(edges);
+}
+
+const graphStyle = [
+  { selector: 'node', style: {
+    'label': 'data(label)', 'background-color': 'data(color)', 'width': 'data(size)', 'height': 'data(size)',
+    'font-size': 11, 'color': '#e7ecf5', 'text-valign': 'bottom', 'text-margin-y': 5, 'text-wrap': 'ellipsis', 'text-max-width': 130,
+    'text-outline-color': '#0b0e14', 'text-outline-width': 2.5, 'min-zoomed-font-size': 8,
+    'border-width': 2, 'border-color': 'rgba(255,255,255,.28)', 'overlay-opacity': 0,
+    'transition-property': 'opacity, border-width, border-color', 'transition-duration': '0.15s' } },
+  { selector: 'edge', style: {
+    'width': 'mapData(count, 1, 6, 1.4, 4.5)', 'line-color': 'data(color)', 'target-arrow-color': 'data(color)',
+    'target-arrow-shape': 'triangle', 'arrow-scale': 0.85, 'curve-style': 'bezier', 'opacity': 0.55,
+    'font-size': 9.5, 'color': '#dbe2f0', 'text-background-color': '#0b0e14', 'text-background-opacity': 0.9,
+    'text-background-padding': 2, 'text-rotation': 'autorotate', 'overlay-opacity': 0,
+    'transition-property': 'opacity, width', 'transition-duration': '0.15s' } },
+  { selector: 'edge[canonical = ""]', style: { 'line-style': 'dashed', 'line-dash-pattern': [5, 4] } },
+  { selector: 'node.hub', style: { 'min-zoomed-font-size': 0, 'font-size': 13, 'font-weight': 600 } },
+  { selector: '.faded', style: { 'opacity': 0.07, 'text-opacity': 0 } },
+  { selector: 'node.hl', style: { 'border-color': '#ffffff', 'border-width': 3 } },
+  { selector: 'edge.hl', style: { 'opacity': 1, 'label': 'data(label)', 'z-index': 10 } },
+  { selector: 'node:selected', style: { 'border-color': '#ffffff', 'border-width': 4 } },
+  { selector: 'edge:selected', style: { 'opacity': 1, 'label': 'data(label)', 'width': 5, 'z-index': 11 } },
+];
+
+function drawGraph(data) {
+  const box = document.getElementById('cy');
+  if (!box) return;
+  closeGraphPanel();
+  if (!data.nodes.length) {
+    destroyGraph();
+    box.innerHTML = '<div class="empty"><div class="big">∅</div>No relations match these filters</div>';
+    return;
+  }
+  box.innerHTML = '';
+  destroyGraph();
+  const cy = state.cy = cytoscape({
+    container: box, elements: graphElements(data), style: graphStyle,
+    minZoom: 0.1, maxZoom: 3.5, wheelSensitivity: 0.25, boxSelectionEnabled: false,
+  });
+  // The best-connected entities keep their name visible even when zoomed far out.
+  cy.nodes().sort((a, b) => b.data('degree') - a.data('degree')).slice(0, 14).addClass('hub');
+  cy.on('mouseover', 'node', ev => {
+    const nb = ev.target.closedNeighborhood();
+    cy.elements().not(nb).addClass('faded');
+    nb.addClass('hl');
+  });
+  cy.on('mouseout', 'node', () => cy.elements().removeClass('faded hl'));
+  cy.on('mouseover', 'edge', ev => ev.target.addClass('hl'));
+  cy.on('mouseout', 'edge', ev => ev.target.removeClass('hl'));
+  cy.on('tap', 'node', ev => showNodePanel(ev.target));
+  cy.on('tap', 'edge', ev => showEdgePanel(ev.target));
+  cy.on('tap', ev => { if (ev.target === cy) closeGraphPanel(); });
+  cy.on('dbltap', 'node', ev => { graphFocus(ev.target.data('label')); });
+  graphLayout(false);
+}
+
+function graphLayout(shake) {
+  const cy = state.cy;
+  if (!cy) return;
+  const n = cy.nodes().length, big = n > 250;
+  // Small graphs get tighter spacing; big ones need room.
+  const repulsion = n < 60 ? 5500 : n < 200 ? 9500 : 14000, edgeLen = n < 60 ? 75 : n < 200 ? 95 : 120;
+  cy.layout({
+    name: 'fcose', quality: big ? 'draft' : 'default', randomize: true, animate: !big || shake, animationDuration: 800,
+    fit: true, padding: 36, nodeRepulsion: () => repulsion, idealEdgeLength: () => edgeLen, edgeElasticity: () => 0.45,
+    gravity: 0.3, numIter: 2500, packComponents: true, tile: true, nodeSeparation: 80,
+  }).run();
+}
+
+function graphFocus(label) {
+  graphState.q = label;
+  const input = document.getElementById('g-q');
+  if (input) input.value = label;
+  loadGraph();
+}
+
+function closeGraphPanel() {
+  const p = document.getElementById('g-panel');
+  if (p) { p.hidden = true; p.innerHTML = ''; }
+  if (state.cy) state.cy.elements().unselect();
+}
+
+function relPill(e) {
+  const d = e.data();
+  return `<span class="pill" style="--c:${d.color}">${esc(d.label)}</span>`;
+}
+
+function showNodePanel(node) {
+  const d = node.data();
+  const out = node.outgoers('edge'), inc = node.incomers('edge');
+  const row = (e, dir) => {
+    const other = dir === 'out' ? e.target() : e.source();
+    return `<div class="grow" onclick="graphSelectNode('${esc(other.id()).replace(/'/g, '&#39;')}')">
+      <span class="muted">${dir === 'out' ? '→' : '←'}</span> ${relPill(e)} <b>${esc(other.data('label'))}</b>${e.data('count') > 1 ? ` <span class="muted">×${e.data('count')}</span>` : ''}</div>`;
+  };
+  const panel = document.getElementById('g-panel');
+  panel.innerHTML = `
+    <button class="gx" onclick="closeGraphPanel()" aria-label="Close">×</button>
+    <h4>${esc(d.label)}</h4>
+    <div class="muted">${d.degree} relation${d.degree === 1 ? '' : 's'} · <span class="mono">${esc(nsSlug(d.ns))}</span></div>
+    <div class="gactions"><button class="btn" onclick="graphFocus(${JSON.stringify(d.label).replace(/"/g, '&quot;')})">Focus on this entity</button></div>
+    <div class="glist">${out.map(e => row(e, 'out')).join('')}${inc.map(e => row(e, 'in')).join('')}</div>`;
+  panel.hidden = false;
+}
+
+function graphSelectNode(id) {
+  const cy = state.cy;
+  if (!cy) return;
+  const n = cy.getElementById(id);
+  if (!n.length) return;
+  cy.elements().unselect();
+  n.select();
+  cy.animate({ center: { eles: n }, duration: 300 });
+  showNodePanel(n);
+}
+
+async function showEdgePanel(edge) {
+  const d = edge.data();
+  const panel = document.getElementById('g-panel');
+  panel.innerHTML = `
+    <button class="gx" onclick="closeGraphPanel()" aria-label="Close">×</button>
+    <h4><b>${esc(edge.source().data('label'))}</b> ${relPill(edge)} <b>${esc(edge.target().data('label'))}</b></h4>
+    <div class="muted">${d.canonical ? 'Normalised type <b>' + esc(d.canonical) + '</b>' : 'Free-text relation (no normalised type)'}</div>
+    <div class="gkv"><span>Stated</span><b>${d.count}×</b><span>Confidence</span>${pct(d.conf)}</div>
+    <div class="gkv"><span>Original wording</span><b>${(d.types || []).map(esc).join(', ')}</b></div>
+    <div class="gsrc muted">${d.factId ? 'Loading source fact…' : ''}</div>`;
+  panel.hidden = false;
+  if (!d.factId) return;
+  try {
+    const f = await api('/facts/' + d.factId);
+    if (panel.hidden || !state.cy) return;
+    const src = panel.querySelector('.gsrc');
+    if (src) src.innerHTML = `<div class="label" style="padding:0 0 4px">Source fact <span class="mono">#${f.id}</span></div><div class="gquote">${esc(f.content)}</div>`;
+  } catch (e) {
+    const src = panel.querySelector('.gsrc');
+    if (src) src.textContent = 'Source fact not available';
+  }
+}
+
+const renderers = { overview: renderOverview, graph: renderGraph, episodes: renderEpisodes, recall: renderRecall, facts: renderFacts,
   goals: renderGoals, hypotheses: renderHypotheses, contradictions: renderContradictions,
   failures: renderFailures, links: renderLinks, namespaces: renderNamespaces, runs: renderRuns, metrics: renderMetrics, stats: renderStats };
 
@@ -733,6 +1024,7 @@ async function refresh() {
   document.getElementById('ns-select').disabled = state.tab === 'namespaces';
   const c = document.getElementById('content');
   document.getElementById('loading').style.display = 'block';
+  destroyGraph();
   try {
     await loadNamespaces();
     c.innerHTML = '';

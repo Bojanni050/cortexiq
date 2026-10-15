@@ -19,7 +19,7 @@ import (
 	"github.com/Bojanni050/cortexiq/internal/scope"
 )
 
-//go:embed static/index.html
+//go:embed static/index.html static/vendor/*
 var staticFS embed.FS
 
 // Handler serves the dashboard UI and the /api/v1 JSON endpoints.
@@ -37,6 +37,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/{$}", h.redirectToUI)
 	mux.HandleFunc("/ui", h.serveIndex)
 	mux.HandleFunc("/ui/", h.serveIndex)
+	mux.HandleFunc("/ui/vendor/", h.serveVendor)
 	api := http.NewServeMux()
 	api.HandleFunc("/api/v1/recall", h.recall)
 	api.HandleFunc("/api/v1/namespaces", h.namespaces)
@@ -56,6 +57,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/causal-links", h.causalLinks)
 	api.HandleFunc("/api/v1/causal-links/", h.causalLinkItem)
 	api.HandleFunc("/api/v1/runs", h.runs)
+	api.HandleFunc("/api/v1/graph", h.graph)
 	api.HandleFunc("/api/v1/stats", h.stats)
 	api.HandleFunc("/api/v1/metrics", h.metrics)
 	mux.Handle("/api/v1/", auth.Require(h.Auth, readOnlyWeb(api)))
@@ -180,18 +182,22 @@ func intQuery(r *http.Request, name string) int {
 	return n
 }
 
+// pathID reads the id (and optional action) from /api/v1/<resource>/<id>[/<action>].
+// It used to index the whole path, so it read the resource name as the id and every
+// GET/DELETE/POST on an item answered "invalid id".
 func pathID(r *http.Request) (int64, string, error) {
-	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(parts) < 3 {
+	rest := strings.TrimPrefix(strings.Trim(r.URL.Path, "/"), "api/v1/")
+	parts := strings.Split(rest, "/") // <resource>, <id>, <action>
+	if len(parts) < 2 {
 		return 0, "", errors.New("missing id")
 	}
-	id, err := strconv.ParseInt(parts[2], 10, 64)
+	id, err := strconv.ParseInt(parts[1], 10, 64)
 	if err != nil || id <= 0 {
 		return 0, "", errors.New("invalid id")
 	}
 	action := ""
-	if len(parts) > 3 {
-		action = parts[3]
+	if len(parts) > 2 {
+		action = parts[2]
 	}
 	return id, action, nil
 }

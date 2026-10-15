@@ -52,3 +52,73 @@ func TestUnknownPathIsNotFound(t *testing.T) {
 		t.Fatalf("GET /nope = %d, want %d", rec.Code, http.StatusNotFound)
 	}
 }
+
+// The graph tab loads Cytoscape.js from the embedded bundle (no internet needed)
+// and only serves the scripts that are actually bundled.
+func TestVendorScriptsAreServed(t *testing.T) {
+	mux := http.NewServeMux()
+	(&Handler{}).Register(mux)
+
+	for _, name := range []string{"cytoscape.min.js", "layout-base.js", "cose-base.js", "cytoscape-fcose.js"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ui/vendor/"+name, nil))
+		if rec.Code != http.StatusOK || rec.Body.Len() < 10000 {
+			t.Errorf("GET /ui/vendor/%s = %d (%d bytes)", name, rec.Code, rec.Body.Len())
+		}
+		if ct := rec.Header().Get("Content-Type"); ct != "text/javascript; charset=utf-8" {
+			t.Errorf("%s Content-Type = %q", name, ct)
+		}
+	}
+	for _, name := range []string{"THIRD_PARTY.txt", "nope.js", "../index.html", "%2e%2e/index.html"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ui/vendor/"+name, nil))
+		if rec.Code == http.StatusOK {
+			t.Errorf("GET /ui/vendor/%s should not be served, got 200", name)
+		}
+	}
+}
+
+func TestGraphRejectsBadInput(t *testing.T) {
+	mux := http.NewServeMux()
+	(&Handler{}).Register(mux)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/graph?min_confidence=banana", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("bad min_confidence = %d, want 400", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/graph", nil))
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST /graph = %d, want 405", rec.Code)
+	}
+}
+
+func TestPathID(t *testing.T) {
+	tests := []struct {
+		path       string
+		id         int64
+		action     string
+		wantErrMsg string
+	}{
+		{"/api/v1/facts/12", 12, "", ""},
+		{"/api/v1/goals/7/complete", 7, "complete", ""},
+		{"/api/v1/hypotheses/3/confirm/", 3, "confirm", ""},
+		{"/api/v1/facts/", 0, "", "missing id"},
+		{"/api/v1/facts/abc", 0, "", "invalid id"},
+		{"/api/v1/facts/0", 0, "", "invalid id"},
+		{"/api/v1/facts/-4", 0, "", "invalid id"},
+	}
+	for _, tt := range tests {
+		id, action, err := pathID(httptest.NewRequest(http.MethodGet, tt.path, nil))
+		if tt.wantErrMsg != "" {
+			if err == nil || err.Error() != tt.wantErrMsg {
+				t.Errorf("%s: err = %v, want %q", tt.path, err, tt.wantErrMsg)
+			}
+			continue
+		}
+		if err != nil || id != tt.id || action != tt.action {
+			t.Errorf("%s: got (%d, %q, %v), want (%d, %q)", tt.path, id, action, err, tt.id, tt.action)
+		}
+	}
+}
