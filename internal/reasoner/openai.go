@@ -230,7 +230,7 @@ Rules:
 - All values MUST come ONLY from the Events. Do not add outside details.
 - If a field is not explicitly stated in the Events, use null for entity, property or value.
 - PRESERVE specifics: proper nouns, library names, version numbers, file paths, commands, ports, configuration names (the names, not their values), technical terms, and quantities.
-- A setting, default, limit, threshold or version value holds only at the moment it was observed. State it as something configured or measured then, never as a permanent property of the system, and never infer a design behind it. Keep the same entity and property for the same attribute, so a later observation of it reads as a change rather than as a second fact.
+- A setting, default, limit, threshold or version value holds only at the moment it was observed. State it as something configured or measured then, never as a permanent property of the system, and never infer a design behind it. Even when the Events state such a value in the present tense, write it as an observation of the moment. Keep the same entity and property for the same attribute, so a later observation of it reads as a change rather than as a second fact.
 - Do NOT replace specifics with vague words like "various", "components", "functionalities", "features", "certain".
 - The entity should be the most specific subject (e.g., "pgxpool" not "the system").
 
@@ -245,6 +245,9 @@ BAD example (not self-contained — DO NOT do this):
 
 BAD example (a setting stated as a permanent property — DO NOT do this):
 [{"entity": "CortexIQ", "property": "assistant response limit", "value": "612 characters", "summary": "CortexIQ limits assistant responses to 612 characters."}]
+
+GOOD example (the same setting written as an observation of the moment — DO this instead):
+[{"entity": "CortexIQ", "property": "assistant response limit", "value": "612 characters", "summary": "CortexIQ was configured to limit assistant responses to 612 characters (600 from CORTEXIQ_ASSISTANT_MAX_CHARS plus a 12-character truncation marker)."}]
 
 GOOD example (two topics in the Events become two specific facts):
 [{"entity": "CortexIQ", "property": "database", "value": "PostgreSQL with pgvector", "summary": "CortexIQ uses PostgreSQL with pgvector extension for vector storage and HNSW indexes."},
