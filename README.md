@@ -93,7 +93,7 @@ After `docker compose up`, CortexIQ exposes an MCP server over SSE at:
 http://localhost:8080/sse
 ```
 
-A web dashboard is also served at `http://localhost:9090/ui` — browse and manage memories, goals, hypotheses, contradictions, and failures from your browser.
+A web dashboard is also served at `http://localhost:9090/ui` — browse and manage memories, goals, hypotheses, contradictions, and failures from your browser. The JSON API lives on that **same 9090 listener** (`POST /api/v1/recall`, `POST /api/v1/remember`, `GET /api/v1/...`); the 8080 listener speaks MCP only.
 
 To protect CortexIQ, set `CORTEXIQ_API_TOKEN` in `.env`. It guards both the dashboard API (`/api/v1`) and the MCP server (`/sse`, `/message`): every request then needs `Authorization: Bearer <token>`. The dashboard asks for the token on first use and remembers it in the browser; MCP clients need to send the header (see below). Leave it empty to keep everything open. `/healthz`, `/readyz` and `/metrics` are not covered.
 

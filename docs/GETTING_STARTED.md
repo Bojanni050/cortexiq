@@ -48,6 +48,22 @@ http://localhost:9090/ui
 
 From there you can browse namespaces, run semantic recall, inspect facts, goals, hypotheses, contradictions, failures, and causal links — and manage them directly.
 
+### 1c. Or call the HTTP API directly (optional)
+
+Headless integrations use the same listener as the dashboard (port **9090**, not the MCP port), with `Authorization: Bearer <token>` when a token is set:
+
+```bash
+curl -X POST http://localhost:9090/api/v1/remember \
+  -H "Authorization: Bearer $CORTEXIQ_API_TOKEN" -H "Content-Type: application/json" \
+  -d '{"content":"Bo prefers Go for backend work","namespace":"/projects/gaia"}'
+
+curl -X POST http://localhost:9090/api/v1/recall \
+  -H "Authorization: Bearer $CORTEXIQ_API_TOKEN" -H "Content-Type: application/json" \
+  -d '{"query":"backend language preference","namespaces":["/projects"]}'
+```
+
+`namespace` may be replaced by a `namespaces` array (first entry wins); `importance` (0..1, default 0.5) and `occurred_at` (RFC3339) are optional. Both endpoints answer the same shape as the matching MCP tools.
+
 ## 2. Connect your MCP client
 
 Point any MCP-over-SSE client at `http://localhost:8080/sse`.

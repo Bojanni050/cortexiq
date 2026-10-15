@@ -40,6 +40,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/ui/vendor/", h.serveVendor)
 	api := http.NewServeMux()
 	api.HandleFunc("/api/v1/recall", h.recall)
+	api.HandleFunc("/api/v1/remember", h.remember)
 	api.HandleFunc("/api/v1/namespaces", h.namespaces)
 	api.HandleFunc("/api/v1/namespaces/", h.namespaceItem)
 	api.HandleFunc("/api/v1/episodes", h.episodes)
@@ -363,6 +364,69 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// remember stores a new episode (a memory). It mirrors the MCP "remember" tool:
+// content is required; namespace defaults to the token's first allowed namespace
+// (or "/"), importance to 0.5, and occurred_at to now. The response shape is the
+// same as the MCP tool's, so headless clients can share one parser.
+func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	var body struct {
+		Content    string   `json:"content"`
+		Namespace  string   `json:"namespace"`
+		Namespaces []string `json:"namespaces"`
+		Importance *float32 `json:"importance"`
+		OccurredAt string   `json:"occurred_at"`
+	}
+	if err := readBody(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	var occurredAt *time.Time
+	if body.OccurredAt != "" {
+		t, err := time.Parse(time.RFC3339, body.OccurredAt)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid occurred_at: %w", err))
+			return
+		}
+		occurredAt = &t
+	}
+	importance := brain.DefaultImportance
+	if body.Importance != nil {
+		importance = *body.Importance
+		if importance < 0 || importance > 1 || importance != importance {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("importance must be between 0 and 1, got %v", importance))
+			return
+		}
+	}
+	id, err := h.Brain.RememberWithImportance(r.Context(), rememberNamespace(r, body.Namespace, body.Namespaces), body.Content, occurredAt, importance)
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "message": "Memory remembered successfully"})
+}
+
+// rememberNamespace picks the target namespace for a write: the first explicit
+// slug in the request, or the token's first allowed namespace when the caller
+// named none. A scoped token must not fall back to "/", which its own allowlist
+// would reject.
+func rememberNamespace(r *http.Request, single string, many []string) string {
+	if s := strings.TrimSpace(single); s != "" {
+		return s
+	}
+	for _, s := range many {
+		if s = strings.TrimSpace(s); s != "" {
+			return s
+		}
+	}
+	if p, ok := scope.From(r.Context()); ok && len(p.Namespaces) > 0 {
+		return p.Namespaces[0]
+	}
+	return "/"
 }
 
 func (h *Handler) namespaces(w http.ResponseWriter, r *http.Request) {

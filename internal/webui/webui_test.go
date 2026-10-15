@@ -1,9 +1,13 @@
 package webui
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/Bojanni050/cortexiq/internal/scope"
 )
 
 // The bare root has no page; it should hand the visitor to the dashboard
@@ -120,5 +124,57 @@ func TestPathID(t *testing.T) {
 		if err != nil || id != tt.id || action != tt.action {
 			t.Errorf("%s: got (%d, %q, %v), want (%d, %q)", tt.path, id, action, err, tt.id, tt.action)
 		}
+	}
+}
+
+// remember is a write, so only POST is allowed and a read-only token is refused
+// before the handler ever runs.
+func TestRememberMethodAndScope(t *testing.T) {
+	mux := http.NewServeMux()
+	(&Handler{}).Register(mux)
+
+	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(method, "/api/v1/remember", nil))
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s /api/v1/remember = %d, want 405", method, rec.Code)
+		}
+	}
+
+	// No brain here, so a read-only request must be rejected by the middleware
+	// with 403 rather than reaching the handler.
+	ro := scope.With(context.Background(), scope.Principal{Name: "ro", ReadOnly: true})
+	rec := httptest.NewRecorder()
+	readOnlyWeb(http.HandlerFunc((&Handler{}).remember)).ServeHTTP(
+		rec, httptest.NewRequest(http.MethodPost, "/api/v1/remember", strings.NewReader(`{"content":"x"}`)).WithContext(ro))
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("read-only POST /api/v1/remember = %d, want 403", rec.Code)
+	}
+}
+
+// An explicit slug wins; otherwise a scoped token writes into its own first
+// allowed namespace instead of the "/" it is not allowed to touch.
+func TestRememberNamespace(t *testing.T) {
+	plain := httptest.NewRequest(http.MethodPost, "/api/v1/remember", nil)
+	cases := []struct {
+		req      *http.Request
+		single   string
+		many     []string
+		wantSlug string
+	}{
+		{plain, "/projects/gaia", nil, "/projects/gaia"},
+		{plain, "", []string{"", "/projects/gaia"}, "/projects/gaia"},
+		{plain, "", nil, "/"},
+	}
+	for _, c := range cases {
+		if got := rememberNamespace(c.req, c.single, c.many); got != c.wantSlug {
+			t.Errorf("rememberNamespace(%q, %v) = %q, want %q", c.single, c.many, got, c.wantSlug)
+		}
+	}
+
+	scoped := httptest.NewRequest(http.MethodPost, "/api/v1/remember", nil).WithContext(
+		scope.With(context.Background(), scope.Principal{Name: "agent", Namespaces: []string{"/projects"}}))
+	if got := rememberNamespace(scoped, "", nil); got != "/projects" {
+		t.Errorf("scoped rememberNamespace() = %q, want /projects", got)
 	}
 }

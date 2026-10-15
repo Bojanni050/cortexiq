@@ -25,6 +25,9 @@ const DefaultImportance float32 = 0.5
 // enabled (CORTEXIQ_RECALL_IMPORTANCE_WEIGHT); facts consolidated from the episode
 // inherit the highest importance of their source episodes.
 func (b *Brain) RememberWithImportance(ctx context.Context, namespaceSlug, content string, occurredAt *time.Time, importance float32) (int64, error) {
+	if err := requireWrite(ctx); err != nil {
+		return 0, err
+	}
 	if err := validateContent(content); err != nil {
 		return 0, err
 	}
