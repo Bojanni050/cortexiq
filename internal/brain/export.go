@@ -44,6 +44,7 @@ type ExportRecord struct {
 	Content    string     `json:"content"`
 	OccurredAt *time.Time `json:"occurred_at,omitempty"` // episodes
 	CreatedAt  *time.Time `json:"created_at,omitempty"`
+	Importance *float32   `json:"importance,omitempty"`
 	Confidence *float32   `json:"confidence,omitempty"` // facts
 	Entity     *string    `json:"entity,omitempty"`
 	Property   *string    `json:"property,omitempty"`
@@ -97,7 +98,7 @@ func (b *Brain) Export(ctx context.Context, w io.Writer, namespaces []string, ty
 
 	if want[RecordEpisode] {
 		rows, err := b.pool.Query(ctx,
-			`SELECT n.slug, e.content, e.occurred_at, e.created_at
+			`SELECT n.slug, e.content, e.occurred_at, e.created_at, e.importance
 			 FROM episodes e JOIN namespaces n ON n.id = e.namespace_id
 			 WHERE e.namespace_id = ANY($1) AND e.deleted_at IS NULL
 			 ORDER BY e.id`, nsIDs)
@@ -107,11 +108,12 @@ func (b *Brain) Export(ctx context.Context, w io.Writer, namespaces []string, ty
 		for rows.Next() {
 			rec := ExportRecord{Type: RecordEpisode}
 			var occurred, created time.Time
-			if err := rows.Scan(&rec.Namespace, &rec.Content, &occurred, &created); err != nil {
+			var importance float32
+			if err := rows.Scan(&rec.Namespace, &rec.Content, &occurred, &created, &importance); err != nil {
 				rows.Close()
 				return res, fmt.Errorf("scan episode: %w", err)
 			}
-			rec.OccurredAt, rec.CreatedAt = &occurred, &created
+			rec.OccurredAt, rec.CreatedAt, rec.Importance = &occurred, &created, &importance
 			if err := enc.Encode(rec); err != nil {
 				rows.Close()
 				return res, err
@@ -127,7 +129,7 @@ func (b *Brain) Export(ctx context.Context, w io.Writer, namespaces []string, ty
 	if want[RecordFact] {
 		rows, err := b.pool.Query(ctx,
 			`SELECT n.slug, f.content, f.confidence, f.entity, f.property, f.value,
-			        f.valid_from, f.valid_until, f.created_at
+			        f.valid_from, f.valid_until, f.created_at, f.importance
 			 FROM facts f JOIN namespaces n ON n.id = f.namespace_id
 			 WHERE f.namespace_id = ANY($1) AND f.deleted_at IS NULL
 			 ORDER BY f.id`, nsIDs)
@@ -136,14 +138,14 @@ func (b *Brain) Export(ctx context.Context, w io.Writer, namespaces []string, ty
 		}
 		for rows.Next() {
 			rec := ExportRecord{Type: RecordFact}
-			var conf float32
+			var conf, importance float32
 			var created time.Time
 			if err := rows.Scan(&rec.Namespace, &rec.Content, &conf, &rec.Entity, &rec.Property, &rec.Value,
-				&rec.ValidFrom, &rec.ValidUntil, &created); err != nil {
+				&rec.ValidFrom, &rec.ValidUntil, &created, &importance); err != nil {
 				rows.Close()
 				return res, fmt.Errorf("scan fact: %w", err)
 			}
-			rec.Confidence, rec.CreatedAt = &conf, &created
+			rec.Confidence, rec.CreatedAt, rec.Importance = &conf, &created, &importance
 			if err := enc.Encode(rec); err != nil {
 				rows.Close()
 				return res, err
@@ -289,15 +291,20 @@ func (b *Brain) importRecord(ctx context.Context, rec ExportRecord, nsCache map[
 		created = rec.CreatedAt.UTC()
 	}
 
+	importance := DefaultImportance
+	if rec.Importance != nil && *rec.Importance >= 0 && *rec.Importance <= 1 {
+		importance = *rec.Importance
+	}
+
 	if rec.Type == RecordEpisode {
 		occurred := created
 		if rec.OccurredAt != nil {
 			occurred = rec.OccurredAt.UTC()
 		}
 		_, err = b.pool.Exec(ctx,
-			`INSERT INTO episodes (namespace_id, content, embedding, embedding_model, occurred_at, created_at)
-			 VALUES ($1, $2, $3, $4, $5, $6)`,
-			nsID, rec.Content, pgVec, b.embedder.Model(), occurred, created)
+			`INSERT INTO episodes (namespace_id, content, embedding, embedding_model, occurred_at, created_at, importance)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			nsID, rec.Content, pgVec, b.embedder.Model(), occurred, created, importance)
 		return err == nil, err
 	}
 
@@ -307,10 +314,10 @@ func (b *Brain) importRecord(ctx context.Context, rec ExportRecord, nsCache map[
 	}
 	_, err = b.pool.Exec(ctx,
 		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence,
-		                    entity, property, value, valid_from, valid_until, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		                    entity, property, value, valid_from, valid_until, created_at, importance)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
 		nsID, rec.Content, pgVec, b.embedder.Model(), conf,
-		rec.Entity, rec.Property, rec.Value, rec.ValidFrom, rec.ValidUntil, created)
+		rec.Entity, rec.Property, rec.Value, rec.ValidFrom, rec.ValidUntil, created, importance)
 	return err == nil, err
 }
 

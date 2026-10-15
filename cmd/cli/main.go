@@ -99,6 +99,7 @@ func main() {
 				Flags: []cli.Flag{
 					&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "Namespace path"},
 					&cli.StringFlag{Name: "occurred-at", Usage: "When it occurred (RFC3339)"},
+					&cli.FloatFlag{Name: "importance", Value: 0.5, Usage: "How much it matters, 0..1 (0.5 = neutral)"},
 				},
 			},
 			{

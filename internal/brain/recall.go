@@ -25,11 +25,14 @@ type RecallResult struct {
 	// Similarity is the cosine similarity of a vector hit (absent for keyword-only hits).
 	Similarity float32 `json:"similarity,omitempty"`
 	// Match says how the result was found: "vector", "keyword" or "hybrid" (both).
-	Match      string `json:"match,omitempty"`
-	Type       string `json:"type"`
-	OccurredAt string `json:"occurred_at,omitempty"`
-	ValidFrom  string `json:"valid_from,omitempty"`
-	CreatedAt  string `json:"created_at"`
+	Match string `json:"match,omitempty"`
+	// Importance (0..1, 0.5 neutral) is what the caller said this memory is worth;
+	// it only influences Score when importance weighting is enabled.
+	Importance float32 `json:"importance"`
+	Type       string  `json:"type"`
+	OccurredAt string  `json:"occurred_at,omitempty"`
+	ValidFrom  string  `json:"valid_from,omitempty"`
+	CreatedAt  string  `json:"created_at"`
 	// refTime is the moment recency decay counts from: occurred_at for episodes,
 	// created_at for facts.
 	refTime time.Time
@@ -77,8 +80,8 @@ func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, l
 	if b.config.HybridRecall {
 		kwQuery = keywordQuery(query)
 	}
-	// Recency decay reorders the fused list, so the pool must be wider than limit.
-	recency := b.config.RecencyWeight > 0 && b.config.RecencyHalfLife > 0
+	// Recency and importance reorder the fused list, so the pool must be wider than limit.
+	recency := b.reranks()
 	candidates := limit
 	if kwQuery != "" || recency {
 		candidates = limit * 3
@@ -109,7 +112,7 @@ func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, l
 		}
 	}
 	results := fuse(factVec, factKw, candidates, kwQuery != "", b.config.MinRecallSimilarity)
-	results = b.applyRecency(results, limit, now)
+	results = b.applyBoosts(results, limit, now)
 
 	// Search episodes for remaining slots
 	if episodeLimit := limit - len(results); episodeLimit > 0 {
@@ -140,7 +143,7 @@ func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, l
 			}
 		}
 		eps := fuse(epVec, epKw, epCandidates, kwQuery != "", b.config.MinRecallSimilarity)
-		results = append(results, b.applyRecency(eps, episodeLimit, now)...)
+		results = append(results, b.applyBoosts(eps, episodeLimit, now)...)
 	}
 
 	// Sort all results by score descending
@@ -174,18 +177,37 @@ func recencyFactor(age time.Duration, weight float64, halfLife time.Duration) fl
 	return (1 - weight) + weight*math.Pow(0.5, float64(age)/float64(halfLife))
 }
 
-// applyRecency rescales scores by recencyFactor, re-sorts and keeps the best limit.
-// Without recency decay it only truncates.
-func (b *Brain) applyRecency(rs []RecallResult, limit int, now time.Time) []RecallResult {
-	w, hl := b.config.RecencyWeight, b.config.RecencyHalfLife
-	if w <= 0 || hl <= 0 {
+// importanceFactor is the multiplier for a result's importance: 1 for importance
+// 1, falling to 1-weight for importance 0. With weight 0 it is always 1.
+func importanceFactor(importance float32, weight float64) float64 {
+	if weight <= 0 {
+		return 1
+	}
+	if weight > 1 {
+		weight = 1
+	}
+	imp := math.Min(1, math.Max(0, float64(importance)))
+	return (1 - weight) + weight*imp
+}
+
+// reranks reports whether recency or importance weighting is switched on.
+func (b *Brain) reranks() bool {
+	return (b.config.RecencyWeight > 0 && b.config.RecencyHalfLife > 0) || b.config.ImportanceWeight > 0
+}
+
+// applyBoosts rescales scores by recencyFactor and importanceFactor, re-sorts and
+// keeps the best limit. With both switched off it only truncates.
+func (b *Brain) applyBoosts(rs []RecallResult, limit int, now time.Time) []RecallResult {
+	if !b.reranks() {
 		return truncate(rs, limit)
 	}
+	w, hl, iw := b.config.RecencyWeight, b.config.RecencyHalfLife, b.config.ImportanceWeight
 	for i := range rs {
-		if rs[i].refTime.IsZero() {
-			continue
+		f := importanceFactor(rs[i].Importance, iw)
+		if !rs[i].refTime.IsZero() {
+			f *= recencyFactor(now.Sub(rs[i].refTime), w, hl)
 		}
-		rs[i].Score *= float32(recencyFactor(now.Sub(rs[i].refTime), w, hl))
+		rs[i].Score *= float32(f)
 	}
 	sort.SliceStable(rs, func(i, j int) bool { return rs[i].Score > rs[j].Score })
 	return truncate(rs, limit)
@@ -226,12 +248,12 @@ func (b *Brain) runRecall(ctx context.Context, sql string, args []any, kind stri
 		r := RecallResult{Type: kind}
 		var createdAt time.Time
 		if kind == "fact" {
-			if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &r.Confidence, &createdAt, &r.Score); err != nil {
+			if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &r.Confidence, &createdAt, &r.Importance, &r.Score); err != nil {
 				return nil, fmt.Errorf("scan fact: %w", err)
 			}
 		} else {
 			var occurredAt time.Time
-			if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &occurredAt, &createdAt, &r.Score); err != nil {
+			if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &occurredAt, &createdAt, &r.Importance, &r.Score); err != nil {
 				return nil, fmt.Errorf("scan episode: %w", err)
 			}
 			r.OccurredAt = occurredAt.Format(time.RFC3339)

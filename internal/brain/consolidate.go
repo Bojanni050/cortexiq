@@ -395,10 +395,11 @@ func (b *Brain) storeFact(ctx context.Context, nsID int64, sf *reasoner.Structur
 
 	var factID int64
 	err = b.pool.QueryRow(ctx,
-		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, entity, property, value, valid_from)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, entity, property, value, valid_from, importance)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
 		nsID, sf.Summary, pgvector.NewVector(vec), b.embedder.Model(), confidence,
 		strPtrOrNull(sf.Entity), strPtrOrNull(sf.Property), strPtrOrNull(sf.Value), now,
+		b.sourceImportance(ctx, episodeIDs),
 	).Scan(&factID)
 	if err != nil {
 		return r, fmt.Errorf("insert fact: %w", err)
@@ -431,9 +432,10 @@ func (b *Brain) storeFact(ctx context.Context, nsID int64, sf *reasoner.Structur
 // Best effort — a failure here must not fail consolidation.
 func (b *Brain) reinforceFact(ctx context.Context, factID int64, episodeIDs []int64) {
 	_, _ = b.pool.Exec(ctx,
-		`UPDATE facts SET confidence = LEAST(1.0, confidence + (1 - confidence) * $2), updated_at = now()
+		`UPDATE facts SET confidence = LEAST(1.0, confidence + (1 - confidence) * $2),
+		        importance = GREATEST(importance, $3), updated_at = now()
 		 WHERE id = $1`,
-		factID, reinforceStep,
+		factID, reinforceStep, b.sourceImportance(ctx, episodeIDs),
 	)
 	for _, eid := range episodeIDs {
 		_, _ = b.pool.Exec(ctx,
@@ -441,6 +443,23 @@ func (b *Brain) reinforceFact(ctx context.Context, factID int64, episodeIDs []in
 			factID, eid,
 		)
 	}
+}
+
+// sourceImportance is the highest importance among the given source episodes: a
+// fact is as important as the most important thing it was derived from. Falls
+// back to the neutral default when there are no sources or the lookup fails —
+// importance is a ranking hint and must never fail consolidation.
+func (b *Brain) sourceImportance(ctx context.Context, episodeIDs []int64) float32 {
+	if len(episodeIDs) == 0 {
+		return DefaultImportance
+	}
+	var imp *float32
+	if err := b.pool.QueryRow(ctx,
+		"SELECT MAX(importance) FROM episodes WHERE id = ANY($1)", episodeIDs,
+	).Scan(&imp); err != nil || imp == nil {
+		return DefaultImportance
+	}
+	return *imp
 }
 
 // reinforceStep is the fraction of the remaining confidence gap closed each time

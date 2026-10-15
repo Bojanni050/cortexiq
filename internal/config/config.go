@@ -82,6 +82,10 @@ type Config struct {
 	RecallRecencyWeight float64 `env:"CORTEXIQ_RECALL_RECENCY_WEIGHT" envDefault:"0"`
 	// RecallRecencyHalfLife is the age at which half of the recency effect is gone.
 	RecallRecencyHalfLife time.Duration `env:"CORTEXIQ_RECALL_RECENCY_HALFLIFE" envDefault:"168h"`
+	// RecallImportanceWeight (0..1) lets recall prefer memories marked important
+	// when they were remembered: importance 0 keeps 1-weight of the score,
+	// importance 1 keeps all of it. 0 = off (default, ranking unchanged).
+	RecallImportanceWeight float64 `env:"CORTEXIQ_RECALL_IMPORTANCE_WEIGHT" envDefault:"0"`
 	// RelationshipBatchSize facts are sent per relationship-extraction LLM call.
 	// Keep it modest: the reply must fit in CORTEXIQ_REASONER_MAX_TOKENS.
 	RelationshipBatchSize int `env:"CORTEXIQ_RELATIONSHIP_BATCH_SIZE" envDefault:"5"`

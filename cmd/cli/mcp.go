@@ -87,11 +87,13 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithDescription(render("remember_description")),
 		mcp.WithString("content", mcp.Description(render("remember_content")), mcp.Required()),
 		mcp.WithString("namespace", mcp.Description(render("remember_namespace"))),
+		mcp.WithNumber("importance", mcp.Description(render("remember_importance")), mcp.DefaultNumber(0.5)),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		content := request.GetString("content", "")
 		namespace := request.GetString("namespace", "/")
+		importance := float32(request.GetFloat("importance", float64(brain.DefaultImportance)))
 
-		id, err := bc.Brain.Remember(ctx, namespace, content, nil)
+		id, err := bc.Brain.RememberWithImportance(ctx, namespace, content, nil, importance)
 		if err != nil {
 			return nil, err
 		}

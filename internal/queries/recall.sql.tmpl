@@ -6,6 +6,7 @@ SELECT
     content,
     occurred_at,
     created_at,
+    importance,
     1 - (embedding <=> {{.Bind .Args.vector}}) AS score
 FROM episodes
 WHERE deleted_at IS NULL
@@ -24,6 +25,7 @@ SELECT
     content,
     confidence,
     created_at,
+    importance,
     1 - (embedding <=> {{.Bind .Args.vector}}) AS score
 FROM facts
 WHERE deleted_at IS NULL
@@ -43,6 +45,7 @@ SELECT
     content,
     occurred_at,
     created_at,
+    importance,
     ts_rank_cd(content_tsv, websearch_to_tsquery('simple', {{.Bind .Args.query}})) AS score
 FROM episodes
 WHERE deleted_at IS NULL
@@ -61,6 +64,7 @@ SELECT
     content,
     confidence,
     created_at,
+    importance,
     ts_rank_cd(content_tsv, websearch_to_tsquery('simple', {{.Bind .Args.query}})) AS score
 FROM facts
 WHERE deleted_at IS NULL

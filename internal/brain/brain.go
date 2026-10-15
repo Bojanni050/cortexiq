@@ -79,6 +79,10 @@ type Config struct {
 	RecencyWeight float64
 	// RecencyHalfLife is the age at which half of that recency effect has worn off.
 	RecencyHalfLife time.Duration
+	// ImportanceWeight (0..1) is how much of a result's score importance can take
+	// away: importance 0 keeps 1-ImportanceWeight of it, importance 1 keeps all.
+	// 0 disables importance weighting.
+	ImportanceWeight float64
 }
 
 const defaultRelationshipBatchSize = 5

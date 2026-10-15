@@ -109,6 +109,7 @@ func New(ctx context.Context) (*Context, error) {
 		MinRecallSimilarity:            cfg.RecallMinSimilarity,
 		RecencyWeight:                  cfg.RecallRecencyWeight,
 		RecencyHalfLife:                cfg.RecallRecencyHalfLife,
+		ImportanceWeight:               cfg.RecallImportanceWeight,
 	})
 	if err != nil {
 		pool.Close()

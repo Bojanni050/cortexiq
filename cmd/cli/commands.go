@@ -34,7 +34,7 @@ func rememberCmd(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	bc := getBootstrap(cmd)
-	id, err := bc.Brain.Remember(ctx, namespace, content, occurredAt)
+	id, err := bc.Brain.RememberWithImportance(ctx, namespace, content, occurredAt, float32(cmd.Float("importance")))
 	if err != nil {
 		return err
 	}

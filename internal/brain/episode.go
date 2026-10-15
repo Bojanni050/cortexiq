@@ -14,8 +14,22 @@ import (
 // If occurredAt is nil, the current time is used.
 // Returns the episode ID on success.
 func (b *Brain) Remember(ctx context.Context, namespaceSlug, content string, occurredAt *time.Time) (int64, error) {
+	return b.RememberWithImportance(ctx, namespaceSlug, content, occurredAt, DefaultImportance)
+}
+
+// DefaultImportance is the neutral importance of a memory nobody rated.
+const DefaultImportance float32 = 0.5
+
+// RememberWithImportance is Remember with an explicit importance in 0..1
+// (0.5 is neutral). Importance only matters when recall importance weighting is
+// enabled (CORTEXIQ_RECALL_IMPORTANCE_WEIGHT); facts consolidated from the episode
+// inherit the highest importance of their source episodes.
+func (b *Brain) RememberWithImportance(ctx context.Context, namespaceSlug, content string, occurredAt *time.Time, importance float32) (int64, error) {
 	if err := validateContent(content); err != nil {
 		return 0, err
+	}
+	if importance < 0 || importance > 1 || importance != importance {
+		return 0, fmt.Errorf("importance must be between 0 and 1, got %v", importance)
 	}
 	if err := validatePath(namespaceSlug); err != nil {
 		return 0, err
@@ -38,9 +52,9 @@ func (b *Brain) Remember(ctx context.Context, namespaceSlug, content string, occ
 
 	var id int64
 	err = b.pool.QueryRow(ctx,
-		`INSERT INTO episodes (namespace_id, content, embedding, embedding_model, occurred_at)
-		 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-		nsID, content, pgvector.NewVector(vec), b.embedder.Model(), occurred,
+		`INSERT INTO episodes (namespace_id, content, embedding, embedding_model, occurred_at, importance)
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		nsID, content, pgvector.NewVector(vec), b.embedder.Model(), occurred, importance,
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("insert episode: %w", err)

@@ -150,21 +150,54 @@ func TestRecencyFactor(t *testing.T) {
 	}
 }
 
-func TestApplyRecencyReordersAndTruncates(t *testing.T) {
+func TestApplyBoostsRecencyReordersAndTruncates(t *testing.T) {
 	now := time.Now()
 	b := &Brain{config: Config{RecencyWeight: 0.5, RecencyHalfLife: 24 * time.Hour}}
 	rs := []RecallResult{
 		{ID: 1, Score: 0.9, refTime: now.Add(-30 * 24 * time.Hour)},
 		{ID: 2, Score: 0.8, refTime: now},
 	}
-	got := b.applyRecency(rs, 1, now)
+	got := b.applyBoosts(rs, 1, now)
 	if len(got) != 1 || got[0].ID != 2 {
 		t.Fatalf("recent result should overtake a stale one, got %+v", got)
 	}
 
 	off := &Brain{}
-	got = off.applyRecency([]RecallResult{{ID: 1, Score: 0.9}, {ID: 2, Score: 0.95}}, 5, now)
+	got = off.applyBoosts([]RecallResult{{ID: 1, Score: 0.9}, {ID: 2, Score: 0.95}}, 5, now)
 	if got[0].ID != 1 || got[0].Score != 0.9 {
 		t.Errorf("disabled recency must leave order and scores alone, got %+v", got)
+	}
+}
+
+func TestImportanceFactor(t *testing.T) {
+	if got := importanceFactor(0.1, 0); got != 1 {
+		t.Errorf("weight 0 must not change scores, got %v", got)
+	}
+	if got := importanceFactor(1, 0.4); math.Abs(got-1) > 1e-9 {
+		t.Errorf("importance 1 keeps the full score, got %v", got)
+	}
+	if got := importanceFactor(0, 0.4); math.Abs(got-0.6) > 1e-9 {
+		t.Errorf("importance 0 keeps 1-weight, got %v", got)
+	}
+	if got := importanceFactor(0.5, 0.4); math.Abs(got-0.8) > 1e-9 {
+		t.Errorf("neutral importance: want 0.8, got %v", got)
+	}
+	if got := importanceFactor(7, 0.4); got != 1 {
+		t.Errorf("out-of-range importance is clamped, got %v", got)
+	}
+}
+
+func TestApplyBoostsImportanceOvertakes(t *testing.T) {
+	b := &Brain{config: Config{ImportanceWeight: 0.5}}
+	rs := []RecallResult{
+		{ID: 1, Score: 0.9, Importance: 0.1},
+		{ID: 2, Score: 0.8, Importance: 1},
+	}
+	got := b.applyBoosts(rs, 5, time.Now())
+	if got[0].ID != 2 {
+		t.Fatalf("important result should overtake, got %+v", got)
+	}
+	if got[0].Score > 1 {
+		t.Errorf("scores must stay within 0..1, got %v", got[0].Score)
 	}
 }
