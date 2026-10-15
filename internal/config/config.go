@@ -54,8 +54,8 @@ type Config struct {
 	// APIToken, when set, is required as a Bearer token on the dashboard API
 	// (/api/v1). Empty keeps the API open. `envDefault:""` keeps it optional.
 	APIToken string `env:"CORTEXIQ_API_TOKEN" envDefault:""`
-	// APITokens is a JSON array of {name, token, scope}. When set it replaces
-	// APIToken and lets each caller be scoped: "rw" (default) or "ro".
+	// APITokens is a JSON array of {name, token, scope} that is added to
+	// APIToken: "rw" (default) or "ro" per caller.
 	APITokens string `env:"CORTEXIQ_API_TOKENS" envDefault:""`
 	HTTPAddr  string `env:"CORTEXIQ_HTTP_ADDR,required"`
 	LogLevel  string `env:"CORTEXIQ_LOG_LEVEL,required"`

@@ -95,6 +95,38 @@ func TestParseSetFallbackAndErrors(t *testing.T) {
 	}
 }
 
+// The single token is added to the list, not replaced by it: setting both must
+// never lock a listed caller out.
+func TestParseSetFallbackAddsToList(t *testing.T) {
+	set, err := ParseSet(`[{"name":"agent","token":"t1","scope":"ro"}]`, "master")
+	if err != nil {
+		t.Fatalf("ParseSet: %v", err)
+	}
+	if len(set.tokens) != 2 {
+		t.Fatalf("got %d tokens, want 2", len(set.tokens))
+	}
+	tok, ok := set.authenticate("master")
+	if !ok || tok.Name != "default" || tok.Scope != "" {
+		t.Fatalf("fallback token lookup: ok=%v tok=%+v", ok, tok)
+	}
+	if tok, _ := set.authenticate("t1"); tok.Scope != "ro" {
+		t.Fatalf("listed token lost its scope: %+v", tok)
+	}
+
+	// The same secret must not be listed twice: the last match wins, so a
+	// duplicate full-access entry would undo the scope of the listed one.
+	same, err := ParseSet(`[{"name":"agent","token":"master","scope":"ro"}]`, "master")
+	if err != nil {
+		t.Fatalf("ParseSet: %v", err)
+	}
+	if len(same.tokens) != 1 {
+		t.Fatalf("got %d tokens, want 1", len(same.tokens))
+	}
+	if tok, _ := same.authenticate("master"); tok.Name != "agent" || tok.Scope != "ro" {
+		t.Fatalf("duplicate secret widened the scope: %+v", tok)
+	}
+}
+
 func TestRequireInjectsPrincipal(t *testing.T) {
 	set, err := ParseSet(`[{"name":"reader","token":"ro-token","scope":"ro"}]`, "")
 	if err != nil {

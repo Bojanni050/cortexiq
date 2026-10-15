@@ -99,9 +99,10 @@ To protect CortexIQ, set `CORTEXIQ_API_TOKEN` in `.env`. It guards both the dash
 
 ### Scoped tokens
 
-For several callers, use `CORTEXIQ_API_TOKENS` instead: a JSON array of tokens
-with a name and a scope. It replaces `CORTEXIQ_API_TOKEN` when set, so keep an
-entry for the dashboard.
+For several callers, use `CORTEXIQ_API_TOKENS`: a JSON array of tokens, each with
+a name and a scope. `CORTEXIQ_API_TOKEN`, if set, stays valid as one extra
+full-access token — the two add up, so a dashboard token can never be lost by
+listing others.
 
 ```json
 [

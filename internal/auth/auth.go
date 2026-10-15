@@ -33,8 +33,9 @@ type Set struct {
 }
 
 // ParseSet builds the token set from CORTEXIQ_API_TOKENS (a JSON array of Token)
-// with CORTEXIQ_API_TOKEN as a single full-access fallback. Both empty disables
-// authentication (the historical behaviour).
+// plus CORTEXIQ_API_TOKEN, if set, as one extra full-access token. The two add
+// up, so a dashboard token listed in the array cannot be lost by setting it.
+// Both empty disables authentication (the historical behaviour).
 func ParseSet(spec, fallback string) (*Set, error) {
 	var tokens []Token
 	var legacy []string
@@ -43,8 +44,20 @@ func ParseSet(spec, fallback string) (*Set, error) {
 			return nil, fmt.Errorf("CORTEXIQ_API_TOKENS is not a JSON array of tokens: %w", err)
 		}
 	}
-	if len(tokens) == 0 && fallback != "" {
-		tokens = []Token{{Name: "default", Secret: fallback}}
+	// The single token is appended rather than skipped, unless the same secret is
+	// already in the list: the last entry with a matching secret wins, so a
+	// duplicate would silently widen that token's scope.
+	if fallback != "" {
+		duplicate := false
+		for _, t := range tokens {
+			if t.Secret == fallback {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			tokens = append(tokens, Token{Name: "default", Secret: fallback})
+		}
 	}
 	for i, t := range tokens {
 		if t.Secret == "" {
