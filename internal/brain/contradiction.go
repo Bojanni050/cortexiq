@@ -134,6 +134,16 @@ func (b *Brain) recordContradiction(ctx context.Context, nsID, oldFactID, newFac
 	return nil
 }
 
+// CountContradictions counts the unresolved contradictions ListContradictions
+// would return, ignoring paging.
+func (b *Brain) CountContradictions(ctx context.Context, namespaceSlugs []string) (int, error) {
+	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
+	if err != nil {
+		return 0, err
+	}
+	return b.countWhere(ctx, "contradictions", "namespace_id = ANY($1) AND resolved = FALSE", nsIDs)
+}
+
 // ListContradictions returns unresolved contradictions for namespaces matching the given paths.
 func (b *Brain) ListContradictions(ctx context.Context, namespaceSlugs []string, page Pagination) ([]models.Contradiction, error) {
 	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)

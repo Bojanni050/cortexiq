@@ -16,6 +16,27 @@ func (b *Brain) QueryFacts(ctx context.Context, namespaceSlugs []string, since, 
 	return b.QueryFactsAsOf(ctx, namespaceSlugs, since, until, nil, page)
 }
 
+// factWhere builds the filter QueryFactsAsOf and CountFacts share, so the total
+// can never describe a different set than the page.
+func factWhere(nsIDs []int64, since, until, asOf *time.Time) (string, []any) {
+	where := "namespace_id = ANY($1)"
+	args := []any{nsIDs}
+	if since != nil {
+		args = append(args, *since)
+		where += fmt.Sprintf(" AND created_at >= $%d", len(args))
+	}
+	if until != nil {
+		args = append(args, *until)
+		where += fmt.Sprintf(" AND created_at <= $%d", len(args))
+	}
+	if asOf != nil {
+		n := len(args) + 1
+		where += fmt.Sprintf(" AND COALESCE(valid_from, created_at) <= $%d AND (valid_until IS NULL OR valid_until > $%d)", n, n)
+		args = append(args, *asOf)
+	}
+	return where, args
+}
+
 // QueryFactsAsOf is QueryFacts restricted to the facts that were valid at asOf
 // (valid_from <= asOf < valid_until; a missing valid_from falls back to
 // created_at), which includes facts that were valid then but are superseded or
@@ -28,35 +49,12 @@ func (b *Brain) QueryFactsAsOf(ctx context.Context, namespaceSlugs []string, sin
 
 	page = page.Sanitize()
 
+	where, args := factWhere(nsIDs, since, until, asOf)
 	query := `SELECT id, namespace_id, content, embedding, embedding_model, confidence,
 	          entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at
-	          FROM facts WHERE namespace_id = ANY($1) AND deleted_at IS NULL`
-	args := []any{nsIDs}
-	argN := 1
-
-	if since != nil {
-		argN++
-		query += fmt.Sprintf(" AND created_at >= $%d", argN)
-		args = append(args, *since)
-	}
-	if until != nil {
-		argN++
-		query += fmt.Sprintf(" AND created_at <= $%d", argN)
-		args = append(args, *until)
-	}
-	if asOf != nil {
-		argN++
-		query += fmt.Sprintf(" AND COALESCE(valid_from, created_at) <= $%d AND (valid_until IS NULL OR valid_until > $%d)", argN, argN)
-		args = append(args, *asOf)
-	}
-
-	argN++
-	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d", argN)
-	args = append(args, page.Limit)
-
-	argN++
-	query += fmt.Sprintf(" OFFSET $%d", argN)
-	args = append(args, page.Offset)
+	          FROM facts WHERE ` + where +
+		fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	args = append(args, page.Limit, page.Offset)
 
 	rows, err := b.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -78,6 +76,17 @@ func (b *Brain) QueryFactsAsOf(ctx context.Context, namespaceSlugs []string, sin
 		facts = append(facts, f)
 	}
 	return facts, rows.Err()
+}
+
+// CountFacts counts the facts QueryFactsAsOf would return for the same filters,
+// ignoring paging, so a caller can tell a full page from a truncated one.
+func (b *Brain) CountFacts(ctx context.Context, namespaceSlugs []string, since, until, asOf *time.Time) (int, error) {
+	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
+	if err != nil {
+		return 0, err
+	}
+	where, args := factWhere(nsIDs, since, until, asOf)
+	return b.countWhere(ctx, "facts", where, args...)
 }
 
 // UpdateFactConfidence updates the confidence score of a fact.

@@ -52,6 +52,22 @@ func (p Pagination) Sanitize() Pagination {
 	return p
 }
 
+// countWhere counts the rows a list query would return without paging. table
+// and where are built next to the list query they mirror and never contain
+// caller input. A Count* function that drifts from its List* sibling makes the
+// API report a wrong total, so keep the two clauses together.
+func (b *Brain) countWhere(ctx context.Context, table, where string, args ...any) (int, error) {
+	query := "SELECT count(*) FROM " + table
+	if where != "" {
+		query += " WHERE " + where
+	}
+	var n int
+	if err := b.pool.QueryRow(ctx, query, args...).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count %s: %w", table, err)
+	}
+	return n, nil
+}
+
 type Config struct {
 	BatchSize           int
 	SimilarityThreshold float64

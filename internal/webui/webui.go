@@ -58,6 +58,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/causal-links", h.causalLinks)
 	api.HandleFunc("/api/v1/causal-links/", h.causalLinkItem)
 	api.HandleFunc("/api/v1/runs", h.runs)
+	api.HandleFunc("/api/v1/consolidation", h.consolidation)
 	api.HandleFunc("/api/v1/graph", h.graph)
 	api.HandleFunc("/api/v1/stats", h.stats)
 	api.HandleFunc("/api/v1/metrics", h.metrics)
@@ -233,6 +234,12 @@ func hdl(w http.ResponseWriter, err error) bool {
 	return true
 }
 
+// total tells the client how many rows the unpaged list holds, so a dashboard
+// can show "showing 101-200 of 1,240" instead of silently stopping at one page.
+func total(w http.ResponseWriter, n int) {
+	w.Header().Set("X-Total-Count", strconv.Itoa(n))
+}
+
 type factJSON struct {
 	ID          int64      `json:"id"`
 	NamespaceID int64      `json:"namespace_id"`
@@ -273,6 +280,11 @@ func (h *Handler) episodes(w http.ResponseWriter, r *http.Request) {
 	if !hdl(w, err) {
 		return
 	}
+	n, err := h.Brain.CountEpisodes(r.Context(), namespacesParam(r))
+	if !hdl(w, err) {
+		return
+	}
+	total(w, n)
 	out := make([]episodeJSON, 0, len(items))
 	for _, e := range items {
 		out = append(out, episodeJSON{ID: e.ID, NamespaceID: e.NamespaceID, Content: e.Content, OccurredAt: e.OccurredAt, CreatedAt: e.CreatedAt})
@@ -305,11 +317,16 @@ func (h *Handler) facts(w http.ResponseWriter, r *http.Request) {
 	if !hdl(w, err) {
 		return
 	}
+	count, err := h.Brain.CountFacts(r.Context(), namespacesParam(r), nil, nil, nil)
+	if !hdl(w, err) {
+		return
+	}
+	total(w, count)
 	out := make([]factJSON, 0, len(items))
 	for _, f := range items {
 		out = append(out, factToJSON(f))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": out, "total": len(out)})
+	writeJSON(w, http.StatusOK, map[string]any{"items": out, "total": count})
 }
 
 func (h *Handler) factItem(w http.ResponseWriter, r *http.Request) {
@@ -441,6 +458,11 @@ func (h *Handler) namespaces(w http.ResponseWriter, r *http.Request) {
 		if !hdl(w, err) {
 			return
 		}
+		n, err := h.Brain.CountNamespaces(r.Context(), nil)
+		if !hdl(w, err) {
+			return
+		}
+		total(w, n)
 		writeJSON(w, http.StatusOK, nonNil(items))
 	case http.MethodPost:
 		var body struct {
@@ -490,6 +512,11 @@ func (h *Handler) goals(w http.ResponseWriter, r *http.Request) {
 		if !hdl(w, err) {
 			return
 		}
+		n, err := h.Brain.CountGoals(r.Context(), namespacesParam(r), r.URL.Query().Get("status"), ptrInt64(r, "parent_id"))
+		if !hdl(w, err) {
+			return
+		}
+		total(w, n)
 		writeJSON(w, http.StatusOK, nonNil(items))
 	case http.MethodPost:
 		var body struct {
@@ -580,6 +607,11 @@ func (h *Handler) hypotheses(w http.ResponseWriter, r *http.Request) {
 		if !hdl(w, err) {
 			return
 		}
+		n, err := h.Brain.CountHypotheses(r.Context(), namespacesParam(r), r.URL.Query().Get("status"))
+		if !hdl(w, err) {
+			return
+		}
+		total(w, n)
 		writeJSON(w, http.StatusOK, nonNil(items))
 	case http.MethodPost:
 		var body struct {
@@ -685,6 +717,11 @@ func (h *Handler) contradictions(w http.ResponseWriter, r *http.Request) {
 	if !hdl(w, err) {
 		return
 	}
+	n, err := h.Brain.CountContradictions(r.Context(), namespacesParam(r))
+	if !hdl(w, err) {
+		return
+	}
+	total(w, n)
 	writeJSON(w, http.StatusOK, nonNil(items))
 }
 
@@ -725,6 +762,11 @@ func (h *Handler) failures(w http.ResponseWriter, r *http.Request) {
 		if !hdl(w, err) {
 			return
 		}
+		n, err := h.Brain.CountFailures(r.Context(), namespacesParam(r), ptrInt64(r, "goal_id"))
+		if !hdl(w, err) {
+			return
+		}
+		total(w, n)
 		writeJSON(w, http.StatusOK, nonNil(items))
 	case http.MethodPost:
 		var body struct {
@@ -792,6 +834,11 @@ func (h *Handler) causalLinks(w http.ResponseWriter, r *http.Request) {
 	if !hdl(w, err) {
 		return
 	}
+	n, err := h.Brain.CountCausalLinks(r.Context(), namespacesParam(r))
+	if !hdl(w, err) {
+		return
+	}
+	total(w, n)
 	writeJSON(w, http.StatusOK, nonNil(items))
 }
 
@@ -835,7 +882,27 @@ func (h *Handler) runs(w http.ResponseWriter, r *http.Request) {
 	if !hdl(w, err) {
 		return
 	}
+	n, err := h.Brain.CountConsolidationRuns(r.Context(), namespacesParam(r))
+	if !hdl(w, err) {
+		return
+	}
+	total(w, n)
 	writeJSON(w, http.StatusOK, nonNil(items))
+}
+
+// consolidation reports the extraction backlog: how many episodes are waiting
+// for consolidation and when it last ran. A memory that was just written is only
+// an episode, so without this the dashboard looks broken for a few minutes.
+func (h *Handler) consolidation(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	st, err := h.Brain.ConsolidationStatus(r.Context(), namespacesParam(r))
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
 }
 
 func (h *Handler) stats(w http.ResponseWriter, r *http.Request) {

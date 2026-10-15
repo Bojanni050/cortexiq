@@ -38,6 +38,28 @@ func (b *Brain) CreateFailure(ctx context.Context, nsID int64, content, reason, 
 	return &f, nil
 }
 
+// failureWhere builds the filter ListFailures and CountFailures share.
+func failureWhere(nsIDs []int64, goalID *int64) (string, []any) {
+	where := "namespace_id = ANY($1) AND deleted_at IS NULL"
+	args := []any{nsIDs}
+	if goalID != nil {
+		args = append(args, *goalID)
+		where += fmt.Sprintf(" AND goal_id = $%d", len(args))
+	}
+	return where, args
+}
+
+// CountFailures counts the failures ListFailures would return for the same
+// filter, ignoring paging.
+func (b *Brain) CountFailures(ctx context.Context, namespaceSlugs []string, goalID *int64) (int, error) {
+	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
+	if err != nil {
+		return 0, err
+	}
+	where, args := failureWhere(nsIDs, goalID)
+	return b.countWhere(ctx, "failures", where, args...)
+}
+
 // ListFailures returns failures across namespaces, optionally filtered by goal.
 func (b *Brain) ListFailures(ctx context.Context, namespaceSlugs []string, goalID *int64, page Pagination) ([]models.Failure, error) {
 	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
@@ -47,23 +69,10 @@ func (b *Brain) ListFailures(ctx context.Context, namespaceSlugs []string, goalI
 
 	page = page.Sanitize()
 
-	query := `SELECT ` + failureColumns + ` FROM failures WHERE namespace_id = ANY($1) AND deleted_at IS NULL`
-	args := []any{nsIDs}
-	argN := 1
-
-	if goalID != nil {
-		argN++
-		query += fmt.Sprintf(" AND goal_id = $%d", argN)
-		args = append(args, *goalID)
-	}
-
-	argN++
-	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d", argN)
-	args = append(args, page.Limit)
-
-	argN++
-	query += fmt.Sprintf(" OFFSET $%d", argN)
-	args = append(args, page.Offset)
+	where, args := failureWhere(nsIDs, goalID)
+	query := `SELECT ` + failureColumns + ` FROM failures WHERE ` + where +
+		fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	args = append(args, page.Limit, page.Offset)
 
 	rows, err := b.pool.Query(ctx, query, args...)
 	if err != nil {

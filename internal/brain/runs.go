@@ -59,6 +59,19 @@ func (b *Brain) SaveConsolidationRun(ctx context.Context, nsID int64, res Consol
 	return nil
 }
 
+// CountConsolidationRuns counts the runs ListConsolidationRuns would return for
+// the same filter, ignoring paging.
+func (b *Brain) CountConsolidationRuns(ctx context.Context, namespaceSlugs []string) (int, error) {
+	if len(namespaceSlugs) == 0 {
+		return b.countWhere(ctx, "consolidation_runs", "")
+	}
+	ids, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
+	if err != nil {
+		return 0, err
+	}
+	return b.countWhere(ctx, "consolidation_runs", "namespace_id = ANY($1)", ids)
+}
+
 // ListConsolidationRuns returns recent runs, newest first. An empty namespace
 // list returns runs across all namespaces.
 func (b *Brain) ListConsolidationRuns(ctx context.Context, namespaceSlugs []string, page Pagination) ([]models.ConsolidationRun, error) {

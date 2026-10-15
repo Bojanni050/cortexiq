@@ -203,3 +203,18 @@ func TestErrStatus(t *testing.T) {
 		t.Errorf("wrapped validation error = %d, want 400", got)
 	}
 }
+
+// A list without a total lets a dashboard stop at one page without saying so.
+func TestTotalHeader(t *testing.T) {
+	rec := httptest.NewRecorder()
+	total(rec, 1240)
+	if got := rec.Header().Get("X-Total-Count"); got != "1240" {
+		t.Errorf("X-Total-Count = %q, want %q", got, "1240")
+	}
+
+	// The header is set before the body, so it survives the write.
+	writeJSON(rec, http.StatusOK, map[string]any{"items": []any{}})
+	if got := rec.Header().Get("X-Total-Count"); got != "1240" {
+		t.Errorf("X-Total-Count after writeJSON = %q, want %q", got, "1240")
+	}
+}

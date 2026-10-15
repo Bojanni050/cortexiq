@@ -128,6 +128,15 @@ func (b *Brain) PurgeEpisode(ctx context.Context, episodeID int64) error {
 	return nil
 }
 
+// CountEpisodes counts the episodes ListEpisodes would return, ignoring paging.
+func (b *Brain) CountEpisodes(ctx context.Context, namespaceSlugs []string) (int, error) {
+	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
+	if err != nil {
+		return 0, err
+	}
+	return b.countWhere(ctx, "episodes", "namespace_id = ANY($1) AND deleted_at IS NULL", nsIDs)
+}
+
 // GetEpisode returns a single episode by ID.
 func (b *Brain) GetEpisode(ctx context.Context, episodeID int64) (*models.Episode, error) {
 	var e models.Episode

@@ -92,6 +92,28 @@ func (b *Brain) CreateHypothesis(ctx context.Context, nsID int64, content, verif
 	return &h, nil
 }
 
+// hypothesisWhere builds the filter ListHypotheses and CountHypotheses share.
+func hypothesisWhere(nsIDs []int64, status string) (string, []any) {
+	where := "namespace_id = ANY($1) AND deleted_at IS NULL"
+	args := []any{nsIDs}
+	if status != "" {
+		args = append(args, status)
+		where += fmt.Sprintf(" AND status = $%d", len(args))
+	}
+	return where, args
+}
+
+// CountHypotheses counts the hypotheses ListHypotheses would return for the same
+// filter, ignoring paging.
+func (b *Brain) CountHypotheses(ctx context.Context, namespaceSlugs []string, status string) (int, error) {
+	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
+	if err != nil {
+		return 0, err
+	}
+	where, args := hypothesisWhere(nsIDs, status)
+	return b.countWhere(ctx, "hypotheses", where, args...)
+}
+
 // ListHypotheses returns hypotheses across namespaces, optionally filtered by status.
 func (b *Brain) ListHypotheses(ctx context.Context, namespaceSlugs []string, status string, page Pagination) ([]models.Hypothesis, error) {
 	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
@@ -101,30 +123,15 @@ func (b *Brain) ListHypotheses(ctx context.Context, namespaceSlugs []string, sta
 
 	page = page.Sanitize()
 
-	if status != "" {
-		rows, err := b.pool.Query(ctx,
-			`SELECT id, namespace_id, content, confidence, status, verification_plan, method,
-			 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
-			 created_at, updated_at, deleted_at
-			 FROM hypotheses WHERE namespace_id = ANY($1) AND status = $2 AND deleted_at IS NULL
-			 ORDER BY updated_at DESC LIMIT $3 OFFSET $4`,
-			nsIDs, status, page.Limit, page.Offset,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("list hypotheses: %w", err)
-		}
-		defer rows.Close()
-		return scanHypothesisRows(rows)
-	}
+	where, args := hypothesisWhere(nsIDs, status)
+	query := `SELECT id, namespace_id, content, confidence, status, verification_plan, method,
+	          confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
+	          created_at, updated_at, deleted_at
+	          FROM hypotheses WHERE ` + where +
+		fmt.Sprintf(" ORDER BY updated_at DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	args = append(args, page.Limit, page.Offset)
 
-	rows, err := b.pool.Query(ctx,
-		`SELECT id, namespace_id, content, confidence, status, verification_plan, method,
-		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
-		 created_at, updated_at, deleted_at
-		 FROM hypotheses WHERE namespace_id = ANY($1) AND deleted_at IS NULL
-		 ORDER BY updated_at DESC LIMIT $2 OFFSET $3`,
-		nsIDs, page.Limit, page.Offset,
-	)
+	rows, err := b.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list hypotheses: %w", err)
 	}

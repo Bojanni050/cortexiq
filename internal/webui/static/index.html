@@ -67,10 +67,12 @@ main { padding: 16px 32px 48px; width: 100%; }
 .toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 .toolbar input { flex: 1; min-width: 220px; }
 input, textarea, select { background: var(--bg-2); color: var(--fg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 12px; font: inherit; }
-button.btn, .toolbar button, dialog .actions button {
+button.btn, .toolbar button, .pager button, dialog .actions button {
   background: var(--panel-2); color: var(--fg); border: 1px solid var(--border-2); border-radius: var(--radius-sm); padding: 9px 16px; cursor: pointer; font: inherit; font-weight: 500; transition: transform .1s, filter .15s, border-color .15s;
 }
-.toolbar button:hover, dialog .actions button:hover { border-color: var(--dim); }
+.toolbar button:hover, .pager button:hover:not(:disabled), dialog .actions button:hover { border-color: var(--dim); }
+.pager button { padding: 5px 12px; }
+.pager button:disabled { opacity: .45; cursor: default; }
 button.primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)) !important; border-color: transparent !important; color: #fff !important; box-shadow: 0 4px 14px rgba(124,140,255,.3); }
 button.primary:hover { filter: brightness(1.1); }
 button:active { transform: translateY(1px); }
@@ -118,6 +120,8 @@ td.wrap { max-width: 720px; white-space: pre-wrap; word-break: break-word; }
 .empty { padding: 48px 20px; text-align: center; color: var(--muted); }
 .empty .big { font-size: 28px; margin-bottom: 6px; opacity: .6; }
 .empty.error { color: var(--red); }
+.pager { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 12px 4px 0; font-size: 13px; color: var(--muted); }
+.pager .pages { display: flex; gap: 8px; margin-left: auto; }
 
 /* dialog & toast */
 dialog { background: var(--panel); color: var(--fg); border: 1px solid var(--border-2); border-radius: 16px; padding: 24px; max-width: 460px; width: 92%; box-shadow: 0 24px 64px rgba(0,0,0,.5); }
@@ -177,7 +181,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top
     <div class="brand"><div class="logo">C</div><div><b>CortexIQ</b><small>agent memory</small></div></div>
     <div>
       <div class="label">Namespace</div>
-      <select id="ns-select" onchange="state.ns=this.value;refresh()"></select>
+      <select id="ns-select" onchange="state.ns=this.value;state.page={};refresh()"></select>
     </div>
     <div>
       <div class="label">Browse</div>
@@ -194,7 +198,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top
 <div id="toast"></div>
 <script>
 const API = '/api/v1';
-const state = { tab: 'overview', ns: '', nsMap: {} };
+const state = { tab: 'overview', ns: '', nsMap: {}, page: {}, filter: {}, lists: {} };
 
 const icons = {
   overview: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
@@ -256,7 +260,10 @@ function authHeaders() {
   const t = readToken();
   return t ? {'Authorization': 'Bearer ' + t} : {};
 }
-async function api(path, opts, retried) {
+// request sends one call and answers with the raw Response, retrying once after
+// asking for a token. Everything that needs a header (X-Total-Count) goes
+// through here.
+async function request(path, opts, retried) {
   opts = opts || {};
   const res = await fetch(API + path, Object.assign({}, opts, {
     headers: Object.assign({'Content-Type': 'application/json'}, authHeaders(), opts.headers || {})
@@ -265,19 +272,34 @@ async function api(path, opts, retried) {
     const t = prompt('This CortexIQ server requires an API token (CORTEXIQ_API_TOKEN):');
     if (t) {
       try { localStorage.setItem(TOKEN_KEY, t.trim()); } catch (e) {}
-      return api(path, opts, true);
+      return request(path, opts, true);
     }
   }
+  return res;
+}
+async function api(path, opts) {
+  const res = await request(path, opts);
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new Error((body && body.error) || res.statusText);
   return body;
 }
 // Endpoints return either a bare array, {items: [...]}, or null; always hand back an array.
-async function apiList(path) {
-  const body = await api(path);
+function listOf(body) {
   if (Array.isArray(body)) return body;
   if (body && Array.isArray(body.items)) return body.items;
   return [];
+}
+async function apiList(path) { return listOf(await api(path)); }
+
+// apiPage is apiList plus the real row count, which every list endpoint reports
+// in X-Total-Count. Without it the dashboard silently stops at the first page:
+// 1,240 facts would look like 1,000.
+async function apiPage(path) {
+  const res = await request(path);
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error((body && body.error) || res.statusText);
+  const n = Number(res.headers.get('X-Total-Count'));
+  return {items: listOf(body), total: Number.isFinite(n) && n >= 0 ? n : null};
 }
 
 function esc(s) {
@@ -309,31 +331,132 @@ function table(headers, rows) {
   if (!rows.length) return '<div class="empty"><div class="big">∅</div>Nothing here yet</div>';
   return `<div class="tablewrap"><table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
 }
+// A list tab shows one page at a time. The API caps limit at 1000 and takes an
+// offset, so paging is entirely a UI concern.
+const PAGE = 100;
+
+// qs builds the query for one page of a list: the current namespace, the page
+// size, the offset and any extra filters that tab needs.
+function qs(offset, extra) { return nsQS('&limit=' + PAGE + '&offset=' + offset + (extra || '')); }
+
+// nsQS is the namespace-scoped part of a request, for the few fetches that are
+// not one page of a list (the filter enrichments, the namespace counts).
+function nsQS(extra) { return '?namespaces=' + encodeURIComponent(state.ns) + (extra || ''); }
+
+// ago renders a timestamp as "3 minutes ago", so the overview can say when
+// extraction last ran without the reader doing arithmetic.
+function ago(iso) {
+  if (!iso) return 'never';
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  const units = [[31536000, 'year'], [2592000, 'month'], [604800, 'week'], [86400, 'day'], [3600, 'hour'], [60, 'minute']];
+  for (const [secs, name] of units) {
+    if (s >= secs) {
+      const n = Math.round(s / secs);
+      return n + ' ' + name + (n === 1 ? '' : 's') + ' ago';
+    }
+  }
+  return 'just now';
+}
+
+// listTab fetches one page for a list tab and hands it to paintTab. spec:
+//   path(offset)  the request for this page
+//   headers       table headers
+//   fields        item properties the client-side filter looks at
+//   row(item)     one <tr>
+//   actions       optional extra buttons for the toolbar
+//   enrich()      optional extra data the rows need (set up in the closure)
+async function listTab(tab, spec) {
+  const offset = state.page[tab] || 0;
+  const [page, aux] = await Promise.all([
+    apiPage(spec.path(offset)),
+    spec.enrich ? spec.enrich() : Promise.resolve(null),
+  ]);
+  state.lists[tab] = {items: page.items, total: page.total, offset: offset, spec: spec, aux: aux};
+  paintTab(tab);
+}
+
+// paintTab filters the page on screen and draws it with a pager that tells the
+// truth about what is shown. The filter box sits outside the region that gets
+// replaced, so typing keeps the caret where it was.
+function paintTab(tab) {
+  const L = state.lists[tab];
+  if (!L) return;
+  const term = (state.filter[tab] || '').trim().toLowerCase();
+  const rows = L.items.filter(it => !term || L.spec.fields.some(k => String(it[k] == null ? '' : it[k]).toLowerCase().includes(term)));
+  const from = L.items.length ? L.offset + 1 : 0;
+  const to = L.offset + L.items.length;
+  const total = L.total;
+  const counts = total == null
+    ? 'showing ' + from + '–' + to
+    : 'showing ' + from + '–' + to + ' of ' + total.toLocaleString();
+  const onPage = term ? ' · ' + rows.length + ' of these match “' + esc(term) + '” on this page' : '';
+  const hasPrev = L.offset > 0;
+  const hasNext = total == null ? L.items.length === PAGE : L.offset + L.items.length < total;
+  const pager = (hasPrev || hasNext || term) ? `<div class="pager">
+      <span>${counts}${onPage}</span>
+      <span class="pages">
+        <button onclick="goPage('${tab}', -1)"${hasPrev ? '' : ' disabled'}>‹ Prev</button>
+        <button onclick="goPage('${tab}', 1)"${hasNext ? '' : ' disabled'}>Next ›</button>
+      </span>
+    </div>` : '';
+  let host = document.getElementById('list-' + tab);
+  if (!host) {
+    document.getElementById('content').innerHTML = toolbar((L.spec.actions || '') +
+      `<input id="f-${tab}" placeholder="Filter these rows…" value="${esc(state.filter[tab] || '')}" oninput="setFilter('${tab}', this.value)">`) +
+      `<div id="list-${tab}"></div>`;
+    host = document.getElementById('list-' + tab);
+  }
+  host.innerHTML = table(L.spec.headers, rows.map(r => L.spec.row(r, L))) + pager;
+}
+
+function setFilter(tab, v) {
+  state.filter[tab] = v;
+  paintTab(tab);
+}
+function goPage(tab, delta) {
+  const L = state.lists[tab];
+  if (!L) return;
+  state.page[tab] = Math.max(0, L.offset + delta * PAGE);
+  refresh();
+}
+
 function badge(v) { return v ? `<span class="badge ${esc(v)}">${esc(v)}</span>` : ''; }
 function stat(key, tone, num, lbl) {
   return `<div class="stat" style="--tone:${tone}"><div class="ico">${svg(key)}</div><div class="num">${num}</div><div class="lbl">${lbl}</div></div>`;
 }
 
 async function renderOverview() {
-  const ns = encodeURIComponent(state.ns);
-  const q = `?namespaces=${ns}&limit=1000`;
-  const [eps, facts, goals, hyps, cons, fails] = await Promise.all([
-    apiList('/episodes' + q), apiList('/facts' + q), apiList('/goals' + q), apiList('/hypotheses' + q),
-    apiList('/contradictions' + q), apiList('/failures' + q),
+  // Totals come from X-Total-Count (one row per request), not from the length of
+  // a capped page: the old cards silently said "1000" once a list grew past the
+  // API's page size.
+  const countOf = async (res, extra) => (await apiPage(`/${res}` + nsQS('&limit=1' + (extra || '')))).total;
+  const [episodes, facts, activeGoals, proposed, testing, cons, fails, recent, backlog] = await Promise.all([
+    countOf('episodes'), countOf('facts'), countOf('goals', '&status=active'),
+    countOf('hypotheses', '&status=proposed'), countOf('hypotheses', '&status=testing'),
+    countOf('contradictions'), countOf('failures'),
+    apiPage('/facts' + qs(0)), api('/consolidation' + nsQS('')),
   ]);
-  const activeGoals = goals.filter(g => g.status === 'active').length;
-  const pending = hyps.filter(h => h.status === 'pending').length;
+  const num = v => (v === null || v === undefined) ? '—' : v;
+  const hypo = (proposed === null || testing === null) ? null : proposed + testing;
+  // A memory that was just written is only an episode; extraction turns it into
+  // facts a little later. Saying when it last ran and what is still queued is
+  // what stops "I saved it and recall does not find it" from looking like a bug.
+  const pending = backlog.pending_episodes || 0;
+  const backlogLine = `Last consolidation ${ago(backlog.last_run)} · ` + (pending
+    ? `<b>${pending}</b> episode${pending === 1 ? '' : 's'} waiting for extraction`
+    : 'nothing waiting for extraction');
   document.getElementById('content').innerHTML = `
     <div class="stats">
-      ${stat('episodes', 'var(--blue)', eps.length, 'Episodes')}
-      ${stat('facts', 'var(--accent)', facts.length, 'Facts')}
-      ${stat('goals', 'var(--green)', activeGoals, 'Active goals')}
-      ${stat('hypotheses', 'var(--yellow)', pending, 'Pending hypotheses')}
-      ${stat('contradictions', 'var(--accent-2)', cons.length, 'Unresolved contradictions')}
-      ${stat('failures', 'var(--red)', fails.length, 'Failures')}
+      ${stat('episodes', 'var(--blue)', num(episodes), 'Episodes')}
+      ${stat('facts', 'var(--accent)', num(facts), 'Facts')}
+      ${stat('goals', 'var(--green)', num(activeGoals), 'Active goals')}
+      ${stat('hypotheses', 'var(--yellow)', num(hypo), 'Pending hypotheses')}
+      ${stat('contradictions', 'var(--accent-2)', num(cons), 'Unresolved contradictions')}
+      ${stat('failures', 'var(--red)', num(fails), 'Failures')}
     </div>
+    <div class="muted" style="margin:-8px 0 18px">${backlogLine}</div>
     <div class="card"><h3>Recent facts</h3>${table(['Content', 'Confidence', 'Created'],
-      facts.slice(0, 10).map(f => `<tr><td class="wrap">${esc(f.content)}</td><td>${pct(f.confidence)}</td><td class="muted">${ts(f.created_at)}</td></tr>`))}</div>`;
+      recent.items.slice(0, 10).map(f => `<tr><td class="wrap">${esc(f.content)}</td><td>${pct(f.confidence)}</td><td class="muted">${ts(f.created_at)}</td></tr>`))}</div>`;
 }
 
 async function renderRecall() {
@@ -356,34 +479,28 @@ async function doRecall() {
 }
 
 async function renderEpisodes() {
-  const items = await apiList(`/episodes?namespaces=${encodeURIComponent(state.ns)}&limit=1000`);
   // Occurred = when it happened; show when it was stored too if that was noticeably later.
   const when = e => {
     const lag = new Date(e.created_at) - new Date(e.occurred_at);
     return ts(e.occurred_at) + (lag > 60000 ? `<div class="muted">stored ${ts(e.created_at)}</div>` : '');
   };
-  document.getElementById('content').innerHTML = table(
-    ['Episode', 'Namespace', 'When', ''],
-    items.map(e => `<tr>
+  await listTab('episodes', {
+    path: o => '/episodes' + qs(o),
+    headers: ['Episode', 'Namespace', 'When', ''],
+    fields: ['id', 'content'],
+    row: e => `<tr>
       <td class="wrap"><span class="mono">#${e.id}</span> ${esc(e.content)}</td>
       <td class="mono">${esc(nsSlug(e.namespace_id))}</td>
       <td class="muted">${when(e)}</td>
       <td class="row-actions"><button class="danger" onclick="purge('episodes', ${e.id})">purge</button></td>
-    </tr>`));
+    </tr>`,
+  });
 }
 
 async function renderFacts() {
-  const ns = encodeURIComponent(state.ns);
-  const [items, links] = await Promise.all([
-    apiList(`/facts?namespaces=${ns}&limit=1000`),
-    apiList(`/causal-links?namespaces=${ns}&limit=1000`),
-  ]);
-  // How many causal links point to / from each fact.
+  // How many causal links point to / from each fact. The whole link set is
+  // fetched once per page; the API caps a page at 1000 rows.
   const causes = new Map(), effects = new Map();
-  for (const l of links) {
-    effects.set(l.cause_fact_id, (effects.get(l.cause_fact_id) || 0) + 1);
-    causes.set(l.effect_fact_id, (causes.get(l.effect_fact_id) || 0) + 1);
-  }
   const now = Date.now();
   const status = f => f.valid_until && new Date(f.valid_until) < now ? 'abandoned'
     : f.valid_from && new Date(f.valid_from) > now ? 'pending' : 'active';
@@ -400,9 +517,18 @@ async function renderFacts() {
     const c = causes.get(f.id) || 0, e = effects.get(f.id) || 0;
     return c || e ? `<span class="muted">${c} cause${c === 1 ? '' : 's'} · ${e} effect${e === 1 ? '' : 's'}</span>` : '<span class="muted">—</span>';
   };
-  document.getElementById('content').innerHTML = table(
-    ['Fact', 'Detail', 'Namespace', 'Validity', 'Links', 'Confidence', 'Created', ''],
-    items.map(f => `<tr>
+  await listTab('facts', {
+    path: o => '/facts' + qs(o),
+    headers: ['Fact', 'Detail', 'Namespace', 'Validity', 'Links', 'Confidence', 'Created', ''],
+    fields: ['id', 'content', 'entity', 'property', 'value'],
+    enrich: async () => {
+      const links = await apiList('/causal-links' + nsQS('&limit=1000'));
+      for (const l of links) {
+        effects.set(l.cause_fact_id, (effects.get(l.cause_fact_id) || 0) + 1);
+        causes.set(l.effect_fact_id, (causes.get(l.effect_fact_id) || 0) + 1);
+      }
+    },
+    row: f => `<tr>
       <td class="wrap"><span class="mono">#${f.id}</span> ${esc(f.content)}</td>
       <td class="wrap">${structured(f)}</td>
       <td class="mono">${esc(nsSlug(f.namespace_id))}</td>
@@ -411,37 +537,47 @@ async function renderFacts() {
       <td>${pct(f.confidence)}</td>
       <td class="muted">${ts(f.created_at)}</td>
       <td class="row-actions"><button class="danger" onclick="purge('facts', ${f.id})">purge</button></td>
-    </tr>`)
-  );
+    </tr>`,
+  });
 }
 
 async function renderGoals() {
-  const ns = encodeURIComponent(state.ns);
-  const [items, failures] = await Promise.all([
-    apiList(`/goals?namespaces=${ns}&limit=1000`),
-    apiList(`/failures?namespaces=${ns}&limit=1000`),
-  ]);
-  const byId = new Map(items.map(g => [g.id, g]));
-  const subs = new Map(), fails = new Map();
-  for (const g of items) if (g.parent_id) subs.set(g.parent_id, (subs.get(g.parent_id) || 0) + 1);
-  for (const f of failures) if (f.goal_id) fails.set(f.goal_id, (fails.get(f.goal_id) || 0) + 1);
-  const goal = g => `<span class="mono">#${g.id}</span> ${esc(g.content)}` +
-    (g.parent_id ? `<div class="muted">part of ${byId.has(g.parent_id) ? `<span class="mono">#${g.parent_id}</span> ${esc(byId.get(g.parent_id).content)}` : `#${g.parent_id}`}</div>` : '') +
+  // Subgoal and failure counts come from the page on screen (plus the failure
+  // set fetched in enrich), so they describe what is visible.
+  const fails = new Map();
+  const pageMap = (L, key, build) => L[key] || (L[key] = build());
+  const parentOf = (L, id) => pageMap(L, 'byId', () => new Map(L.items.map(g => [g.id, g]))).get(id);
+  const subsOf = (L, id) => {
+    const subs = pageMap(L, 'subs', () => {
+      const m = new Map();
+      for (const g of L.items) if (g.parent_id) m.set(g.parent_id, (m.get(g.parent_id) || 0) + 1);
+      return m;
+    });
+    return subs.get(id) || 0;
+  };
+  const goal = (g, L) => `<span class="mono">#${g.id}</span> ${esc(g.content)}` +
+    (g.parent_id ? `<div class="muted">part of ${parentOf(L, g.parent_id) ? `<span class="mono">#${g.parent_id}</span> ${esc(parentOf(L, g.parent_id).content)}` : `#${g.parent_id}`}</div>` : '') +
     (g.notes ? `<div class="muted">${esc(g.notes)}</div>` : '');
   const status = g => badge(g.status) +
     (g.completed_at ? `<div class="muted">${ts(g.completed_at)}</div>` : g.abandoned_at ? `<div class="muted">${ts(g.abandoned_at)}</div>` : '');
-  const related = g => {
-    const s = subs.get(g.id) || 0, f = fails.get(g.id) || 0;
+  const related = (g, L) => {
+    const s = subsOf(L, g.id), f = fails.get(g.id) || 0;
     return s || f ? `<span class="muted">${s} subgoal${s === 1 ? '' : 's'} · ${f} failure${f === 1 ? '' : 's'}</span>` : '<span class="muted">—</span>';
   };
-  document.getElementById('content').innerHTML = toolbar(
-    `<button class="primary" onclick="goalDialog()">+ New goal</button>`) +
-    table(['Goal', 'Status', 'Priority', 'Related', 'Namespace', 'Created', ''],
-      items.map(g => `<tr>
-        <td class="wrap">${goal(g)}</td>
+  await listTab('goals', {
+    path: o => '/goals' + qs(o),
+    headers: ['Goal', 'Status', 'Priority', 'Related', 'Namespace', 'Created', ''],
+    fields: ['id', 'content', 'notes', 'status', 'priority'],
+    actions: `<button class="primary" onclick="goalDialog()">+ New goal</button>`,
+    enrich: async () => {
+      const failures = await apiList('/failures' + nsQS('&limit=1000'));
+      for (const f of failures) if (f.goal_id) fails.set(f.goal_id, (fails.get(f.goal_id) || 0) + 1);
+    },
+    row: (g, L) => `<tr>
+        <td class="wrap">${goal(g, L)}</td>
         <td>${status(g)}</td>
         <td>${pct(Number(g.priority) / 10)}<div class="muted">${esc(g.priority)} / 10</div></td>
-        <td>${related(g)}</td>
+        <td>${related(g, L)}</td>
         <td class="mono">${esc(nsSlug(g.namespace_id))}</td>
         <td class="muted">${ts(g.created_at)}</td>
         <td class="row-actions">
@@ -449,7 +585,8 @@ async function renderGoals() {
           <button onclick="goalAbandon(${g.id})">abandon</button>
           <button class="danger" onclick="del('goals', ${g.id})">delete</button>
         </td>
-      </tr>`));
+      </tr>`,
+  });
 }
 async function goalDialog() {
   const d = document.getElementById('dlg');
@@ -475,12 +612,7 @@ async function goalAbandon(id) {
 }
 
 async function renderHypotheses() {
-  const ns = encodeURIComponent(state.ns);
-  const [items, facts] = await Promise.all([
-    apiList(`/hypotheses?namespaces=${ns}&limit=1000`),
-    apiList(`/facts?namespaces=${ns}&limit=1000`),
-  ]);
-  const byId = new Map(facts.map(f => [f.id, f.content]));
+  const byId = new Map();
   const factLine = id => `<div><span class="mono">#${id}</span> ${byId.has(id) ? esc(byId.get(id)) : '<span class="muted">(fact not available)</span>'}</div>`;
   // What the hypothesis is based on, and how it ended (if it did).
   const basis = h => (h.source_fact_ids || []).length
@@ -491,9 +623,15 @@ async function renderHypotheses() {
     if (h.tested_at) return `<div class="muted">tested ${ts(h.tested_at)}</div>`;
     return '';
   };
-  document.getElementById('content').innerHTML = table(
-    ['Hypothesis', 'Based on', 'How to verify', 'Namespace', 'Status', 'Confidence', 'Updated', ''],
-    items.map(h => `<tr>
+  await listTab('hypotheses', {
+    path: o => '/hypotheses' + qs(o),
+    headers: ['Hypothesis', 'Based on', 'How to verify', 'Namespace', 'Status', 'Confidence', 'Updated', ''],
+    fields: ['id', 'content', 'verification_plan', 'status'],
+    enrich: async () => {
+      const facts = await apiList('/facts' + nsQS('&limit=1000'));
+      for (const f of facts) byId.set(f.id, f.content);
+    },
+    row: h => `<tr>
       <td class="wrap"><span class="mono">#${h.id}</span> ${esc(h.content)}</td>
       <td class="wrap">${basis(h)}</td>
       <td class="wrap muted">${esc(h.verification_plan)}</td>
@@ -506,7 +644,8 @@ async function renderHypotheses() {
         <button onclick="hypoReject(${h.id})">reject</button>`}
         <button class="danger" onclick="del('hypotheses', ${h.id})">delete</button>
       </td>
-    </tr>`));
+    </tr>`,
+  });
 }
 async function hypoConfirm(id) {
   await api(`/hypotheses/${id}/confirm`, { method: 'POST', body: '{}' }); refresh(); toast('Hypothesis confirmed');
@@ -518,21 +657,22 @@ async function hypoReject(id) {
 }
 
 async function renderContradictions() {
-  const ns = encodeURIComponent(state.ns);
-  const [items, facts] = await Promise.all([
-    apiList(`/contradictions?namespaces=${ns}&limit=1000`),
-    apiList(`/facts?namespaces=${ns}&limit=1000`),
-  ]);
-  const byId = new Map(facts.map(f => [f.id, f.content]));
+  const byId = new Map();
   // The value, plus the fact it came from so you can see where the conflict originates.
   const side = (value, id) => `<div><b>${esc(value)}</b></div>` + (id
     ? `<div class="muted"><span class="mono">#${id}</span> ${byId.has(id) ? esc(byId.get(id)) : '(fact not available)'}</div>` : '');
   const state_ = c => c.resolved
     ? `<span class="badge completed">resolved</span>${c.resolution ? `<div>${esc(c.resolution)}</div>` : ''}${c.resolved_at ? `<div class="muted">${ts(c.resolved_at)}</div>` : ''}`
     : '<span class="badge pending">open</span>';
-  document.getElementById('content').innerHTML = table(
-    ['About', 'Old', 'New', 'Namespace', 'Status', 'Confidence', 'Created', ''],
-    items.map(c => `<tr>
+  await listTab('contradictions', {
+    path: o => '/contradictions' + qs(o),
+    headers: ['About', 'Old', 'New', 'Namespace', 'Status', 'Confidence', 'Created', ''],
+    fields: ['id', 'entity', 'property', 'old_value', 'new_value', 'resolution'],
+    enrich: async () => {
+      const facts = await apiList('/facts' + nsQS('&limit=1000'));
+      for (const f of facts) byId.set(f.id, f.content);
+    },
+    row: c => `<tr>
       <td class="wrap"><b>${esc(c.entity)}</b><div class="muted">${esc(c.property)}</div></td>
       <td class="wrap">${side(c.old_value, c.old_fact_id)}</td>
       <td class="wrap">${side(c.new_value, c.new_fact_id)}</td>
@@ -541,7 +681,8 @@ async function renderContradictions() {
       <td>${pct(c.confidence)}</td>
       <td class="muted">${ts(c.created_at)}</td>
       <td class="row-actions">${c.resolved ? '' : `<button onclick="conResolve(${c.id})">resolve</button>`}</td>
-    </tr>`));
+    </tr>`,
+  });
 }
 async function conResolve(id) {
   const resolution = prompt('Resolution note:') || 'resolved via UI';
@@ -550,12 +691,7 @@ async function conResolve(id) {
 }
 
 async function renderFailures() {
-  const ns = encodeURIComponent(state.ns);
-  const [items, goals] = await Promise.all([
-    apiList(`/failures?namespaces=${ns}&limit=1000`),
-    apiList(`/goals?namespaces=${ns}&limit=1000`),
-  ]);
-  const goalById = new Map(goals.map(g => [g.id, g]));
+  const goalById = new Map();
   // The goal this attempt belonged to, so the failure reads in context.
   const goal = f => {
     if (!f.goal_id) return '<span class="muted">—</span>';
@@ -564,10 +700,16 @@ async function renderFailures() {
       ? `<div><span class="mono">#${g.id}</span> ${esc(g.content)}</div>${badge(g.status)}`
       : `<span class="mono">#${f.goal_id}</span> <span class="muted">(goal not available)</span>`;
   };
-  document.getElementById('content').innerHTML = toolbar(
-    `<button class="primary" onclick="failDialog()">+ Record failure</button>`) +
-    table(['What failed', 'Why', 'Lesson', 'Goal', 'Namespace', 'Created', ''],
-      items.map(f => `<tr>
+  await listTab('failures', {
+    path: o => '/failures' + qs(o),
+    headers: ['What failed', 'Why', 'Lesson', 'Goal', 'Namespace', 'Created', ''],
+    fields: ['id', 'content', 'reason', 'lesson'],
+    actions: `<button class="primary" onclick="failDialog()">+ Record failure</button>`,
+    enrich: async () => {
+      const goals = await apiList('/goals' + nsQS('&limit=1000'));
+      for (const g of goals) goalById.set(g.id, g);
+    },
+    row: f => `<tr>
         <td class="wrap"><span class="mono">#${f.id}</span> ${esc(f.content)}</td>
         <td class="wrap">${esc(f.reason)}</td>
         <td class="wrap"><b>${esc(f.lesson)}</b></td>
@@ -575,7 +717,8 @@ async function renderFailures() {
         <td class="mono">${esc(nsSlug(f.namespace_id))}</td>
         <td class="muted">${ts(f.created_at)}</td>
         <td class="row-actions"><button class="danger" onclick="del('failures', ${f.id})">delete</button></td>
-      </tr>`));
+      </tr>`,
+  });
 }
 async function failDialog() {
   const d = document.getElementById('dlg');
@@ -596,55 +739,62 @@ async function failCreate() {
 }
 
 async function renderLinks() {
-  const ns = encodeURIComponent(state.ns);
-  const [items, facts] = await Promise.all([
-    apiList(`/causal-links?namespaces=${ns}&limit=1000`),
-    apiList(`/facts?namespaces=${ns}&limit=1000`),
-  ]);
-  const byId = new Map(facts.map(f => [f.id, f.content]));
+  const byId = new Map();
   // Show the fact text; fall back to the bare id for facts that are no longer listed.
   const fact = id => byId.has(id)
     ? `<span class="mono">#${id}</span> ${esc(byId.get(id))}`
     : `<span class="mono">#${id}</span> <span class="muted">(fact not available)</span>`;
-  document.getElementById('content').innerHTML = table(
-    ['Cause', '', 'Effect', 'Confidence', 'Method', 'Created'],
-    items.map(l => `<tr>
+  await listTab('links', {
+    path: o => '/causal-links' + qs(o),
+    headers: ['Cause', '', 'Effect', 'Confidence', 'Method', 'Created'],
+    fields: ['id', 'cause_fact_id', 'effect_fact_id', 'method'],
+    enrich: async () => {
+      const facts = await apiList('/facts' + nsQS('&limit=1000'));
+      for (const f of facts) byId.set(f.id, f.content);
+    },
+    row: l => `<tr>
       <td class="wrap">${fact(l.cause_fact_id)}</td>
       <td class="muted">→</td>
       <td class="wrap">${fact(l.effect_fact_id)}</td>
       <td>${pct(l.confidence)}</td>
       <td class="muted">${esc(l.method)}</td>
       <td class="muted">${ts(l.created_at)}</td>
-    </tr>`));
+    </tr>`,
+  });
 }
 
 async function renderNamespaces() {
-  const [items, ...lists] = await Promise.all([
-    apiList('/namespaces?limit=1000'),
-    ...['episodes', 'facts', 'goals', 'hypotheses', 'failures'].map(k => apiList(`/${k}?namespaces=${encodeURIComponent('/')}&limit=1000`)),
-  ]);
   const kinds = ['episodes', 'facts', 'goals', 'hypotheses', 'failures'];
-  // Direct item counts per namespace (the API returns everything under "/").
-  const counts = new Map(items.map(n => [n.id, {}]));
-  lists.forEach((list, i) => list.forEach(x => {
-    const c = counts.get(x.namespace_id); if (c) c[kinds[i]] = (c[kinds[i]] || 0) + 1;
-  }));
-  const capped = lists.map(l => l.length >= 1000);
-  const cell = (n, i) => {
-    const v = counts.get(n.id)[kinds[i]] || 0;
+  // Counts are global (everything under "/"), not paged: they are footnotes to
+  // the namespace list, not rows of it. The '+' marks a list that hit the API's
+  // 1000-row cap.
+  let counts = new Map(), capped = [];
+  const depth = n => n.slug.split('/').filter(Boolean).length - 1;
+  const cell = (id, i) => {
+    const v = (counts.get(id) || {})[kinds[i]] || 0;
     return v ? `${v}${capped[i] ? '+' : ''}` : '<span class="muted">—</span>';
   };
-  const slugs = [...items].sort((a, b) => a.slug.localeCompare(b.slug));
-  const depth = n => n.slug.split('/').filter(Boolean).length - 1;
-  document.getElementById('content').innerHTML = toolbar(
-    `<button class="primary" onclick="nsDialog()">+ New namespace</button>`) +
-    table(['Namespace', 'Description', 'Episodes', 'Facts', 'Goals', 'Hypotheses', 'Failures', 'Created'],
-      slugs.map(n => `<tr>
+  await listTab('namespaces', {
+    path: o => `/namespaces?limit=${PAGE}&offset=${o}`,
+    headers: ['Namespace', 'Description', 'Episodes', 'Facts', 'Goals', 'Hypotheses', 'Failures', 'Created'],
+    fields: ['slug', 'name', 'description'],
+    actions: '<button class="primary" onclick="nsDialog()">+ New namespace</button>',
+    enrich: async () => {
+      const lists = await Promise.all(['/namespaces?limit=1000',
+        ...kinds.map(k => apiList(`/${k}?namespaces=${encodeURIComponent('/')}&limit=1000`))]);
+      counts = new Map(lists[0].map(n => [n.id, {}]));
+      lists.slice(1).forEach((list, i) => list.forEach(x => {
+        const c = counts.get(x.namespace_id); if (c) c[kinds[i]] = (c[kinds[i]] || 0) + 1;
+      }));
+      capped = lists.slice(1).map(l => l.length >= 1000);
+    },
+    row: n => `<tr>
         <td style="padding-left:${16 + depth(n) * 18}px"><b>${esc(n.name || n.slug)}</b><div class="mono">${esc(n.slug)}</div></td>
         <td class="wrap muted">${esc(n.description)}</td>
-        ${kinds.map((_, i) => `<td>${cell(n, i)}</td>`).join('')}
+        ${kinds.map((_, i) => `<td>${cell(n.id, i)}</td>`).join('')}
         <td class="muted">${ts(n.created_at)}</td>
-      </tr>`));
+      </tr>`,
+  });
 }
 async function renderMetrics() {
   const body = await api('/metrics');
@@ -735,12 +885,13 @@ async function del(kind, id) {
 function dlgClose() { document.getElementById('dlg').close(); }
 
 async function renderRuns() {
-  const items = await apiList(`/runs?namespaces=${encodeURIComponent(state.ns)}&limit=200`);
   const dur = ms => ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : (ms || 0) + 'ms';
   const n = v => v ? String(v) : '<span class="muted">—</span>';
-  document.getElementById('content').innerHTML = table(
-    ['Started', 'Namespace', 'Duration', 'Episodes', 'Facts', 'Dedup', 'Rels', 'Patterns', 'Contra', 'LLM calls', 'Errors'],
-    items.map(r => `<tr>
+  await listTab('runs', {
+    path: o => '/runs' + qs(o),
+    headers: ['Started', 'Namespace', 'Duration', 'Episodes', 'Facts', 'Dedup', 'Rels', 'Patterns', 'Contra', 'LLM calls', 'Errors'],
+    fields: ['id', 'namespace_slug', 'error_sample'],
+    row: r => `<tr>
       <td class="muted">${ts(r.started_at)}</td>
       <td class="mono">${esc(r.namespace_slug || nsSlug(r.namespace_id))}</td>
       <td class="mono">${dur(r.duration_ms)}</td>
@@ -752,7 +903,8 @@ async function renderRuns() {
       <td>${n(r.contradictions_found)}</td>
       <td>${n(r.llm_calls)}${r.llm_calls_limited ? ' <span class="badge pending">limited</span>' : ''}</td>
       <td>${r.errors ? `<span class="badge abandoned">${r.errors}</span>${r.error_sample ? `<div class="muted">${esc(r.error_sample)}</div>` : ''}` : '<span class="muted">—</span>'}</td>
-    </tr>`));
+    </tr>`,
+  });
 }
 /* ---------- Graph tab (Cytoscape.js, bundled under /ui/vendor) ---------- */
 const GRAPH_LIBS = ['cytoscape.min.js', 'layout-base.js', 'cose-base.js', 'cytoscape-fcose.js'];

@@ -71,6 +71,19 @@ func (b *Brain) GetNamespace(ctx context.Context, slug string) (*models.Namespac
 	return &ns, nil
 }
 
+// CountNamespaces counts the namespaces ListNamespaces would return for the same
+// filter, ignoring paging.
+func (b *Brain) CountNamespaces(ctx context.Context, slugs []string) (int, error) {
+	if len(slugs) == 0 {
+		return b.countWhere(ctx, "namespaces", "")
+	}
+	ids, err := b.resolveNamespaceIDs(ctx, slugs)
+	if err != nil {
+		return 0, err
+	}
+	return b.countWhere(ctx, "namespaces", "id = ANY($1)", ids)
+}
+
 // ListNamespaces returns namespaces, optionally filtered by slug paths.
 // If slugs is empty, returns all namespaces.
 // Each path matches itself and all descendants.

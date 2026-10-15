@@ -72,6 +72,38 @@ func (b *Brain) CreateGoal(ctx context.Context, nsID int64, content string, pare
 	return &g, nil
 }
 
+// goalWhere builds the filter ListGoals and CountGoals share, so the total can
+// never describe a different set than the page. Without a status, only top-level
+// goals are listed.
+func goalWhere(nsIDs []int64, status string, parentID *int64) (string, []any) {
+	where := "namespace_id = ANY($1) AND deleted_at IS NULL"
+	args := []any{nsIDs}
+
+	if status != "" {
+		args = append(args, status)
+		where += fmt.Sprintf(" AND status = $%d", len(args))
+	}
+
+	if parentID != nil {
+		args = append(args, *parentID)
+		where += fmt.Sprintf(" AND parent_id = $%d", len(args))
+	} else if status == "" {
+		where += " AND parent_id IS NULL"
+	}
+	return where, args
+}
+
+// CountGoals counts the goals ListGoals would return for the same filters,
+// ignoring paging.
+func (b *Brain) CountGoals(ctx context.Context, namespaceSlugs []string, status string, parentID *int64) (int, error) {
+	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
+	if err != nil {
+		return 0, err
+	}
+	where, args := goalWhere(nsIDs, status, parentID)
+	return b.countWhere(ctx, "goals", where, args...)
+}
+
 // ListGoals returns goals across namespaces, optionally filtered by status and parent.
 func (b *Brain) ListGoals(ctx context.Context, namespaceSlugs []string, status string, parentID *int64, page Pagination) ([]models.Goal, error) {
 	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
@@ -81,31 +113,10 @@ func (b *Brain) ListGoals(ctx context.Context, namespaceSlugs []string, status s
 
 	page = page.Sanitize()
 
-	query := `SELECT ` + goalColumns + ` FROM goals WHERE namespace_id = ANY($1) AND deleted_at IS NULL`
-	args := []any{nsIDs}
-	argN := 1
-
-	if status != "" {
-		argN++
-		query += fmt.Sprintf(" AND status = $%d", argN)
-		args = append(args, status)
-	}
-
-	if parentID != nil {
-		argN++
-		query += fmt.Sprintf(" AND parent_id = $%d", argN)
-		args = append(args, *parentID)
-	} else if status == "" {
-		query += " AND parent_id IS NULL"
-	}
-
-	argN++
-	query += fmt.Sprintf(" ORDER BY priority DESC, created_at ASC LIMIT $%d", argN)
-	args = append(args, page.Limit)
-
-	argN++
-	query += fmt.Sprintf(" OFFSET $%d", argN)
-	args = append(args, page.Offset)
+	where, args := goalWhere(nsIDs, status, parentID)
+	query := `SELECT ` + goalColumns + ` FROM goals WHERE ` + where +
+		fmt.Sprintf(" ORDER BY priority DESC, created_at ASC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	args = append(args, page.Limit, page.Offset)
 
 	rows, err := b.pool.Query(ctx, query, args...)
 	if err != nil {

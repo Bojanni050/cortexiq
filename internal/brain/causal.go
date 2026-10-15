@@ -43,6 +43,15 @@ func (b *Brain) DetectCausalLinks(ctx context.Context, nsID int64, facts []model
 	return count, nil
 }
 
+// CountCausalLinks counts the causal links ListCausalLinks would return, ignoring paging.
+func (b *Brain) CountCausalLinks(ctx context.Context, namespaceSlugs []string) (int, error) {
+	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
+	if err != nil {
+		return 0, err
+	}
+	return b.countWhere(ctx, "causal_links", "namespace_id = ANY($1) AND deleted_at IS NULL", nsIDs)
+}
+
 // ListCausalLinks returns causal links for namespaces matching the given paths.
 func (b *Brain) ListCausalLinks(ctx context.Context, namespaceSlugs []string, page Pagination) ([]models.CausalLink, error) {
 	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
