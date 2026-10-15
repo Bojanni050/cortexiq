@@ -69,6 +69,11 @@ type Config struct {
 	// fact is a rewording/translation of its nearest neighbour (0 = off).
 	ConsolidationDedupReviewThreshold float64 `env:"CORTEXIQ_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD" envDefault:"0.80"`
 	ConsolidationWindow               string  `env:"CORTEXIQ_CONSOLIDATION_WINDOW" envDefault:"168h"`
+	// ExtractionMinChars is the shortest episode the extractor may read facts
+	// from. Below it an episode states nothing — one token, a greeting, a clipped
+	// acknowledgement — and the extractor reads a claim into it that nobody made.
+	// 0 disables the filter.
+	ExtractionMinChars int `env:"CORTEXIQ_EXTRACTION_MIN_CHARS" envDefault:"24"`
 	// HybridRecall adds full-text search to recall (fused with the vector ranking).
 	HybridRecall bool `env:"CORTEXIQ_HYBRID_RECALL" envDefault:"true"`
 	// RecallMinSimilarity drops vector-only recall results below this cosine

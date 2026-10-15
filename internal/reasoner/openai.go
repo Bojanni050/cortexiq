@@ -22,6 +22,10 @@ Rules:
 - Extract ONLY what is explicitly stated in the provided text.
 - You may use language understanding to interpret what is written.
 - You may NOT infer, assume, generalize, or fill in gaps from your own knowledge.
+- Text that states nothing — a greeting, an acknowledgement, a single token, a
+  fragment of a sentence — contains no facts. Output nothing for it.
+- Never invent a purpose, intent or design. Report a reason only when the text
+  itself gives one.
 - If a field cannot be found in the text, output null for that field.
 - Never guess. Never approximate. Never complete missing information.
 - When in doubt, output null.

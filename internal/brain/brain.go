@@ -99,9 +99,19 @@ type Config struct {
 	// away: importance 0 keeps 1-ImportanceWeight of it, importance 1 keeps all.
 	// 0 disables importance weighting.
 	ImportanceWeight float64
+	// MinEpisodeLength is the shortest episode worth extracting facts from,
+	// measured in runes after trimming spaces. Below it an episode states nothing
+	// — one token, a greeting, a clipped acknowledgement — and the extractor
+	// reads a claim into it that nobody made. 0 disables the filter.
+	MinEpisodeLength int
 }
 
 const defaultRelationshipBatchSize = 5
+
+// defaultMinEpisodeLength keeps one-word episodes ("2", "gedaan") away from the
+// extractor while leaving a short real memory ("CortexIQ draait op poort 9090")
+// alone.
+const defaultMinEpisodeLength = 24
 
 func DefaultConfig() Config {
 	return Config{
@@ -115,6 +125,7 @@ func DefaultConfig() Config {
 		HypothesisAutoConfirmThreshold: 0.9,
 		HypothesisAutoRejectThreshold:  0.9,
 		RelationshipBatchSize:          defaultRelationshipBatchSize,
+		MinEpisodeLength:               defaultMinEpisodeLength,
 		HybridRecall:                   true,
 	}
 }

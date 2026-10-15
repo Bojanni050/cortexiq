@@ -1,6 +1,11 @@
 package brain
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/Bojanni050/cortexiq/internal/models"
+)
 
 func TestContiguousCheckpoint(t *testing.T) {
 	tests := []struct {
@@ -37,5 +42,36 @@ func TestCalculateConfidence(t *testing.T) {
 	}
 	if got := calculateConfidence(1000, true); got > 1 {
 		t.Errorf("confidence %v exceeds 1", got)
+	}
+}
+
+func TestPartitionFragments(t *testing.T) {
+	episodes := []models.Episode{
+		{ID: 1, Content: "2"},
+		{ID: 2, Content: "  gedaan  "},
+		{ID: 3, Content: "CortexIQ draait op poort 9090"},
+		{ID: 4, Content: "ok"},
+	}
+
+	kept, fragments := partitionFragments(episodes, 24)
+	if len(kept) != 1 || kept[0].ID != 3 {
+		t.Fatalf("kept = %+v, want only episode 3", kept)
+	}
+	if len(fragments) != 3 {
+		t.Fatalf("fragments = %+v, want the three short episodes", fragments)
+	}
+
+	// Length is counted in runes after trimming, so an accented 24-rune memory
+	// is not judged by its byte count.
+	accented := strings.Repeat("é", 24)
+	kept, fragments = partitionFragments([]models.Episode{{ID: 9, Content: accented}}, 24)
+	if len(kept) != 1 || len(fragments) != 0 {
+		t.Fatalf("24 accented runes should be kept: kept=%+v fragments=%+v", kept, fragments)
+	}
+
+	// 0 disables the filter; nothing is dropped.
+	kept, fragments = partitionFragments(episodes, 0)
+	if len(kept) != len(episodes) || fragments != nil {
+		t.Fatalf("disabled filter changed the batch: kept=%+v fragments=%+v", kept, fragments)
 	}
 }

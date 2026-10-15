@@ -8,6 +8,7 @@ import (
 	"math"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Bojanni050/cortexiq/internal/models"
 	"github.com/Bojanni050/cortexiq/internal/observability"
@@ -21,6 +22,7 @@ type ConsolidationResult struct {
 	Namespace                  string        `json:"namespace"`
 	Duration                   time.Duration `json:"duration"`
 	EpisodesRead               int           `json:"episodes_read"`
+	EpisodesSkipped            int           `json:"episodes_skipped"`
 	FactsCreated               int           `json:"facts_created"`
 	FactsDeduplicated          int           `json:"facts_deduplicated"`
 	RelationshipsFound         int           `json:"relationships_found"`
@@ -80,10 +82,11 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 
 	// Stage 1: Episodes -> Facts (+ Stage 4: Contradiction detection)
 	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
-		factsCreated, factsDeduped, episodesRead, llmCalls, contFound, contAuto, errs := b.consolidateEpisodesToFacts(ctx, nsID, cp)
+		factsCreated, factsDeduped, episodesRead, episodesSkipped, llmCalls, contFound, contAuto, errs := b.consolidateEpisodesToFacts(ctx, nsID, cp)
 		result.FactsCreated = factsCreated
 		result.FactsDeduplicated = factsDeduped
 		result.EpisodesRead = episodesRead
+		result.EpisodesSkipped = episodesSkipped
 		result.LLMCalls += llmCalls
 		result.ContradictionsFound = contFound
 		result.ContradictionsAutoResolved = contAuto
@@ -198,7 +201,7 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 
 // --- Stage 1: Episodes -> Facts ---
 
-func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (created, deduped, read, llmCalls, contradictionsFound, contradictionsAutoResolved int, errs []string) {
+func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (created, deduped, read, skipped, llmCalls, contradictionsFound, contradictionsAutoResolved int, errs []string) {
 	sql, args, err := b.queries.FetchEpisodes(nsID, cp.LastEpisodeID, b.config.BatchSize)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("build fetch episodes: %v", err))
@@ -231,9 +234,6 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 		return
 	}
 
-	// Cluster by vector similarity
-	clusters := b.clusterEpisodes(episodes)
-
 	// done holds episodes whose cluster was fully handled. The checkpoint only
 	// advances over a contiguous run of done episodes, so a failed cluster is
 	// retried next run without blocking (or re-processing) everything before it.
@@ -243,9 +243,25 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 			done[e.ID] = true
 		}
 	}
+
+	// An episode that states nothing — one token, a greeting, a clipped
+	// acknowledgement — must not reach the extractor: asked for facts, it reads
+	// a claim into the fragment. A bare "2" became "CortexIQ includes the content
+	// '2' … as a signal or reminder". Skipped episodes count as done, otherwise
+	// the checkpoint stops on them and nothing after them is ever consolidated.
+	extractable, fragments := partitionFragments(episodes, b.config.MinEpisodeLength)
+	markDone(fragments)
+	skipped = len(fragments)
+
+	// Cluster by vector similarity
+	clusters := b.clusterEpisodes(extractable)
+
 	scanErrs := len(errs)
 
-	subject := b.namespaceSubject(ctx, nsID)
+	var subject string
+	if len(clusters) > 0 {
+		subject = b.namespaceSubject(ctx, nsID)
+	}
 
 	for _, cluster := range clusters {
 		if ctx.Err() != nil {
@@ -293,6 +309,8 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 
 	// Rows that failed to scan are missing from `episodes`; advancing past them
 	// would lose them, so only move the checkpoint when the fetch was clean.
+	// The ids come from the whole fetched batch, fragments included: a skipped
+	// fragment is done and must count when the checkpoint walks forward.
 	if scanErrs == 0 {
 		ids := make([]int64, len(episodes))
 		for i, e := range episodes {
@@ -301,6 +319,25 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 		cp.LastEpisodeID = contiguousCheckpoint(ids, done, cp.LastEpisodeID)
 	}
 	return
+}
+
+// partitionFragments splits a fetched batch into the episodes worth extracting
+// from and the ones that state nothing. minChars of 0 disables the filter. The
+// length is measured in runes, so an accented sentence is not judged by its
+// bytes. Callers must treat the fragments as done, or the consolidation
+// checkpoint stops on them forever.
+func partitionFragments(episodes []models.Episode, minChars int) (extractable, fragments []models.Episode) {
+	if minChars <= 0 {
+		return episodes, nil
+	}
+	for _, e := range episodes {
+		if utf8.RuneCountInString(strings.TrimSpace(e.Content)) < minChars {
+			fragments = append(fragments, e)
+			continue
+		}
+		extractable = append(extractable, e)
+	}
+	return extractable, fragments
 }
 
 // contiguousCheckpoint returns the highest ID such that every ID up to and

@@ -121,6 +121,7 @@ func New(ctx context.Context) (*Context, error) {
 		RecencyWeight:                  cfg.RecallRecencyWeight,
 		RecencyHalfLife:                cfg.RecallRecencyHalfLife,
 		ImportanceWeight:               cfg.RecallImportanceWeight,
+		MinEpisodeLength:               cfg.ExtractionMinChars,
 	})
 	if err != nil {
 		pool.Close()
