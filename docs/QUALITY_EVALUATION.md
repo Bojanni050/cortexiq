@@ -65,6 +65,15 @@ whenever the embedding model changes. It writes nothing to the database. The set
 is synthetic and was written by Claude; the labels still need a human check
 before the thresholds are changed on the strength of them.
 
+Measured 2026-10-16 (bge-m3, 68 pairs, `--threshold 0.99 --review-threshold 0.75
+--llm`, so the whole band goes to the reasoner): cosine alone cannot separate
+`same` (0.77–0.97) from `near-miss` (0.58–0.95); at 0.85/0.80 eleven of seventeen
+near-misses were auto-merged. With the review prompt that names subject, role and
+scope as new information, three runs gave 1 false merge (N35, warning vs critical
+threshold) and 0 missed twins each time. The highest near-miss is 0.955 and the
+highest twin 0.965, so an auto-merge threshold of 0.98 sits above everything
+measured; the range between 0.965 and 0.98 holds no pairs and is an estimate.
+
 ## 3. Compare models safely
 
 Run the same examples with the old and new configuration. Keep the raw JSONL
