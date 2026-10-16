@@ -889,15 +889,17 @@ async function renderRuns() {
   const n = v => v ? String(v) : '<span class="muted">—</span>';
   await listTab('runs', {
     path: o => '/runs' + qs(o),
-    headers: ['Started', 'Namespace', 'Duration', 'Episodes', 'Facts', 'Dedup', 'Rels', 'Patterns', 'Contra', 'LLM calls', 'Errors'],
+    headers: ['Started', 'Namespace', 'Duration', 'Episodes', 'Skipped', 'Facts', 'Dedup', 'Near-miss', 'Rels', 'Patterns', 'Contra', 'LLM calls', 'Errors'],
     fields: ['id', 'namespace_slug', 'error_sample'],
     row: r => `<tr>
       <td class="muted">${ts(r.started_at)}</td>
       <td class="mono">${esc(r.namespace_slug || nsSlug(r.namespace_id))}</td>
       <td class="mono">${dur(r.duration_ms)}</td>
       <td>${n(r.episodes_read)}</td>
+      <td>${n(r.episodes_skipped)}</td>
       <td>${n(r.facts_created)}</td>
       <td>${n(r.facts_deduplicated)}</td>
+      <td>${n(r.dedup_near_misses)}</td>
       <td>${n(r.relationships_found)}</td>
       <td>${n(r.patterns_found)}</td>
       <td>${n(r.contradictions_found)}</td>

@@ -226,6 +226,7 @@ type ConsolidationRun struct {
 	StartedAt               time.Time `db:"started_at" json:"started_at"`
 	DurationMS              int64     `db:"duration_ms" json:"duration_ms"`
 	EpisodesRead            int       `db:"episodes_read" json:"episodes_read"`
+	EpisodesSkipped         int       `db:"episodes_skipped" json:"episodes_skipped"`
 	FactsCreated            int       `db:"facts_created" json:"facts_created"`
 	FactsDeduplicated       int       `db:"facts_deduplicated" json:"facts_deduplicated"`
 	RelationshipsFound      int       `db:"relationships_found" json:"relationships_found"`
@@ -241,6 +242,7 @@ type ConsolidationRun struct {
 	HypothesesUpdated       int       `db:"hypotheses_updated" json:"hypotheses_updated"`
 	FactsDecayed            int       `db:"facts_decayed" json:"facts_decayed"`
 	FactsExpired            int       `db:"facts_expired" json:"facts_expired"`
+	DedupNearMisses         int       `db:"dedup_near_misses" json:"dedup_near_misses"`
 	LLMCalls                int       `db:"llm_calls" json:"llm_calls"`
 	LLMCallsLimited         bool      `db:"llm_calls_limited" json:"llm_calls_limited"`
 	Errors                  int       `db:"errors" json:"errors"`
