@@ -50,6 +50,21 @@ new while a near-twin (similarity >= 0.75) was already there. That band is where
 duplicates are born, and it is where the calibration should start — label ~50
 pairs (rewordings, translations, near-misses) and record the raw cosine.
 
+That set exists: `eval/dedup_pairs.jsonl` holds 50 labelled pairs (`same`,
+`near-miss`, `different`). Score it against the configured embedder with
+
+```bash
+cortexiq eval dedup            # cosine per label, threshold sweep, effect of the current thresholds
+cortexiq eval dedup --llm      # also asks the reasoner about the pairs in the review band
+```
+
+Read the report like this: `auto_merged_other` must be 0 (a false merge loses
+information), `missed_same` is the twins no test ever merges, and the sweep shows
+at which threshold the `same` and `near-miss` distributions separate. Run it again
+whenever the embedding model changes. It writes nothing to the database. The set
+is synthetic and was written by Claude; the labels still need a human check
+before the thresholds are changed on the strength of them.
+
 ## 3. Compare models safely
 
 Run the same examples with the old and new configuration. Keep the raw JSONL

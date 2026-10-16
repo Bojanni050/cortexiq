@@ -193,6 +193,23 @@ func main() {
 				},
 			},
 			{
+				Name:  "eval",
+				Usage: "Score quality against labelled calibration sets (nothing is written)",
+				Commands: []*cli.Command{
+					{
+						Name:   "dedup",
+						Usage:  "Cosine distribution and threshold sweep over labelled fact pairs",
+						Action: evalDedupCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "file", Aliases: []string{"f"}, Value: "eval/dedup_pairs.jsonl", Usage: "JSON Lines pair set"},
+							&cli.FloatFlag{Name: "threshold", Usage: "Auto-merge threshold to score against (default: CORTEXIQ_CONSOLIDATION_DEDUP_THRESHOLD)"},
+							&cli.FloatFlag{Name: "review-threshold", Usage: "LLM review threshold to score against (default: CORTEXIQ_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD)"},
+							&cli.BoolFlag{Name: "llm", Usage: "Also ask the reasoner about the pairs in the review band (one call each)"},
+						},
+					},
+				},
+			},
+			{
 				Name:  "consolidate",
 				Usage: "Consolidate memories",
 				Commands: []*cli.Command{

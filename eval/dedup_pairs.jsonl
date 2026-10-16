@@ -1,0 +1,50 @@
+{"id":"S01","label":"same","a":"CortexIQ is installed in /opt/cortexiq on the production server.","b":"On the production server, CortexIQ lives in the directory /opt/cortexiq."}
+{"id":"S02","label":"same","a":"The HTTP server of CortexIQ listens on port 9090.","b":"CortexIQ serves HTTP on port 9090."}
+{"id":"S03","label":"same","a":"The MCP server runs on port 8080 over SSE.","b":"CortexIQ's MCP endpoint is served via SSE on port 8080."}
+{"id":"S04","label":"same","a":"Bo prefers answers in Dutch when the question is asked in Dutch.","b":"When Bo asks in Dutch, he wants the reply in Dutch."}
+{"id":"S05","label":"same","a":"The database is PostgreSQL with the pgvector extension.","b":"CortexIQ stores its data in PostgreSQL using pgvector."}
+{"id":"S06","label":"same","a":"CortexIQ draait op poort 9090.","b":"CortexIQ runs on port 9090."}
+{"id":"S07","label":"same","a":"De productieserver gebruikt systemd voor de backup-timer.","b":"The production server uses systemd for the backup timer."}
+{"id":"S08","label":"same","a":"Recall combines vector search and keyword search with reciprocal rank fusion.","b":"Recall merges semantic and keyword rankings using reciprocal rank fusion."}
+{"id":"S09","label":"same","a":"The embedding model is qwen3.","b":"CortexIQ uses the qwen3 model for embeddings."}
+{"id":"S10","label":"same","a":"By default, the dedup threshold is 0.85.","b":"The default threshold for deduplication is 0.85."}
+{"id":"S11","label":"same","a":"Consolidation runs every five minutes.","b":"The consolidation interval is 5 minutes."}
+{"id":"S12","label":"same","a":"The repository is hosted on GitHub at Bojanni050/cortexiq.","b":"CortexIQ's source code lives in the GitHub repository Bojanni050/cortexiq."}
+{"id":"S13","label":"same","a":"Stash was renamed to CortexIQ.","b":"CortexIQ is the new name of Stash."}
+{"id":"S14","label":"same","a":"The binary is called cortexiq.","b":"The executable of the project is named cortexiq."}
+{"id":"S15","label":"same","a":"Hermes agents store their memories under the /hermes namespace.","b":"Memories of Hermes agent profiles are kept in namespaces below /hermes."}
+{"id":"S16","label":"same","a":"Bo werkt solo aan CortexIQ.","b":"CortexIQ wordt door Bo alleen ontwikkeld."}
+{"id":"S17","label":"same","a":"Episodes shorter than 24 characters are not sent to the extractor.","b":"The extractor skips episodes of fewer than 24 characters."}
+{"id":"S18","label":"same","a":"Facts are soft-deleted rather than removed when they are merged.","b":"When facts are merged, the duplicates are soft-deleted instead of being hard-deleted."}
+{"id":"S19","label":"same","a":"The API requires a bearer token.","b":"Requests to the API must carry a bearer token for authentication."}
+{"id":"S20","label":"same","a":"Recall results are scored between 0 and 1.","b":"Each recall result gets a fused score in the range 0 to 1."}
+{"id":"N01","label":"near-miss","a":"The HTTP server of CortexIQ listens on port 9090.","b":"The MCP server of CortexIQ listens on port 8080.","note":"different server, different port"}
+{"id":"N02","label":"near-miss","a":"The dedup threshold is 0.85.","b":"The dedup review threshold is 0.80.","note":"two different thresholds"}
+{"id":"N03","label":"near-miss","a":"CortexIQ is installed in /opt/cortexiq on the production server.","b":"CortexIQ is installed in /opt/cortexiq on the staging server.","note":"production vs staging"}
+{"id":"N04","label":"near-miss","a":"Consolidation runs every five minutes.","b":"Consolidation runs every five minutes and processes at most 100 episodes per batch.","note":"b adds a new detail that must not be lost"}
+{"id":"N05","label":"near-miss","a":"Facts are soft-deleted when they are merged.","b":"Episodes are hard-deleted by the purge command.","note":"soft vs hard delete, facts vs episodes"}
+{"id":"N06","label":"near-miss","a":"The Hermes recall scope defaults to global.","b":"The Hermes recall scope can be set to profile.","note":"default vs an option"}
+{"id":"N07","label":"near-miss","a":"The extractor skips episodes shorter than 24 characters.","b":"The extractor skips episodes shorter than 10 characters.","note":"changed number"}
+{"id":"N08","label":"near-miss","a":"Bo prefers answers in Dutch.","b":"Bo prefers code comments in English.","note":"different preference"}
+{"id":"N09","label":"near-miss","a":"CortexIQ uses PostgreSQL 16.","b":"CortexIQ uses PostgreSQL 17.","note":"changed version"}
+{"id":"N10","label":"near-miss","a":"Hybrid recall is enabled by default.","b":"Hybrid recall is disabled by default.","note":"negation"}
+{"id":"N11","label":"near-miss","a":"The embedding model is qwen3.","b":"The reasoner model is qwen3.","note":"embedder vs reasoner"}
+{"id":"N12","label":"near-miss","a":"The backup runs daily.","b":"The backup runs weekly.","note":"changed frequency"}
+{"id":"N13","label":"near-miss","a":"CortexIQ was renamed from Stash.","b":"The Stash namespace /projects/stash is kept after the rename.","note":"related, but a different claim"}
+{"id":"N14","label":"near-miss","a":"Write access requires a token with write scope.","b":"Read access requires a token with read scope.","note":"write vs read"}
+{"id":"N15","label":"near-miss","a":"The recency weight is configured with CORTEXIQ_RECALL_RECENCY_WEIGHT.","b":"The importance weight is configured with CORTEXIQ_RECALL_IMPORTANCE_WEIGHT.","note":"two different settings"}
+{"id":"N16","label":"near-miss","a":"Bo uses Visual Studio Code.","b":"Bo uses Kilo Code inside Visual Studio Code.","note":"b adds a new detail"}
+{"id":"N17","label":"near-miss","a":"CortexIQ is developed on Windows.","b":"CortexIQ runs on a Linux production server.","note":"development vs production OS"}
+{"id":"D01","label":"different","a":"CortexIQ is installed in /opt/cortexiq.","b":"The og-image.png must reflect the CortexIQ logo."}
+{"id":"D02","label":"different","a":"Bo prefers answers in Dutch.","b":"The consolidation interval is five minutes."}
+{"id":"D03","label":"different","a":"The database is PostgreSQL with pgvector.","b":"Hermes agents have per-profile namespaces."}
+{"id":"D04","label":"different","a":"The Prometheus metric is called cortexiq_build_info.","b":"Facts are soft-deleted when they are merged."}
+{"id":"D05","label":"different","a":"Bo scaffolds projects with bolt.new.","b":"The MCP server runs over SSE on port 8080."}
+{"id":"D06","label":"different","a":"Recall uses reciprocal rank fusion.","b":"The binary is named cortexiq."}
+{"id":"D07","label":"different","a":"The systemd backup unit files are named cortexiq-backup.*.","b":"Hypotheses are auto-confirmed above a confidence of 0.9."}
+{"id":"D08","label":"different","a":"CortexIQ is a persistent memory system for AI agents.","b":"The initial commit message is 'feat!: rebrand Stash to CortexIQ'."}
+{"id":"D09","label":"different","a":"Bo wil geen nieuwe dependencies zonder overleg.","b":"The relationship batch size is 5."}
+{"id":"D10","label":"different","a":"Contradictions between facts can be listed and resolved.","b":"The embedding cache is stored in the embedding_cache table."}
+{"id":"D11","label":"different","a":"Goals can have sub-goals.","b":"Failures record a reason and a lesson."}
+{"id":"D12","label":"different","a":"The walkthrough is updated after every significant change.","b":"The API requires a bearer token."}
+{"id":"D13","label":"different","a":"Importance is a number between 0 and 1.","b":"The decay factor is 0.95."}
