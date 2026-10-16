@@ -50,7 +50,7 @@ new while a near-twin (similarity >= 0.75) was already there. That band is where
 duplicates are born, and it is where the calibration should start — label ~50
 pairs (rewordings, translations, near-misses) and record the raw cosine.
 
-That set exists: `eval/dedup_pairs.jsonl` holds 50 labelled pairs (`same`,
+That set exists: `eval/dedup_pairs.jsonl` holds 60 labelled pairs (`same`,
 `near-miss`, `different`). Score it against the configured embedder with
 
 ```bash

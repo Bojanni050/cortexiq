@@ -1,18 +1,18 @@
 {"id":"S01","label":"same","a":"CortexIQ is installed in /opt/cortexiq on the production server.","b":"On the production server, CortexIQ lives in the directory /opt/cortexiq."}
 {"id":"S02","label":"same","a":"The HTTP server of CortexIQ listens on port 9090.","b":"CortexIQ serves HTTP on port 9090."}
-{"id":"S03","label":"same","a":"The MCP server runs on port 8080 over SSE.","b":"CortexIQ's MCP endpoint is served via SSE on port 8080."}
+{"id":"S03","label":"same","a":"The MCP server runs on port 8080 over SSE.","b":"The MCP server is served via SSE on port 8080."}
 {"id":"S04","label":"same","a":"Bo prefers answers in Dutch when the question is asked in Dutch.","b":"When Bo asks in Dutch, he wants the reply in Dutch."}
 {"id":"S05","label":"same","a":"The database is PostgreSQL with the pgvector extension.","b":"CortexIQ stores its data in PostgreSQL using pgvector."}
 {"id":"S06","label":"same","a":"CortexIQ draait op poort 9090.","b":"CortexIQ runs on port 9090."}
 {"id":"S07","label":"same","a":"De productieserver gebruikt systemd voor de backup-timer.","b":"The production server uses systemd for the backup timer."}
 {"id":"S08","label":"same","a":"Recall combines vector search and keyword search with reciprocal rank fusion.","b":"Recall merges semantic and keyword rankings using reciprocal rank fusion."}
-{"id":"S09","label":"same","a":"The embedding model is qwen3.","b":"CortexIQ uses the qwen3 model for embeddings."}
+{"id":"S09","label":"same","a":"The embedding model is qwen3.","b":"The model used for embeddings is qwen3."}
 {"id":"S10","label":"same","a":"By default, the dedup threshold is 0.85.","b":"The default threshold for deduplication is 0.85."}
 {"id":"S11","label":"same","a":"Consolidation runs every five minutes.","b":"The consolidation interval is 5 minutes."}
 {"id":"S12","label":"same","a":"The repository is hosted on GitHub at Bojanni050/cortexiq.","b":"CortexIQ's source code lives in the GitHub repository Bojanni050/cortexiq."}
 {"id":"S13","label":"same","a":"Stash was renamed to CortexIQ.","b":"CortexIQ is the new name of Stash."}
-{"id":"S14","label":"same","a":"The binary is called cortexiq.","b":"The executable of the project is named cortexiq."}
-{"id":"S15","label":"same","a":"Hermes agents store their memories under the /hermes namespace.","b":"Memories of Hermes agent profiles are kept in namespaces below /hermes."}
+{"id":"S14","label":"same","a":"The binary is called cortexiq.","b":"The executable is named cortexiq."}
+{"id":"S15","label":"same","a":"Hermes agents store their memories under /hermes.","b":"The memories of Hermes agents are stored under /hermes."}
 {"id":"S16","label":"same","a":"Bo werkt solo aan CortexIQ.","b":"CortexIQ wordt door Bo alleen ontwikkeld."}
 {"id":"S17","label":"same","a":"Episodes shorter than 24 characters are not sent to the extractor.","b":"The extractor skips episodes of fewer than 24 characters."}
 {"id":"S18","label":"same","a":"Facts are soft-deleted rather than removed when they are merged.","b":"When facts are merged, the duplicates are soft-deleted instead of being hard-deleted."}
@@ -35,6 +35,16 @@
 {"id":"N15","label":"near-miss","a":"The recency weight is configured with CORTEXIQ_RECALL_RECENCY_WEIGHT.","b":"The importance weight is configured with CORTEXIQ_RECALL_IMPORTANCE_WEIGHT.","note":"two different settings"}
 {"id":"N16","label":"near-miss","a":"Bo uses Visual Studio Code.","b":"Bo uses Kilo Code inside Visual Studio Code.","note":"b adds a new detail"}
 {"id":"N17","label":"near-miss","a":"CortexIQ is developed on Windows.","b":"CortexIQ runs on a Linux production server.","note":"development vs production OS"}
+{"id":"N18","label":"near-miss","a":"The read replica runs on port 5433.","b":"The primary database runs on port 5433.","note":"replica vs primary"}
+{"id":"N19","label":"near-miss","a":"The client timeout is 30 seconds.","b":"The server timeout is 30 seconds.","note":"client vs server"}
+{"id":"N20","label":"near-miss","a":"The staging server uses PostgreSQL 16.","b":"The production server uses PostgreSQL 16.","note":"staging vs production"}
+{"id":"N21","label":"near-miss","a":"The consolidation job runs every 5 minutes.","b":"The backup job runs every 5 minutes.","note":"two different jobs"}
+{"id":"N22","label":"near-miss","a":"The extractor uses the qwen3 model.","b":"The embedder uses the qwen3 model.","note":"extractor vs embedder role"}
+{"id":"N23","label":"near-miss","a":"The CLI listens on port 9090.","b":"The web UI listens on port 9090.","note":"CLI vs UI"}
+{"id":"N24","label":"near-miss","a":"Facts expire after 30 days.","b":"Episodes expire after 30 days.","note":"facts vs episodes"}
+{"id":"N25","label":"near-miss","a":"The input limit is 4096 tokens.","b":"The output limit is 4096 tokens.","note":"input vs output"}
+{"id":"N26","label":"near-miss","a":"The web UI is served on port 9090.","b":"The metrics endpoint is served on port 9090.","note":"UI vs metrics"}
+{"id":"N27","label":"near-miss","a":"Recall returns at most 10 results by default.","b":"Consolidation processes at most 10 episodes by default.","note":"recall vs consolidation"}
 {"id":"D01","label":"different","a":"CortexIQ is installed in /opt/cortexiq.","b":"The og-image.png must reflect the CortexIQ logo."}
 {"id":"D02","label":"different","a":"Bo prefers answers in Dutch.","b":"The consolidation interval is five minutes."}
 {"id":"D03","label":"different","a":"The database is PostgreSQL with pgvector.","b":"Hermes agents have per-profile namespaces."}
