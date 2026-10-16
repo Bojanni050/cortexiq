@@ -1,0 +1,60 @@
+{"id":"d01","content":"Besloten: CortexIQ draait in productie op de VPS in /opt/cortexiq, met docker compose en een server-lokale docker-compose.prod.yml."}
+{"id":"d02","content":"The HTTP server listens on port 9090 and serves metrics and the health endpoint."}
+{"id":"d03","content":"The MCP server listens on port 8080 over SSE and is the endpoint agents connect to."}
+{"id":"d04","content":"Recall combines vector search and PostgreSQL full-text search with reciprocal rank fusion, constant 60."}
+{"id":"d05","content":"CORTEXIQ_RECALL_RECENCY_WEIGHT controls how much newer memories are favoured; the half-life is set separately."}
+{"id":"d06","content":"CORTEXIQ_RECALL_IMPORTANCE_WEIGHT lets the importance of an episode lower its recall score."}
+{"id":"d07","content":"Bo wil dat de agent in het Nederlands antwoordt wanneer de vraag in het Nederlands is gesteld."}
+{"id":"d08","content":"Bo prefers incremental work: one clear task per prompt, never ten changes at once."}
+{"id":"d09","content":"De backup draait dagelijks via een systemd-timer en schrijft dumps naar /opt/cortexiq/backups."}
+{"id":"d10","content":"Restoring a backup requires the --confirm flag to avoid overwriting production by accident."}
+{"id":"d11","content":"The embedding model is bge-m3, served locally through Ollama."}
+{"id":"d12","content":"The reasoner model extracts facts from episodes during consolidation."}
+{"id":"d13","content":"Consolidation runs every five minutes and processes new episodes in batches."}
+{"id":"d14","content":"In the evaluation, an auto-merge threshold of 0.98 sat above every measured near-miss."}
+{"id":"d15","content":"Een nieuw feit wordt vergeleken met de vijf dichtstbijzijnde bestaande feiten, niet alleen met de dichtstbijzijnde."}
+{"id":"d16","content":"Episodes shorter than 24 characters are skipped by the extractor because they state nothing."}
+{"id":"d17","content":"The Hermes plugin stores memories under /hermes/<profile> and recalls globally by default."}
+{"id":"d18","content":"The Hermes recall scope can be global, base or profile."}
+{"id":"d19","content":"De API vereist een bearer token; schrijven vraagt een token met write-scope."}
+{"id":"d20","content":"Read-only tokens can recall and query but cannot remember, forget or consolidate."}
+{"id":"d21","content":"The Prometheus metric cortexiq_build_info exposes the build version."}
+{"id":"d22","content":"reasoner_prompt_tokens_total counts prompt tokens per reasoner stage."}
+{"id":"d23","content":"Het project heette eerst Stash en is hernoemd naar CortexIQ; de oude namespace /projects/stash blijft bestaan."}
+{"id":"d24","content":"The initial CortexIQ commit message was feat!: rebrand Stash to CortexIQ."}
+{"id":"d25","content":"Contradictions are detected when a new fact gives a different value for the same entity and property."}
+{"id":"d26","content":"A superseded fact gets a valid_until timestamp instead of being deleted."}
+{"id":"d27","content":"Recall as_of answers what was known at a given moment, including facts that were later superseded."}
+{"id":"d28","content":"Goals can have sub-goals and a priority; completing a goal stores notes."}
+{"id":"d29","content":"Failures record why an approach failed and what to do instead."}
+{"id":"d30","content":"Hypotheses move through proposed, testing, confirmed and rejected."}
+{"id":"d31","content":"De walkthrough wordt na elke significante wijziging bijgewerkt, met Findings, Conclusions en Actions."}
+{"id":"d32","content":"After one thousand lines the walkthrough continues in a new file, walkthrough2.md."}
+{"id":"d33","content":"Bo scaffolds new projects with bolt.new and continues locally in Visual Studio Code."}
+{"id":"d34","content":"Kilo Code is used as the coding agent inside Visual Studio Code."}
+{"id":"d35","content":"Production runs on a VPS at Strato; the CortexIQ containers listen only on 127.0.0.1."}
+{"id":"d36","content":"De UI draait op poort 18101 op de host en bereikt de HTTP server op poort 9090 in de container."}
+{"id":"d37","content":"The MCP server is mapped to host port 18100."}
+{"id":"d38","content":"The embedding cache stores vectors per text and model in the embedding_cache table."}
+{"id":"d39","content":"Importance is a number between 0 and 1 where 0.5 is neutral."}
+{"id":"d40","content":"Decay lowers the confidence of facts that are not reinforced; the factor is 0.95 per cycle."}
+{"id":"d41","content":"A fact is reinforced when an extraction repeats it; reinforcement raises its confidence."}
+{"id":"d42","content":"Hypotheses are auto-confirmed above confidence 0.9."}
+{"id":"d43","content":"De extractor mag geen feiten verzinnen: alleen expliciet vermelde claims worden opgeslagen."}
+{"id":"d44","content":"Settings stated in the present tense are stored as observations of the moment, not as timeless properties."}
+{"id":"d45","content":"The relationship batch size is five facts per reasoner call."}
+{"id":"d46","content":"The maximum number of LLM calls per consolidation run is configurable; production recommends 50."}
+{"id":"d47","content":"llm_calls_limited reports that a run hit the call budget."}
+{"id":"d48","content":"The export command writes episodes and facts as JSON Lines without embeddings."}
+{"id":"d49","content":"Import recomputes the embeddings with the configured model."}
+{"id":"d50","content":"Namespaces are hierarchical: a path matches itself and all descendants."}
+{"id":"d51","content":"Writing to the root namespace / is not possible because it has no namespace row."}
+{"id":"d52","content":"Migrations are applied at startup; migration 28 added the run counters."}
+{"id":"d53","content":"The Runs tab shows what each consolidation run changed."}
+{"id":"d54","content":"Dedup near-misses count facts stored as new while a near-twin above 0.75 already existed."}
+{"id":"d55","content":"De Hermes-integratie maakt het namespace van een profiel zelf aan bij de eerste write."}
+{"id":"d56","content":"Webhook support is not planned; agents talk to CortexIQ through MCP or the REST API."}
+{"id":"d57","content":"Distroless images contain only the static binary, so there is no shell inside the container."}
+{"id":"d58","content":"The Dockerfile builds a static Go binary with CGO disabled."}
+{"id":"d59","content":"The GitHub repository is Bojanni050/cortexiq and main is the working branch."}
+{"id":"d60","content":"Small changes are pushed to main automatically; large changes ask for confirmation first."}

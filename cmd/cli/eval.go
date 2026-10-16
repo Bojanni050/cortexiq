@@ -67,3 +67,64 @@ func printDedupSummary(rep brain.DedupEvalReport) {
 		fmt.Fprintf(w, "  MISSED       %s %.3f\n", s.ID, s.Similarity)
 	}
 }
+
+// evalRecallCmd stores the corpus in a temporary namespace under /eval/, asks
+// the question set through the normal recall path and removes the namespace
+// again. The JSON report goes to stdout, a summary to stderr.
+func evalRecallCmd(ctx context.Context, cmd *cli.Command) error {
+	docsFile, err := os.Open(cmd.String("corpus"))
+	if err != nil {
+		return err
+	}
+	defer docsFile.Close()
+	docs, err := brain.LoadRecallDocs(docsFile)
+	if err != nil {
+		return fmt.Errorf("%s: %w", cmd.String("corpus"), err)
+	}
+
+	qFile, err := os.Open(cmd.String("queries"))
+	if err != nil {
+		return err
+	}
+	defer qFile.Close()
+	qs, err := brain.LoadRecallQueries(qFile, docs)
+	if err != nil {
+		return fmt.Errorf("%s: %w", cmd.String("queries"), err)
+	}
+
+	bc := getBootstrap(cmd)
+	rep, err := bc.Brain.EvalRecall(ctx, docs, qs, brain.RecallEvalOptions{
+		Limit: cmd.Int("limit"),
+		Keep:  cmd.Bool("keep"),
+	})
+	if err != nil {
+		return err
+	}
+	if err := printJSON(rep); err != nil {
+		return err
+	}
+	printRecallSummary(rep)
+	return nil
+}
+
+func printRecallSummary(rep brain.RecallEvalReport) {
+	w := os.Stderr
+	fmt.Fprintf(w, "\nmodel %s, %d memories, k=%d\n\n", rep.Model, rep.Docs, rep.Limit)
+	fmt.Fprintf(w, "%-15s %4s %6s %6s %6s %6s\n", "kind", "n", "hit@1", "hit@3", "hit@k", "MRR")
+	row := func(name string, s brain.RecallStats) {
+		fmt.Fprintf(w, "%-15s %4d %6.2f %6.2f %6.2f %6.3f\n", name, s.Questions, s.HitAt1, s.HitAt3, s.HitAtK, s.MRR)
+	}
+	for _, k := range []string{brain.QueryIdentifier, brain.QueryParaphrase, brain.QueryCrossLanguage, brain.QueryConfuser} {
+		if s, ok := rep.Kinds[k]; ok {
+			row(k, s)
+		}
+	}
+	row("overall", rep.Overall)
+	for _, m := range rep.Misses {
+		rank := fmt.Sprintf("rank %d", m.Rank)
+		if m.Rank == 0 {
+			rank = "NOT FOUND"
+		}
+		fmt.Fprintf(w, "  MISS %s (%s) %s: %q -> top %v\n", m.ID, m.Kind, rank, m.Query, m.Top)
+	}
+}

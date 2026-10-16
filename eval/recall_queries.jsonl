@@ -1,0 +1,36 @@
+{"id":"q01","kind":"identifier","query":"CORTEXIQ_RECALL_RECENCY_WEIGHT","expect":["d05"]}
+{"id":"q02","kind":"identifier","query":"reasoner_prompt_tokens_total","expect":["d22"]}
+{"id":"q03","kind":"identifier","query":"walkthrough2.md","expect":["d32"]}
+{"id":"q04","kind":"identifier","query":"embedding_cache","expect":["d38"]}
+{"id":"q05","kind":"identifier","query":"llm_calls_limited","expect":["d47"]}
+{"id":"q06","kind":"identifier","query":"cortexiq_build_info","expect":["d21"]}
+{"id":"q07","kind":"identifier","query":"docker-compose.prod.yml","expect":["d01"]}
+{"id":"q08","kind":"identifier","query":"bolt.new","expect":["d33"]}
+{"id":"q09","kind":"paraphrase","query":"how are keyword and semantic rankings merged","expect":["d04"]}
+{"id":"q10","kind":"paraphrase","query":"why does an unreinforced fact lose confidence over time","expect":["d40"]}
+{"id":"q11","kind":"paraphrase","query":"which credential level is needed to store a memory","expect":["d19"]}
+{"id":"q12","kind":"paraphrase","query":"what happens to a fact that is replaced by newer information","expect":["d26"]}
+{"id":"q13","kind":"paraphrase","query":"how often does the background job look for new episodes","expect":["d13"]}
+{"id":"q14","kind":"paraphrase","query":"what stops the extractor from inventing claims","expect":["d43"]}
+{"id":"q15","kind":"paraphrase","query":"can a recalled answer show the state of knowledge in the past","expect":["d27"]}
+{"id":"q16","kind":"paraphrase","query":"how do I get all my data out as plain text","expect":["d48"]}
+{"id":"q17","kind":"paraphrase","query":"why can't I save a memory at the top level","expect":["d51"]}
+{"id":"q18","kind":"paraphrase","query":"which states can a hypothesis be in","expect":["d30"]}
+{"id":"q19","kind":"cross-language","query":"Op welke poort luistert de MCP-server?","expect":["d03"]}
+{"id":"q20","kind":"cross-language","query":"Wat was de oude naam van het project?","expect":["d23"]}
+{"id":"q21","kind":"cross-language","query":"Hoe vaak draait de consolidatie?","expect":["d13"]}
+{"id":"q22","kind":"cross-language","query":"In which language should the assistant reply to Bo?","expect":["d07"]}
+{"id":"q23","kind":"cross-language","query":"Hoe wordt de embedding-cache opgeslagen?","expect":["d38"]}
+{"id":"q24","kind":"cross-language","query":"Where do backups end up?","expect":["d09"]}
+{"id":"q25","kind":"cross-language","query":"Wat gebeurt er met mijn memories bij import?","expect":["d49"]}
+{"id":"q26","kind":"cross-language","query":"How is the walkthrough structured?","expect":["d31"]}
+{"id":"q27","kind":"confuser","query":"On which port does the HTTP server listen?","expect":["d02"]}
+{"id":"q28","kind":"confuser","query":"Which host port maps to the MCP server?","expect":["d37"]}
+{"id":"q29","kind":"confuser","query":"Welke host-poort bereikt de UI?","expect":["d36"]}
+{"id":"q30","kind":"confuser","query":"What does the importance weight do?","expect":["d06"]}
+{"id":"q31","kind":"confuser","query":"How strongly are recent memories favoured?","expect":["d05"]}
+{"id":"q32","kind":"confuser","query":"Which threshold triggers hypothesis auto-confirmation?","expect":["d42"]}
+{"id":"q33","kind":"confuser","query":"What does a read-only token allow?","expect":["d20"]}
+{"id":"q34","kind":"confuser","query":"What is the reasoner model used for?","expect":["d12"]}
+{"id":"q35","kind":"confuser","query":"Which model creates the embeddings?","expect":["d11"]}
+{"id":"q36","kind":"confuser","query":"What does the dedup near-miss counter measure?","expect":["d54"]}

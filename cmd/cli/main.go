@@ -197,6 +197,17 @@ func main() {
 				Usage: "Score quality against labelled calibration sets (nothing is written)",
 				Commands: []*cli.Command{
 					{
+						Name:   "recall",
+						Usage:  "Hit rate and MRR of recall over a labelled corpus and question set, in a temporary namespace",
+						Action: evalRecallCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "corpus", Value: "eval/recall_corpus.jsonl", Usage: "JSON Lines memories to store as episodes"},
+							&cli.StringFlag{Name: "queries", Value: "eval/recall_queries.jsonl", Usage: "JSON Lines questions with the expected memory ids"},
+							&cli.IntFlag{Name: "limit", Value: 10, Usage: "Results per question (k)"},
+							&cli.BoolFlag{Name: "keep", Usage: "Keep the temporary /eval/ namespace afterwards"},
+						},
+					},
+					{
 						Name:   "dedup",
 						Usage:  "Cosine distribution and threshold sweep over labelled fact pairs",
 						Action: evalDedupCmd,

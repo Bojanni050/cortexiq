@@ -137,6 +137,26 @@ Measured 2026-10-15 (qwen3 embedder, hybrid on, 344 facts): 8/8 top-1, all
    such as "een" returns them at about 0.42 — are exactly what a score threshold
    is meant to drop.
 
+### Labelled recall set
+
+The eight-identifier check above only tests the keyword ranker. For everything
+else there is `eval/recall_corpus.jsonl` (60 synthetic memories, Dutch and
+English, with deliberate near-twins as distractors) and `eval/recall_queries.jsonl`
+(36 questions in four kinds: `identifier`, `paraphrase`, `cross-language` and
+`confuser`, where a near-twin must not outrank the answer):
+
+```bash
+cortexiq eval recall           # hit@1, hit@3, hit@k and MRR per kind, plus every miss
+```
+
+It stores the corpus as episodes in a temporary `/eval/recall-<time>` namespace,
+asks the questions through the normal recall path (configured embedder, hybrid
+ranking, weights) and deletes the namespace again; `--keep` leaves it. Only
+episode results are ranked, because the corpus has no facts. Run it before and
+after any change to the embedding model, the recall weights or a reranker, and
+compare the per-kind rows, not just the overall number. The set is small (36
+questions), so treat a difference of one question as noise.
+
 ## 5. Clean up
 
 After scoring, remove the isolated namespace and its exported evaluation file.
