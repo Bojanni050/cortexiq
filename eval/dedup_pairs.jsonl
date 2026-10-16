@@ -45,6 +45,14 @@
 {"id":"N25","label":"near-miss","a":"The input limit is 4096 tokens.","b":"The output limit is 4096 tokens.","note":"input vs output"}
 {"id":"N26","label":"near-miss","a":"The web UI is served on port 9090.","b":"The metrics endpoint is served on port 9090.","note":"UI vs metrics"}
 {"id":"N27","label":"near-miss","a":"Recall returns at most 10 results by default.","b":"Consolidation processes at most 10 episodes by default.","note":"recall vs consolidation"}
+{"id":"N28","label":"near-miss","a":"The upload limit is 25 MB.","b":"The download limit is 25 MB.","note":"upload vs download"}
+{"id":"N29","label":"near-miss","a":"The scheduler retries failed jobs three times.","b":"The worker retries failed jobs three times.","note":"scheduler vs worker"}
+{"id":"N30","label":"near-miss","a":"The mobile app requires version 2.1.","b":"The desktop app requires version 2.1.","note":"mobile vs desktop"}
+{"id":"N31","label":"near-miss","a":"The billing service is owned by the platform team.","b":"The billing service is reviewed by the platform team.","note":"owner vs reviewer"}
+{"id":"N32","label":"near-miss","a":"The load balancer terminates TLS.","b":"The application server terminates TLS.","note":"which component"}
+{"id":"N33","label":"near-miss","a":"The nightly job deletes entries from the archive bucket.","b":"The nightly job adds entries to the archive bucket.","note":"delete vs add"}
+{"id":"N34","label":"near-miss","a":"Bo is the maintainer of the Hermes plugin.","b":"Bo is a user of the Hermes plugin.","note":"maintainer vs user"}
+{"id":"N35","label":"near-miss","a":"The warning threshold is 80 percent.","b":"The critical threshold is 80 percent.","note":"warning vs critical"}
 {"id":"D01","label":"different","a":"CortexIQ is installed in /opt/cortexiq.","b":"The og-image.png must reflect the CortexIQ logo."}
 {"id":"D02","label":"different","a":"Bo prefers answers in Dutch.","b":"The consolidation interval is five minutes."}
 {"id":"D03","label":"different","a":"The database is PostgreSQL with pgvector.","b":"Hermes agents have per-profile namespaces."}

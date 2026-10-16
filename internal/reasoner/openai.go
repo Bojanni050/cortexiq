@@ -168,6 +168,7 @@ New fact: %s
 Does the New fact contain any information that is not already in the Existing fact?
 - A rewording, a different phrasing or a translation of the same information is NOT new information.
 - A different or additional value, date, number, name, version, reason or detail IS new information.
+- A different subject, role or scope IS new information, even when the value is identical (a sender versus a receiver, an administrator versus a user).
 
 Output ONLY this JSON: {"same": true} when the New fact adds nothing, otherwise {"same": false}.`, existing, candidate)
 
