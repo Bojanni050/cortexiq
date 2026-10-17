@@ -20,7 +20,7 @@
 {"id":"d20","content":"Read-only tokens can recall and query but cannot remember, forget or consolidate."}
 {"id":"d21","content":"The Prometheus metric cortexiq_build_info exposes the build version."}
 {"id":"d22","content":"reasoner_prompt_tokens_total counts prompt tokens per reasoner stage."}
-{"id":"d23","content":"Het project heette eerst Stash en is hernoemd naar CortexIQ; de oude namespace /projects/stash blijft bestaan."}
+{"id":"d23","content":"Het project heette eerst Stash en is hernoemd naar CortexIQ; op 18-10-2026 is ook de namespace van /projects/stash naar /projects/cortexiq gegaan."}
 {"id":"d24","content":"The initial CortexIQ commit message was feat!: rebrand Stash to CortexIQ."}
 {"id":"d25","content":"Contradictions are detected when a new fact gives a different value for the same entity and property."}
 {"id":"d26","content":"A superseded fact gets a valid_until timestamp instead of being deleted."}

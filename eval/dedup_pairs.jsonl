@@ -30,7 +30,7 @@
 {"id":"N10","label":"near-miss","a":"Hybrid recall is enabled by default.","b":"Hybrid recall is disabled by default.","note":"negation"}
 {"id":"N11","label":"near-miss","a":"The embedding model is qwen3.","b":"The reasoner model is qwen3.","note":"embedder vs reasoner"}
 {"id":"N12","label":"near-miss","a":"The backup runs daily.","b":"The backup runs weekly.","note":"changed frequency"}
-{"id":"N13","label":"near-miss","a":"CortexIQ was renamed from Stash.","b":"The Stash namespace /projects/stash is kept after the rename.","note":"related, but a different claim"}
+{"id":"N13","label":"near-miss","a":"CortexIQ was renamed from Stash.","b":"The memory namespace /projects/stash was renamed to /projects/cortexiq on 2026-10-18.","note":"brand rename vs storage path, a different claim"}
 {"id":"N14","label":"near-miss","a":"Write access requires a token with write scope.","b":"Read access requires a token with read scope.","note":"write vs read"}
 {"id":"N15","label":"near-miss","a":"The recency weight is configured with CORTEXIQ_RECALL_RECENCY_WEIGHT.","b":"The importance weight is configured with CORTEXIQ_RECALL_IMPORTANCE_WEIGHT.","note":"two different settings"}
 {"id":"N16","label":"near-miss","a":"Bo uses Visual Studio Code.","b":"Bo uses Kilo Code inside Visual Studio Code.","note":"b adds a new detail"}

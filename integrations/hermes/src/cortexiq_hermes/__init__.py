@@ -188,7 +188,7 @@ def _recall_namespaces(home: str | Path | None = None) -> Optional[list[str]]:
       profile           -> ['/hermes/<prof>'] strikt dit profiel
 
     Het namespace-filter van CortexIQ is hiërarchisch: '/projects' levert ook
-    '/projects/stash' en '/projects/gaia' op. Daarom is 'base' één pad.
+    '/projects/cortexiq' en '/projects/gaia' op. Daarom is 'base' één pad.
 
     Een expliciete `namespaces`-lijst in de JSON wint van de scope, en een
     expliciete `namespace` zet één namespace (het gedrag van vóór de scopes).
