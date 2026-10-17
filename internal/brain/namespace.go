@@ -3,7 +3,9 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Bojanni050/cortexiq/internal/models"
@@ -53,6 +55,133 @@ func (b *Brain) CreateNamespace(ctx context.Context, slug, name, description str
 		return 0, fmt.Errorf("create namespace: %w", err)
 	}
 	return id, nil
+}
+
+var (
+	// ErrNamespaceExists means the target path already belongs to a namespace.
+	ErrNamespaceExists = errors.New("brain: namespace already exists — pick another path or use the existing one")
+	// ErrRenameRoot means the root namespace cannot be renamed.
+	ErrRenameRoot = errors.New("brain: the root namespace cannot be renamed")
+	// ErrRenameIntoDescendant means the new path lies inside the namespace being renamed.
+	ErrRenameIntoDescendant = errors.New("brain: cannot rename a namespace into one of its own descendants")
+)
+
+// RenameResult reports what a rename moved.
+type RenameResult struct {
+	ID          int64  `json:"id"`
+	From        string `json:"from"`
+	To          string `json:"to"`
+	Descendants int64  `json:"descendants"`
+}
+
+// RenameNamespace moves a namespace and all of its descendants to a new path.
+//
+// Only the slug (the path) changes. A display name or description that was set
+// deliberately stays, but a name that still equals the old slug follows the path,
+// because those rows were auto-named from their slug. Missing parents of the new
+// path are created — the same mkdir -p behavior as CreateNamespace.
+//
+// No data moves: episodes, facts, goals and the rest point at the namespace ID,
+// not at the path. The old path stops working for callers that hardcode it.
+func (b *Brain) RenameNamespace(ctx context.Context, from, to string) (*RenameResult, error) {
+	if err := requireWrite(ctx); err != nil {
+		return nil, err
+	}
+	if err := validateRename(from, to); err != nil {
+		return nil, err
+	}
+
+	tx, err := b.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("rename namespace: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var id int64
+	err = tx.QueryRow(ctx, "SELECT id FROM namespaces WHERE slug = $1 FOR UPDATE", from).Scan(&id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNamespaceNotFound
+		}
+		return nil, fmt.Errorf("rename namespace: lookup %s: %w", from, err)
+	}
+
+	var taken bool
+	if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM namespaces WHERE slug = $1)", to).Scan(&taken); err != nil {
+		return nil, fmt.Errorf("rename namespace: check target: %w", err)
+	}
+	if taken {
+		return nil, fmt.Errorf("%w: %s", ErrNamespaceExists, to)
+	}
+
+	for _, parent := range parentPaths(to) {
+		if _, err := tx.Exec(ctx,
+			"INSERT INTO namespaces (slug, name) VALUES ($1, $1) ON CONFLICT (slug) DO NOTHING",
+			parent,
+		); err != nil {
+			return nil, fmt.Errorf("rename namespace: create parent %s: %w", parent, err)
+		}
+	}
+
+	if _, err := tx.Exec(ctx,
+		`UPDATE namespaces
+		    SET slug = $2,
+		        name = CASE WHEN name = $1 THEN $2 ELSE name END,
+		        updated_at = now()
+		  WHERE id = $3`,
+		from, to, id,
+	); err != nil {
+		return nil, fmt.Errorf("rename namespace: move %s: %w", from, err)
+	}
+
+	tag, err := tx.Exec(ctx,
+		`UPDATE namespaces
+		    SET slug = $2 || substring(slug FROM length($1) + 1),
+		        updated_at = now()
+		  WHERE slug LIKE $3 ESCAPE '\'`,
+		from, to, likePatternForDescendants(from),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("rename namespace: move descendants of %s: %w", from, err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("rename namespace: commit: %w", err)
+	}
+	return &RenameResult{ID: id, From: from, To: to, Descendants: tag.RowsAffected()}, nil
+}
+
+// validateRename rejects a rename before any SQL runs.
+func validateRename(from, to string) error {
+	if err := validatePath(from); err != nil {
+		return fmt.Errorf("from %q: %w", from, err)
+	}
+	if err := validatePath(to); err != nil {
+		return fmt.Errorf("to %q: %w", to, err)
+	}
+	if from == "/" || to == "/" {
+		return ErrRenameRoot
+	}
+	if from == to {
+		return fmt.Errorf("brain: from and to are the same path: %s", from)
+	}
+	if strings.HasPrefix(to, from+"/") {
+		return fmt.Errorf("%w: %s lies inside %s", ErrRenameIntoDescendant, to, from)
+	}
+	return nil
+}
+
+// parentPaths returns every ancestor of path, shallowest first, excluding the
+// path itself and the root.
+func parentPaths(path string) []string {
+	segments := splitPath(path)
+	var out []string
+	current := ""
+	for i := 0; i < len(segments)-1; i++ {
+		current += "/" + segments[i]
+		out = append(out, current)
+	}
+	return out
 }
 
 // GetNamespace returns a namespace by slug.

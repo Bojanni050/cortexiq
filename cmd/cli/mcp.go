@@ -314,6 +314,22 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		}}}, nil
 	})
 
+	mcpServer.AddTool(mcp.NewTool("rename_namespace",
+		mcp.WithDescription(render("rename_namespace_description")),
+		mcp.WithString("from", mcp.Description(render("rename_namespace_from")), mcp.Required()),
+		mcp.WithString("to", mcp.Description(render("rename_namespace_to")), mcp.Required()),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		res, err := bc.Brain.RenameNamespace(ctx, request.GetString("from", ""), request.GetString("to", ""))
+		if err != nil {
+			return nil, err
+		}
+		b, err := json.Marshal(res)
+		if err != nil {
+			return nil, err
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
 	mcpServer.AddTool(mcp.NewTool("query_facts",
 		mcp.WithDescription(render("query_facts_description")),
 		mcp.WithString("namespaces", mcp.Description(render("namespaces_param"))),

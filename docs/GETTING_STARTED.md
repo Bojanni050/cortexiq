@@ -162,6 +162,6 @@ Atlas Cloud docs: [https://www.atlascloud.ai/docs](https://www.atlascloud.ai/doc
 
 ## Next steps
 
-- Explore namespaces: `list_namespaces`, `create_namespace`
+- Explore namespaces: `list_namespaces`, `create_namespace`, `rename_namespace`
 - Track goals and failures: `create_goal`, `create_failure`
 - Full tool list: see the [docs site MCP section](https://bojanni050.github.io/cortexiq/#mcp)

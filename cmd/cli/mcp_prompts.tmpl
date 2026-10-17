@@ -197,6 +197,33 @@ Good: 'Persistent memory system built in Go with PostgreSQL and pgvector. Stores
 Bad: 'memory stuff' or 'project things' or leaving it empty.
 {{end}}
 
+{{define "rename_namespace_description"}}
+Moves a namespace to a new path. Every descendant follows, and no memory moves with it: episodes, facts, goals and the rest point at the namespace, not at its path.
+
+BEFORE CALLING: Call list_namespaces first. Rename when the topic itself was renamed or sits at the wrong depth — not to tidy up a namespace that is simply unused.
+
+CALL THIS WHEN:
+- A project, person or topic was renamed and the namespace still carries the old name
+- Knowledge sits at the wrong depth and belongs under another parent
+
+DON'T USE IT:
+- To change only the display name of a namespace that has a fine path
+- To merge two namespaces — memories do not move from one to the other
+
+COST OF NOT CALLING, AND THE COST OF CALLING: the old path stops resolving, so any note, config or client that hardcodes it breaks. Memories themselves stay with the namespace ID.
+
+GOOD: from="/projects/stash" to="/projects/cortexiq"
+BAD: to="/projects/cortexiq" when that path already exists — use it, or pick another path
+BAD: to="/projects/stash/archive" — a namespace cannot be moved into its own subtree
+{{end}}
+
+{{define "rename_namespace_from"}}
+The existing namespace path, exactly as list_namespaces shows it. Must start with /.
+{{end}}
+
+{{define "rename_namespace_to"}}
+The new path. Must not exist yet and must not lie inside "from". Missing parent paths are created automatically, so /work/q3 is fine even when /work does not exist yet.
+{{end}}
 
 {{define "remember_description"}}
 Permanently stores an observation (episode) into memory. Raw, immutable, timestamped.

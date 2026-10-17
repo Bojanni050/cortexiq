@@ -80,6 +80,12 @@ func main() {
 						},
 					},
 					{
+						Name:      "rename",
+						Usage:     "Rename a namespace and its descendants",
+						ArgsUsage: "<from> <to>",
+						Action:    namespaceRenameCmd,
+					},
+					{
 						Name:   "list",
 						Usage:  "List namespaces",
 						Action: namespaceListCmd,
