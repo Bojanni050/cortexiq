@@ -834,7 +834,7 @@ async function renderNamespaces() {
     fields: ['slug', 'name', 'description'],
     actions: '<button class="primary" onclick="nsDialog()">+ New namespace</button>',
     enrich: async () => {
-      const lists = await Promise.all(['/namespaces?limit=1000',
+      const lists = await Promise.all([apiList('/namespaces?limit=1000'),
         ...kinds.map(k => apiList(`/${k}?namespaces=${encodeURIComponent('/')}&limit=1000`))]);
       counts = new Map(lists[0].map(n => [n.id, {}]));
       lists.slice(1).forEach((list, i) => list.forEach(x => {
