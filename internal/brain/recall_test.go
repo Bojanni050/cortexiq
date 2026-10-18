@@ -235,3 +235,80 @@ func TestTypedIDNamesTheTable(t *testing.T) {
 		t.Fatalf("fact json = %s", blob)
 	}
 }
+
+func TestFuseRecordsEachArmsRank(t *testing.T) {
+	vec := rr(1, 2, 3) // ranks 1..3 in the vector arm
+	kw := rr(3, 9)     // 3 is the keyword arm's top hit; 9 only the keyword arm found
+	byID := map[int64]RecallResult{}
+	for _, r := range fuse(vec, kw, 10, true, 0) {
+		byID[r.ID] = r
+	}
+	if r := byID[3]; r.vecRank != 3 || r.kwRank != 1 {
+		t.Errorf("id 3: vector rank %d, keyword rank %d, want 3 and 1", r.vecRank, r.kwRank)
+	}
+	if r := byID[9]; r.vecRank != 0 || r.kwRank != 2 {
+		t.Errorf("id 9: vector rank %d, keyword rank %d, want 0 (absent) and 2", r.vecRank, r.kwRank)
+	}
+	if r := byID[1]; r.kwRank != 0 || r.vecRank != 1 {
+		t.Errorf("id 1: vector rank %d, keyword rank %d, want 1 and 0 (absent)", r.vecRank, r.kwRank)
+	}
+
+	plain := fuse(rr(5, 6), nil, 10, false, 0)
+	if plain[0].vecRank != 1 || plain[1].vecRank != 2 {
+		t.Errorf("non-hybrid ranks = %d, %d, want 1, 2", plain[0].vecRank, plain[1].vecRank)
+	}
+}
+
+func TestApplyBoostsRecordsFactorsForTheTrace(t *testing.T) {
+	now := time.Now()
+	b := &Brain{config: Config{RecencyWeight: 0.5, RecencyHalfLife: 24 * time.Hour, ImportanceWeight: 0.4}}
+	got := b.applyBoosts([]RecallResult{{ID: 1, Score: 0.8, Importance: 0, refTime: now}}, 5, now)
+	r := got[0]
+	if r.fusedScore != 0.8 {
+		t.Errorf("fused score = %v, want the score before boosts (0.8)", r.fusedScore)
+	}
+	if math.Abs(r.importanceF-0.6) > 1e-9 || math.Abs(r.recencyF-1) > 1e-9 {
+		t.Errorf("factors = recency %v, importance %v, want 1 and 0.6", r.recencyF, r.importanceF)
+	}
+	if tr := r.trace(); tr.FusedScore != 0.8 || tr.ImportanceFactor != 0.6 {
+		t.Errorf("trace = %+v", tr)
+	}
+
+	off := (&Brain{}).applyBoosts([]RecallResult{{ID: 1, Score: 0.7}}, 5, now)
+	if off[0].recencyF != 1 || off[0].importanceF != 1 || off[0].fusedScore != 0.7 {
+		t.Errorf("with weighting off the factors must be 1, got %+v", off[0])
+	}
+}
+
+func TestRecallOptionsIncludes(t *testing.T) {
+	for _, tt := range []struct {
+		types           []string
+		facts, episodes bool
+	}{
+		{nil, true, true},
+		{[]string{"fact"}, true, false},
+		{[]string{"episode"}, false, true},
+		{[]string{"fact", "episode"}, true, true},
+	} {
+		f, e := RecallOptions{Types: tt.types}.includes()
+		if f != tt.facts || e != tt.episodes {
+			t.Errorf("types %v: facts %v episodes %v, want %v %v", tt.types, f, e, tt.facts, tt.episodes)
+		}
+	}
+}
+
+func TestNilTraceRecordsNothing(t *testing.T) {
+	var tr *RecallTrace
+	stage := tr.stage(time.Now())
+	stage("embed", 1) // must not panic
+}
+
+func TestRecallTraceStagesAreRecordedInOrder(t *testing.T) {
+	tr := &RecallTrace{}
+	stage := tr.stage(time.Now())
+	stage("embed", 0)
+	stage("facts_vector", 12)
+	if len(tr.Stages) != 2 || tr.Stages[0].Name != "embed" || tr.Stages[1].Count != 12 {
+		t.Errorf("stages = %+v", tr.Stages)
+	}
+}

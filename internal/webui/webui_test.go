@@ -218,3 +218,21 @@ func TestTotalHeader(t *testing.T) {
 		t.Errorf("X-Total-Count after writeJSON = %q, want %q", got, "1240")
 	}
 }
+
+func TestRecallRejectsBadTypeAndAsOf(t *testing.T) {
+	mux := http.NewServeMux()
+	(&Handler{}).Register(mux)
+
+	for name, body := range map[string]string{
+		"unknown type": `{"query":"x","types":["goal"]}`,
+		"bad as_of":    `{"query":"x","as_of":"yesterday"}`,
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/recall", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s = %d, want 400 (%s)", name, rec.Code, rec.Body.String())
+		}
+	}
+}

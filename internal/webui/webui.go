@@ -378,6 +378,14 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 		Query      string   `json:"query"`
 		Namespaces []string `json:"namespaces"`
 		Limit      int      `json:"limit"`
+		// Trace asks for an explanation of the ranking next to the results: per
+		// result where each search arm placed it, plus the steps of the recall.
+		// A traced recall does not count as use of the facts it returns.
+		Trace bool `json:"trace"`
+		// Types limits the search to "fact", "episode" or both (empty).
+		Types []string `json:"types"`
+		// AsOf is an RFC 3339 moment: recall what was known then.
+		AsOf string `json:"as_of"`
 	}
 	if err := readBody(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -386,7 +394,30 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 	if len(body.Namespaces) == 0 {
 		body.Namespaces = []string{"/"}
 	}
-	results, err := h.Brain.Recall(r.Context(), body.Namespaces, body.Query, body.Limit)
+	opts := brain.RecallOptions{Types: body.Types}
+	for _, t := range body.Types {
+		if t != "fact" && t != "episode" {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid type %q: use fact or episode", t))
+			return
+		}
+	}
+	if body.AsOf != "" {
+		t, err := time.Parse(time.RFC3339, body.AsOf)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid as_of: %w", err))
+			return
+		}
+		opts.AsOf = &t
+	}
+	if body.Trace {
+		results, trace, err := h.Brain.RecallDetailed(r.Context(), body.Namespaces, body.Query, body.Limit, opts)
+		if !hdl(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"results": results, "trace": trace})
+		return
+	}
+	results, err := h.Brain.RecallWith(r.Context(), body.Namespaces, body.Query, body.Limit, opts)
 	if !hdl(w, err) {
 		return
 	}

@@ -44,9 +44,16 @@ type RecallResult struct {
 	OccurredAt string  `json:"occurred_at,omitempty"`
 	ValidFrom  string  `json:"valid_from,omitempty"`
 	CreatedAt  string  `json:"created_at"`
+	// Trace says how the result got its rank. It is only set by RecallDetailed.
+	Trace *ResultTrace `json:"trace,omitempty"`
 	// refTime is the moment recency decay counts from: occurred_at for episodes,
 	// created_at for facts.
 	refTime time.Time
+	// Rank bookkeeping for Trace, filled in by fuse and applyBoosts.
+	vecRank, kwRank       int
+	kwScore               float32
+	fusedScore            float32
+	recencyF, importanceF float64
 }
 
 const (
@@ -76,6 +83,14 @@ func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, l
 // recall is not counted as use of a fact (historical lookups must not keep facts
 // from decaying). A nil asOf is the normal "valid now" recall.
 func (b *Brain) RecallAsOf(ctx context.Context, namespaces []string, query string, limit int, asOf *time.Time) ([]RecallResult, error) {
+	return b.recall(ctx, namespaces, query, limit, RecallOptions{AsOf: asOf}, nil)
+}
+
+// recall is the shared implementation of RecallAsOf and RecallDetailed. A nil
+// trace records nothing.
+func (b *Brain) recall(ctx context.Context, namespaces []string, query string, limit int, opts RecallOptions, tr *RecallTrace) ([]RecallResult, error) {
+	asOf := opts.AsOf
+	facts, episodes := opts.includes()
 	if err := validateContent(query); err != nil {
 		return nil, err
 	}
@@ -86,10 +101,13 @@ func (b *Brain) RecallAsOf(ctx context.Context, namespaces []string, query strin
 		limit = 100
 	}
 
+	started := time.Now()
+	stage := tr.stage(started)
 	vec, err := b.embedder.Embed(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("embed: %w", err)
 	}
+	stage("embed", 0)
 
 	pgVec := pgvector.NewVector(vec)
 
@@ -116,31 +134,48 @@ func (b *Brain) RecallAsOf(ctx context.Context, namespaces []string, query strin
 		now = *asOf
 	}
 
-	// Search facts first (higher quality, consolidated)
-	factSQL, factArgs, err := b.queries.RecallFacts(nsIDs, pgVec, candidates, asOf)
-	if err != nil {
-		return nil, fmt.Errorf("build fact query: %w", err)
-	}
-	factVec, err := b.runRecall(ctx, factSQL, factArgs, "fact")
-	if err != nil {
-		return nil, fmt.Errorf("query facts: %w", err)
+	if tr != nil {
+		tr.Query, tr.KeywordQuery, tr.Hybrid, tr.Limit, tr.Candidates = query, kwQuery, kwQuery != "", limit, candidates
+		tr.Namespaces, tr.NamespaceIDs = namespaces, len(nsIDs)
+		if asOf != nil {
+			tr.AsOf = asOf.Format(time.RFC3339)
+		}
+		tr.MinSimilarity, tr.RRFK = b.config.MinRecallSimilarity, rrfK
+		tr.RecencyWeight, tr.RecencyHalfLife, tr.ImportanceWeight = b.config.RecencyWeight, b.config.RecencyHalfLife.String(), b.config.ImportanceWeight
 	}
 
-	var factKw []RecallResult
-	if kwQuery != "" {
-		kwSQL, kwArgs, err := b.queries.RecallFactsKeyword(nsIDs, kwQuery, candidates, asOf)
+	var results []RecallResult
+
+	// Search facts first (higher quality, consolidated)
+	if facts {
+		factSQL, factArgs, err := b.queries.RecallFacts(nsIDs, pgVec, candidates, asOf)
 		if err != nil {
-			return nil, fmt.Errorf("build fact keyword query: %w", err)
+			return nil, fmt.Errorf("build fact query: %w", err)
 		}
-		if factKw, err = b.runRecall(ctx, kwSQL, kwArgs, "fact"); err != nil {
-			return nil, fmt.Errorf("keyword query facts: %w", err)
+		factVec, err := b.runRecall(ctx, factSQL, factArgs, "fact")
+		if err != nil {
+			return nil, fmt.Errorf("query facts: %w", err)
 		}
+		stage("facts_vector", len(factVec))
+
+		var factKw []RecallResult
+		if kwQuery != "" {
+			kwSQL, kwArgs, err := b.queries.RecallFactsKeyword(nsIDs, kwQuery, candidates, asOf)
+			if err != nil {
+				return nil, fmt.Errorf("build fact keyword query: %w", err)
+			}
+			if factKw, err = b.runRecall(ctx, kwSQL, kwArgs, "fact"); err != nil {
+				return nil, fmt.Errorf("keyword query facts: %w", err)
+			}
+			stage("facts_keyword", len(factKw))
+		}
+		results = fuse(factVec, factKw, candidates, kwQuery != "", b.config.MinRecallSimilarity)
+		results = b.applyBoosts(results, limit, now)
+		stage("facts_fused", len(results))
 	}
-	results := fuse(factVec, factKw, candidates, kwQuery != "", b.config.MinRecallSimilarity)
-	results = b.applyBoosts(results, limit, now)
 
 	// Search episodes for remaining slots
-	if episodeLimit := limit - len(results); episodeLimit > 0 {
+	if episodeLimit := limit - len(results); episodes && episodeLimit > 0 {
 		epCandidates := episodeLimit
 		if kwQuery != "" || recency {
 			epCandidates = episodeLimit * 3
@@ -156,6 +191,7 @@ func (b *Brain) RecallAsOf(ctx context.Context, namespaces []string, query strin
 		if err != nil {
 			return nil, fmt.Errorf("query episodes: %w", err)
 		}
+		stage("episodes_vector", len(epVec))
 
 		var epKw []RecallResult
 		if kwQuery != "" {
@@ -166,9 +202,11 @@ func (b *Brain) RecallAsOf(ctx context.Context, namespaces []string, query strin
 			if epKw, err = b.runRecall(ctx, kwSQL, kwArgs, "episode"); err != nil {
 				return nil, fmt.Errorf("keyword query episodes: %w", err)
 			}
+			stage("episodes_keyword", len(epKw))
 		}
 		eps := fuse(epVec, epKw, epCandidates, kwQuery != "", b.config.MinRecallSimilarity)
 		results = append(results, b.applyBoosts(eps, episodeLimit, now)...)
+		stage("episodes_fused", len(eps))
 	}
 
 	// Sort all results by score descending
@@ -180,8 +218,16 @@ func (b *Brain) RecallAsOf(ctx context.Context, namespaces []string, query strin
 		results = results[:limit]
 	}
 
-	if asOf == nil {
+	// A traced recall is an inspection, not a use: like a historical lookup it
+	// must not keep facts from decaying.
+	if asOf == nil && tr == nil {
 		b.touchRecalledFacts(ctx, results)
+	}
+	if tr != nil {
+		for i := range results {
+			results[i].Trace = results[i].trace()
+		}
+		tr.TotalMillis = float64(time.Since(started).Microseconds()) / 1000
 	}
 
 	return results, nil
@@ -225,15 +271,21 @@ func (b *Brain) reranks() bool {
 // applyBoosts rescales scores by recencyFactor and importanceFactor, re-sorts and
 // keeps the best limit. With both switched off it only truncates.
 func (b *Brain) applyBoosts(rs []RecallResult, limit int, now time.Time) []RecallResult {
+	for i := range rs {
+		rs[i].fusedScore, rs[i].recencyF, rs[i].importanceF = rs[i].Score, 1, 1
+	}
 	if !b.reranks() {
 		return truncate(rs, limit)
 	}
 	w, hl, iw := b.config.RecencyWeight, b.config.RecencyHalfLife, b.config.ImportanceWeight
 	for i := range rs {
-		f := importanceFactor(rs[i].Importance, iw)
+		imp := importanceFactor(rs[i].Importance, iw)
+		f, rec := imp, 1.0
 		if !rs[i].refTime.IsZero() {
-			f *= recencyFactor(now.Sub(rs[i].refTime), w, hl)
+			rec = recencyFactor(now.Sub(rs[i].refTime), w, hl)
+			f *= rec
 		}
+		rs[i].recencyF, rs[i].importanceF = rec, imp
 		rs[i].Score *= float32(f)
 	}
 	sort.SliceStable(rs, func(i, j int) bool { return rs[i].Score > rs[j].Score })
@@ -319,6 +371,7 @@ func fuse(vec, kw []RecallResult, limit int, hybrid bool, minSimilarity float32)
 		for i := range vec {
 			vec[i].Similarity = vec[i].Score
 			vec[i].Match = "vector"
+			vec[i].vecRank = i + 1
 		}
 		return truncate(relevant(vec, minSimilarity), limit)
 	}
@@ -347,6 +400,9 @@ func fuse(vec, kw []RecallResult, limit int, hybrid bool, minSimilarity float32)
 			}
 			if match == "vector" {
 				e.res.Similarity = r.Score
+				e.res.vecRank = rank + 1
+			} else {
+				e.res.kwRank, e.res.kwScore = rank+1, r.Score
 			}
 		}
 	}
