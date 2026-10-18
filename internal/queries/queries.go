@@ -79,9 +79,13 @@ func (q *Queries) RecallFactsKeyword(namespaceIDs []int64, query string, limit i
 // about an entity the query names, then facts about its direct neighbours in
 // the relationship graph. Rows have the columns of RecallFacts; the score is 1
 // for a named entity and at most 0.5 for a neighbour, and rows come ordered
-// best first, which is the only thing fusion uses.
-func (q *Queries) RecallFactsGraph(namespaceIDs []int64, query string, limit int, asOf *time.Time) (string, []any, error) {
-	return q.tpl.Execute("recall_facts_graph", keywordArgs(namespaceIDs, query, limit, asOf))
+// best first, which is the only thing fusion uses. Within a hop the facts are
+// ordered by cosine similarity of their embedding to vector (the query's), so
+// an entity with many facts puts the ones that answer the question first.
+func (q *Queries) RecallFactsGraph(namespaceIDs []int64, query string, vector pgvector.Vector, limit int, asOf *time.Time) (string, []any, error) {
+	args := keywordArgs(namespaceIDs, query, limit, asOf)
+	args["vector"] = vector
+	return q.tpl.Execute("recall_facts_graph", args)
 }
 
 // RecallMatchedEntities returns SQL + args for the entity names (lower case)

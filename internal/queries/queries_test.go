@@ -95,7 +95,7 @@ func TestRecallGraphTemplatesRender(t *testing.T) {
 	}
 	asOf := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 
-	sql, args, err := q.RecallFactsGraph([]int64{1, 2}, "welke poort draait cortexiq", 30, nil)
+	sql, args, err := q.RecallFactsGraph([]int64{1, 2}, "welke poort draait cortexiq", pgvector.NewVector([]float32{1, 0}), 30, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestRecallGraphTemplatesRender(t *testing.T) {
 		t.Errorf("placeholder beyond the %d arguments:\n%s", len(args), sql)
 	}
 
-	withAsOf, argsAsOf, err := q.RecallFactsGraph(nil, "cortexiq", 10, &asOf)
+	withAsOf, argsAsOf, err := q.RecallFactsGraph(nil, "cortexiq", pgvector.NewVector([]float32{1, 0}), 10, &asOf)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -577,3 +577,30 @@ func TestIntegrationEvalGraphRunsAndCleansUp(t *testing.T) {
 		t.Errorf("%d /eval/graph-* namespaces left behind", n)
 	}
 }
+
+// Within an entity with many equally trusted facts, the graph arm puts the fact
+// closest to the question first, whatever the order they were stored in.
+func TestIntegrationGraphArmOrdersAnEntitysFactsBySimilarity(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.GraphRecall = true })
+	for _, content := range []string{
+		"alpha bravo charlie delta", "echo foxtrot golf hotel", "india juliet kilo lima",
+		"the MCP server listens on port 8080 via SSE",
+		"mike november oscar papa", "quebec romeo sierra tango",
+	} {
+		e.insertEntityFact(t, "CortexIQ", content, 0.8) // equal confidence, the answer in the middle
+	}
+
+	res, _, err := e.b.RecallDetailed(e.ctx, []string{e.ns}, "on which port does the CortexIQ MCP server listen", 10, RecallOptions{Types: []string{"fact"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range res {
+		if r.Content == "the MCP server listens on port 8080 via SSE" {
+			if r.Trace.GraphRank != 1 {
+				t.Fatalf("the answer has graph rank %d, want 1 (closest to the question)", r.Trace.GraphRank)
+			}
+			return
+		}
+	}
+	t.Fatalf("the answer was not returned: %+v", res)
+}

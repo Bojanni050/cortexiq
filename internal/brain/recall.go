@@ -176,7 +176,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			stage("facts_keyword", len(factKw))
 		}
 		if graph {
-			graphSQL, graphArgs, err := b.queries.RecallFactsGraph(nsIDs, query, candidates, asOf)
+			graphSQL, graphArgs, err := b.queries.RecallFactsGraph(nsIDs, query, pgVec, candidates, asOf)
 			if err != nil {
 				return nil, fmt.Errorf("build fact graph query: %w", err)
 			}
