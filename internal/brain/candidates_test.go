@@ -9,18 +9,6 @@ import (
 	"github.com/pgvector/pgvector-go"
 )
 
-func armOf(name string, ids ...int64) candidateArm {
-	arm := candidateArm{name: name}
-	for i, id := range ids {
-		// Scores only order the arm; their scale differs per arm.
-		arm.candidates = append(arm.candidates, clusterCandidate{
-			episode: models.Episode{ID: id},
-			score:   float32(len(ids) - i),
-		})
-	}
-	return arm
-}
-
 func candidateIDs(episodes []models.Episode) []int64 {
 	var out []int64
 	for _, e := range episodes {
@@ -29,57 +17,24 @@ func candidateIDs(episodes []models.Episode) []int64 {
 	return out
 }
 
-func TestInterleaveCandidatesPutsEveryArmsTopFirst(t *testing.T) {
-	// The semantic arm ranks 1 first; the lexical arm misses 1 at depth 0 but
-	// ranks 4 first. Both #1s must come before any #2.
-	got := interleaveCandidates([]candidateArm{
-		armOf("semantic", 1, 2, 3),
-		armOf("lexical", 4, 1, 5),
-	}, 5)
-
-	want := []int64{1, 4, 2, 3, 5}
-	if ids := candidateIDs(got); !reflect.DeepEqual(ids, want) {
-		t.Fatalf("order = %v, want %v", ids, want)
-	}
-}
-
-func TestInterleaveCandidatesSkipsDuplicatesAndRespectsLimit(t *testing.T) {
-	arms := []candidateArm{
-		armOf("semantic", 1, 2, 3),
-		armOf("lexical", 1, 2, 3),
-	}
-	got := interleaveCandidates(arms, 3)
-	if ids := candidateIDs(got); !reflect.DeepEqual(ids, []int64{1, 2, 3}) {
-		t.Fatalf("order = %v, want [1 2 3]", ids)
-	}
-	if got := interleaveCandidates(arms, 0); got != nil {
-		t.Errorf("limit 0 = %+v, want nil", got)
-	}
-	if got := interleaveCandidates(nil, 3); len(got) != 0 {
-		t.Errorf("no arms = %+v, want empty", got)
-	}
-}
-
-func TestInterleaveCandidatesStopsWhenEveryArmIsSpent(t *testing.T) {
-	got := interleaveCandidates([]candidateArm{armOf("semantic", 1, 2)}, 10)
-	if ids := candidateIDs(got); !reflect.DeepEqual(ids, []int64{1, 2}) {
-		t.Fatalf("order = %v, want [1 2]", ids)
-	}
-}
-
-func TestRankCandidatesDropsZeroScoresAndCaps(t *testing.T) {
+func TestRankCandidatesDropsZeroScoresBelowFloorAndCaps(t *testing.T) {
 	candidates := []clusterCandidate{
 		{episode: models.Episode{ID: 1}, score: 0.2},
 		{episode: models.Episode{ID: 2}, score: 0},
 		{episode: models.Episode{ID: 3}, score: 0.9},
+		{episode: models.Episode{ID: 4}, score: 0.1},
 	}
-	got := rankCandidates(candidates, 1)
+	got := rankCandidates(candidates, 0, 1)
 	if len(got) != 1 || got[0].episode.ID != 3 {
 		t.Fatalf("capped = %+v, want only 3", got)
 	}
-	all := rankCandidates(candidates, 0)
-	if len(all) != 2 || all[0].episode.ID != 3 || all[1].episode.ID != 1 {
-		t.Fatalf("uncapped = %+v, want 3 then 1 (zeros dropped)", all)
+	all := rankCandidates(candidates, 0, 0)
+	if len(all) != 3 || all[0].episode.ID != 3 || all[1].episode.ID != 1 || all[2].episode.ID != 4 {
+		t.Fatalf("uncapped = %+v, want 3, 1, 4 (zero dropped)", all)
+	}
+	floored := rankCandidates(candidates, 0.2, 0)
+	if len(floored) != 2 || floored[0].episode.ID != 3 || floored[1].episode.ID != 1 {
+		t.Fatalf("floored = %+v, want 3 then 1 (0.2 is at the floor, 0.1 below it)", floored)
 	}
 }
 
@@ -114,8 +69,8 @@ func TestLexicalScoreSeesRewordingNotUnrelatedText(t *testing.T) {
 
 // clusterBrain builds a brain with clustering config and no infrastructure: the
 // clustering path never touches the pool or the reasoner.
-func clusterBrain(threshold float64, cap int) *Brain {
-	return &Brain{config: Config{SimilarityThreshold: threshold, CandidateCap: cap}}
+func clusterBrain(threshold float64, cap int, floor float64) *Brain {
+	return &Brain{config: Config{SimilarityThreshold: threshold, CandidateCap: cap, LexicalFloor: floor}}
 }
 
 func clusterEpisode(id int64, content string, vec []float32) models.Episode {
@@ -131,7 +86,7 @@ func TestClusterEpisodesWithoutCapIsThresholdOnly(t *testing.T) {
 		clusterEpisode(3, "CortexIQ draait op poort 9090 na herstart", []float32{0, 1, 0}),
 	}
 
-	clusters := clusterBrain(0.85, 0).clusterEpisodes(episodes)
+	clusters := clusterBrain(0.85, 0, 0).clusterEpisodes(episodes)
 	if len(clusters) != 2 {
 		t.Fatalf("clusters = %d, want 2", len(clusters))
 	}
@@ -152,7 +107,7 @@ func TestClusterEpisodesWithCapAddsLexicalTwinBelowThreshold(t *testing.T) {
 		clusterEpisode(3, "De honden krijgen om zeven uur eten", []float32{0, 0, 1}),
 	}
 
-	clusters := clusterBrain(0.85, 4).clusterEpisodes(episodes)
+	clusters := clusterBrain(0.85, 4, 0).clusterEpisodes(episodes)
 	if len(clusters) != 2 {
 		t.Fatalf("clusters = %d, want 2", len(clusters))
 	}
@@ -164,21 +119,33 @@ func TestClusterEpisodesWithCapAddsLexicalTwinBelowThreshold(t *testing.T) {
 	}
 }
 
-func TestClusterEpisodesCapBoundsTheCluster(t *testing.T) {
+func TestClusterEpisodesCapBoundsOnlyTheLexicalExtras(t *testing.T) {
 	episodes := []models.Episode{
 		clusterEpisode(1, "CortexIQ draait op poort 9090", []float32{1, 0, 0}),
-		clusterEpisode(2, "CortexIQ draait op poort 9090", []float32{1, 0, 0}),
-		clusterEpisode(3, "CortexIQ draait op poort 9091", []float32{1, 0, 0}),
-		clusterEpisode(4, "CortexIQ draait op poort 9092", []float32{1, 0, 0}),
-		clusterEpisode(5, "CortexIQ draait op poort 9093", []float32{1, 0, 0}),
+		// Semantic hits: all of them join, however many there are.
+		clusterEpisode(2, "iets heel anders", []float32{1, 0, 0}),
+		clusterEpisode(3, "nog iets anders", []float32{1, 0, 0}),
+		clusterEpisode(4, "en nog iets", []float32{1, 0, 0}),
+		// Lexical candidates below the threshold: only the best cap of them join.
+		clusterEpisode(5, "CortexIQ draait op poort 9090 na herstart", []float32{0, 1, 0}),
+		clusterEpisode(6, "CortexIQ draait op poort 9091", []float32{0, 0, 1}),
+		clusterEpisode(7, "CortexIQ draait op poort 9092", []float32{0, 1, 1}),
 	}
 
-	clusters := clusterBrain(0.85, 2).clusterEpisodes(episodes)
-	if len(clusters[0]) != 3 {
-		t.Fatalf("first cluster has %d episodes, want seed + cap = 3", len(clusters[0]))
+	clusters := clusterBrain(0.85, 2, 0).clusterEpisodes(episodes)
+	if got := len(clusters[0]); got != 1+3+2 {
+		t.Fatalf("first cluster has %d episodes, want seed + 3 semantic + cap 2 lexical = 6", got)
 	}
-	// Every episode still lands in exactly one cluster; the cap only moves the
-	// rest into later ones.
+	for _, id := range []int64{2, 3, 4} {
+		found := false
+		for _, e := range clusters[0] {
+			found = found || e.ID == id
+		}
+		if !found {
+			t.Errorf("semantic hit %d was dropped by the cap", id)
+		}
+	}
+	// Every episode still lands in exactly one cluster.
 	total := 0
 	for _, c := range clusters {
 		total += len(c)
@@ -188,12 +155,29 @@ func TestClusterEpisodesCapBoundsTheCluster(t *testing.T) {
 	}
 }
 
+func TestClusterEpisodesLexicalFloorKeepsClustersFromPadding(t *testing.T) {
+	episodes := []models.Episode{
+		clusterEpisode(1, "CortexIQ draait op poort 9090", []float32{1, 0, 0}),
+		// Shares only a few trigrams with the seed: above zero, below a sane floor.
+		clusterEpisode(2, "De hond draait rondjes bij de poort van het park", []float32{0, 1, 0}),
+	}
+
+	padded := clusterBrain(0.85, 4, 0).clusterEpisodes(episodes)
+	if len(padded) != 1 {
+		t.Fatalf("without a floor: %d clusters, want the unrelated episode padded in (1)", len(padded))
+	}
+	floored := clusterBrain(0.85, 4, 0.2).clusterEpisodes(episodes)
+	if len(floored) != 2 {
+		t.Fatalf("with a floor: %d clusters, want 2", len(floored))
+	}
+}
+
 func TestClusterEpisodesKeepsSeedWithoutEmbedding(t *testing.T) {
 	episodes := []models.Episode{
 		{ID: 1, Content: "CortexIQ draait op poort 9090"},
 		clusterEpisode(2, "CortexIQ draait op poort 9090", []float32{1, 0, 0}),
 	}
-	clusters := clusterBrain(0.85, 4).clusterEpisodes(episodes)
+	clusters := clusterBrain(0.85, 4, 0).clusterEpisodes(episodes)
 	if len(clusters) != 2 || len(clusters[0]) != 1 || clusters[0][0].ID != 1 {
 		t.Fatalf("clusters = %+v, want [1] then [2]", clusters)
 	}
@@ -232,7 +216,7 @@ func TestScoreClusterArmsCountsLexicalOnlyTwins(t *testing.T) {
 		{0.6, 0.6, 0.5}, {0.5, 0.6, 0.6},
 	}
 
-	rep := ScoreClusterArms(pairs, vecs, 0.85, []int{2})
+	rep := ScoreClusterArms(pairs, vecs, 0.85, []int{2}, []float32{0.2})
 	if rep.Seeds != 2 {
 		t.Fatalf("seeds = %d, want 2", rep.Seeds)
 	}
@@ -242,8 +226,11 @@ func TestScoreClusterArmsCountsLexicalOnlyTwins(t *testing.T) {
 	if got := rep.Rows[1].TwinReached; got != 2 {
 		t.Errorf("cap 2 reached %d twins, want 2", got)
 	}
-	if got := rep.LexicalOnly[2]; len(got) != 1 || got[0] != "S1" {
+	if got := rep.Rows[1].LexicalOnly; len(got) != 1 || got[0] != "S1" {
 		t.Errorf("lexical-only twins = %v, want [S1]", got)
+	}
+	if len(rep.Rows[1].Lost) != 0 {
+		t.Errorf("lost twins = %v, want none", rep.Rows[1].Lost)
 	}
 	if len(rep.Unreached) != 0 {
 		t.Errorf("unreached = %v, want none", rep.Unreached)

@@ -72,14 +72,18 @@ type Config struct {
 	// against: one neighbour is not enough when it is a generic statement that
 	// hides the real duplicate behind it. 0 uses the default (5).
 	ConsolidationDedupCandidates int `env:"CORTEXIQ_DEDUP_CANDIDATES" envDefault:"5"`
-	// ConsolidationCandidateCap is how many episodes one cluster may gain, and
-	// how many each candidate arm may propose. Above 0 clustering also weighs a
-	// lexical arm (character trigrams) next to cosine and interleaves the two, so
-	// a twin that misses the similarity threshold still reaches the extractor in
-	// the same call. 0 keeps threshold-only clustering (the original behaviour).
-	// Widening a cluster widens the fact-to-episode provenance, so keep it small.
-	ConsolidationCandidateCap int    `env:"CORTEXIQ_CONSOLIDATION_CANDIDATE_CAP" envDefault:"0"`
-	ConsolidationWindow       string `env:"CORTEXIQ_CONSOLIDATION_WINDOW" envDefault:"168h"`
+	// ConsolidationCandidateCap is how many episodes a lexical arm (character
+	// trigrams) may add to a cluster on top of everything the similarity
+	// threshold selects, so a twin that misses the threshold still reaches the
+	// extractor in the same call. 0 keeps threshold-only clustering (the original
+	// behaviour). Extras widen the fact-to-episode provenance, so keep it small.
+	ConsolidationCandidateCap int `env:"CORTEXIQ_CONSOLIDATION_CANDIDATE_CAP" envDefault:"0"`
+	// ConsolidationLexicalFloor is the lowest trigram Jaccard score the lexical
+	// arm may add. Without it the arm pads every cluster to the cap. 0.2 sits above
+	// 95% of unrelated pairs and below the twins the arm exists to find (0.25 and
+	// up on eval/dedup_pairs.jsonl); see docs/QUALITY_EVALUATION.md.
+	ConsolidationLexicalFloor float64 `env:"CORTEXIQ_CONSOLIDATION_LEXICAL_FLOOR" envDefault:"0.2"`
+	ConsolidationWindow       string  `env:"CORTEXIQ_CONSOLIDATION_WINDOW" envDefault:"168h"`
 	// ExtractionMinChars is the shortest episode the extractor may read facts
 	// from. Below it an episode states nothing — one token, a greeting, a clipped
 	// acknowledgement — and the extractor reads a claim into it that nobody made.

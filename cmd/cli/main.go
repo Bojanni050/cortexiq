@@ -231,7 +231,8 @@ func main() {
 						Flags: []cli.Flag{
 							&cli.StringFlag{Name: "file", Aliases: []string{"f"}, Value: "eval/dedup_pairs.jsonl", Usage: "JSON Lines pair set"},
 							&cli.FloatFlag{Name: "threshold", Usage: "Cosine threshold of the semantic arm (default: CORTEXIQ_CONSOLIDATION_SIMILARITY_THRESHOLD)"},
-							&cli.IntSliceFlag{Name: "cap", Value: []int{2, 4, 8}, Usage: "Candidate caps to compare against threshold-only clustering"},
+							&cli.IntSliceFlag{Name: "cap", Value: []int{2, 4, 8}, Usage: "Lexical caps to compare against threshold-only clustering"},
+							&cli.FloatSliceFlag{Name: "floor", Value: []float64{0, 0.15, 0.2, 0.25, 0.3}, Usage: "Lexical floors to sweep per cap"},
 						},
 					},
 				},

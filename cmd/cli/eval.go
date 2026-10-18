@@ -86,8 +86,13 @@ func evalClusterCmd(ctx context.Context, cmd *cli.Command) error {
 		caps = append(caps, int(c))
 	}
 
+	var floors []float32
+	for _, f := range cmd.FloatSlice("floor") {
+		floors = append(floors, float32(f))
+	}
+
 	bc := getBootstrap(cmd)
-	rep, err := bc.Brain.EvalCluster(ctx, pairs, float32(cmd.Float("threshold")), caps)
+	rep, err := bc.Brain.EvalCluster(ctx, pairs, float32(cmd.Float("threshold")), caps, floors)
 	if err != nil {
 		return err
 	}
@@ -98,14 +103,11 @@ func evalClusterCmd(ctx context.Context, cmd *cli.Command) error {
 	fmt.Fprintf(w, "\nmodel %s, %d episodes, %d seeds (same pairs), semantic threshold %.2f\n\n", rep.Model, rep.Episodes, rep.Seeds, rep.Threshold)
 	fmt.Fprintf(w, "twin cosine   min %.3f median %.3f max %.3f\n", rep.TwinCosine.Min, rep.TwinCosine.Median, rep.TwinCosine.Max)
 	fmt.Fprintf(w, "twin lexical  min %.3f median %.3f max %.3f\n\n", rep.TwinLexical.Min, rep.TwinLexical.Median, rep.TwinLexical.Max)
-	fmt.Fprintf(w, "%4s %13s %12s %10s\n", "cap", "twin reached", "avg members", "avg other")
+	fmt.Fprintf(w, "%4s %6s %13s %12s %10s  %s\n", "cap", "floor", "twin reached", "avg members", "avg other", "lexical-only / lost twins")
 	for _, r := range rep.Rows {
-		fmt.Fprintf(w, "%4d %6d/%-6d %12.2f %10.2f\n", r.Cap, r.TwinReached, rep.Seeds, r.AvgMembers, r.AvgOther)
+		fmt.Fprintf(w, "%4d %6.2f %6d/%-6d %12.2f %10.2f  %v / %v\n", r.Cap, r.Floor, r.TwinReached, rep.Seeds, r.AvgMembers, r.AvgOther, r.LexicalOnly, r.Lost)
 	}
-	for _, c := range caps {
-		fmt.Fprintf(w, "only with cap %d: %v\n", c, rep.LexicalOnly[c])
-	}
-	fmt.Fprintf(w, "unreached by any cap: %v\n", rep.Unreached)
+	fmt.Fprintf(w, "unreached by any row: %v\n", rep.Unreached)
 	return nil
 }
 

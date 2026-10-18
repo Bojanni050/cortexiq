@@ -18,59 +18,13 @@ type clusterCandidate struct {
 	score   float32
 }
 
-// candidateArm is one route into a cluster: the episodes that arm proposes,
-// best first.
-type candidateArm struct {
-	name       string
-	candidates []clusterCandidate
-}
-
-// interleaveCandidates merges the arms round-robin — all #1s first, then all
-// #2s — and returns at most limit episodes.
-//
-// Reciprocal rank fusion sums a hit's reciprocal ranks over the arms, so a hit
-// that one arm ranks first but the others do not rank at all is averaged down
-// and can fall outside the budget. Interleave gives every arm's top hits a slot
-// instead. That matters for clustering because the twin of an episode — the
-// observation the extractor has to see next to it to merge it instead of
-// writing a duplicate — can be the top hit of one arm on its own.
-func interleaveCandidates(arms []candidateArm, limit int) []models.Episode {
-	if limit <= 0 {
-		return nil
-	}
-	seen := make(map[int64]bool)
-	out := make([]models.Episode, 0, limit)
-	for depth := 0; len(out) < limit; depth++ {
-		proposed := false
-		for _, arm := range arms {
-			if depth >= len(arm.candidates) {
-				continue
-			}
-			proposed = true
-			c := arm.candidates[depth]
-			if seen[c.episode.ID] {
-				continue
-			}
-			seen[c.episode.ID] = true
-			out = append(out, c.episode)
-			if len(out) == limit {
-				break
-			}
-		}
-		if !proposed {
-			break
-		}
-	}
-	return out
-}
-
-// rankCandidates keeps the best limit candidates of one arm, best first, and
-// drops the ones that scored nothing: a zero hit is no relation at all, not a
-// weak one. limit <= 0 keeps everyone that scored.
-func rankCandidates(candidates []clusterCandidate, limit int) []clusterCandidate {
+// rankCandidates keeps the best limit candidates scoring at least floor, best
+// first. A zero score is never kept, whatever the floor: a zero hit is no
+// relation at all, not a weak one. limit <= 0 keeps everyone that qualifies.
+func rankCandidates(candidates []clusterCandidate, floor float32, limit int) []clusterCandidate {
 	kept := make([]clusterCandidate, 0, len(candidates))
 	for _, c := range candidates {
-		if c.score > 0 {
+		if c.score > 0 && c.score >= floor {
 			kept = append(kept, c)
 		}
 	}

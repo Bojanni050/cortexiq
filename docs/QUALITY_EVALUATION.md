@@ -76,10 +76,19 @@ measured; the range between 0.965 and 0.98 holds no pairs and is an estimate.
 
 Clustering has its own check, on the same set: `cortexiq eval cluster` pools every
 text as an episode and asks, for each `same` pair, whether the twin lands in the
-seed's cluster with threshold-only clustering and with each `--cap` (default 2, 4
-and 8). It reports how many twins the lexical arm adds (`only with cap N`), how many
-other members a cluster gains (`avg other`, the provenance price of the cap) and
-which twins no cap reaches. It needs the configured embedder and writes nothing.
+seed's cluster with threshold-only clustering (cap 0, today's behaviour) and with
+each `--cap` and `--floor`. The cosine arm is never truncated; the cap bounds only
+the lexical extras and the floor (`CORTEXIQ_CONSOLIDATION_LEXICAL_FLOOR`) keeps
+them from padding every cluster. Read `avg other` against the cap-0 row: the
+difference is what the lexical arm costs in provenance. `lost` must be empty. It
+needs the configured embedder and writes nothing.
+
+Measured 2026-10-18 (bge-m3, 20 twins, pool of 136): threshold-only reaches 16/20
+with 1.45 non-twin members on average. Cap 4 reaches 20/20; the floor decides the
+price: 3.80 extra members at floor 0, 1.85 at 0.20, 1.30 at 0.25, and a floor of
+0.30 loses three of the four twins the arm exists to find (their scores are 0.25,
+0.27, 0.29 and 0.43). The default floor is 0.20: it keeps a margin under the
+weakest of those, and the cap stays 0 until you opt in.
 
 ## 3. Compare models safely
 

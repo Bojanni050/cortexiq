@@ -24,31 +24,34 @@ type ClusterEvalReport struct {
 	// TwinCosine and TwinLexical are the raw scores of the seed against its twin.
 	TwinCosine  LabelStats `json:"twin_cosine"`
 	TwinLexical LabelStats `json:"twin_lexical"`
-	// Rows has one row per cap; the first is always cap 0, the threshold-only
-	// clustering that runs today.
+	// Rows has the threshold-only clustering that runs today first (cap 0), then
+	// one row per cap and lexical floor.
 	Rows []ClusterEvalRow `json:"rows"`
-	// LexicalOnly lists the twins that cap > 0 reaches and the threshold alone
-	// does not, per cap, so the gain can be read pair by pair.
-	LexicalOnly map[int][]string `json:"lexical_only,omitempty"`
-	// Unreached lists the twins no cap reaches.
+	// Unreached lists the twins no row reaches.
 	Unreached []string `json:"unreached,omitempty"`
 }
 
-// ClusterEvalRow is the outcome for one cap.
+// ClusterEvalRow is the outcome for one cap and floor.
 type ClusterEvalRow struct {
-	Cap int `json:"cap"`
+	Cap   int     `json:"cap"`
+	Floor float32 `json:"floor"`
 	// TwinReached counts seeds whose twin is in the seed's cluster.
 	TwinReached int `json:"twin_reached"`
 	// AvgMembers is the mean number of members a cluster gains, and AvgOther the
 	// mean number of those that are not the twin.
 	AvgMembers float64 `json:"avg_members"`
 	AvgOther   float64 `json:"avg_other"`
+	// LexicalOnly lists the twins this row reaches and threshold-only does not.
+	LexicalOnly []string `json:"lexical_only,omitempty"`
+	// Lost lists the twins threshold-only reaches and this row does not. It must
+	// be empty: the lexical arm adds to the cosine arm, it never replaces it.
+	Lost []string `json:"lost,omitempty"`
 }
 
 // ScoreClusterArms runs the real clusterMembers over the set. vecs holds the
 // embedding of pairs[i].A at 2i and of pairs[i].B at 2i+1. It is pure: embedding
 // happens in EvalCluster.
-func ScoreClusterArms(pairs []DedupPair, vecs [][]float32, threshold float32, caps []int) ClusterEvalReport {
+func ScoreClusterArms(pairs []DedupPair, vecs [][]float32, threshold float32, caps []int, floors []float32) ClusterEvalReport {
 	episodes := make([]models.Episode, 0, 2*len(pairs))
 	for i, p := range pairs {
 		episodes = append(episodes,
@@ -57,11 +60,7 @@ func ScoreClusterArms(pairs []DedupPair, vecs [][]float32, threshold float32, ca
 		)
 	}
 
-	rep := ClusterEvalReport{
-		Episodes:    len(episodes),
-		Threshold:   threshold,
-		LexicalOnly: map[int][]string{},
-	}
+	rep := ClusterEvalReport{Episodes: len(episodes), Threshold: threshold}
 
 	var seeds []int // pair indexes of the `same` pairs
 	var cosines, lexicals []float32
@@ -77,16 +76,27 @@ func ScoreClusterArms(pairs []DedupPair, vecs [][]float32, threshold float32, ca
 	rep.TwinCosine = statsOf(cosines)
 	rep.TwinLexical = statsOf(lexicals)
 
-	reached := map[int]map[int]bool{} // cap -> pair index -> twin reached
-	allCaps := append([]int{0}, caps...)
-	for _, c := range allCaps {
-		b := &Brain{config: Config{SimilarityThreshold: float64(threshold), CandidateCap: c}}
-		row := ClusterEvalRow{Cap: c}
-		reached[c] = map[int]bool{}
+	type setting struct {
+		cap   int
+		floor float32
+	}
+	settings := []setting{{0, 0}}
+	for _, c := range caps {
+		for _, f := range floors {
+			settings = append(settings, setting{c, f})
+		}
+	}
+
+	var baseline map[int]bool // pair index -> twin reached with threshold only
+	everReached := map[int]bool{}
+	for n, st := range settings {
+		b := &Brain{config: Config{SimilarityThreshold: float64(threshold), CandidateCap: st.cap, LexicalFloor: float64(st.floor)}}
+		row := ClusterEvalRow{Cap: st.cap, Floor: st.floor}
+		reached := map[int]bool{}
 		var members, other int
 		for _, i := range seeds {
-			seedID, twinID := int64(2*i+1), int64(2*i+2)
-			clustered := map[int64]bool{seedID: true}
+			twinID := int64(2*i + 2)
+			clustered := map[int64]bool{int64(2*i + 1): true}
 			got := b.clusterMembers(episodes[2*i], episodes, clustered, make(trigramCache))
 			hit := false
 			for _, m := range got {
@@ -95,13 +105,25 @@ func ScoreClusterArms(pairs []DedupPair, vecs [][]float32, threshold float32, ca
 				}
 			}
 			if hit {
+				reached[i] = true
+				everReached[i] = true
 				row.TwinReached++
-				reached[c][i] = true
 			}
 			members += len(got)
 			other += len(got)
 			if hit {
 				other--
+			}
+		}
+		if n == 0 {
+			baseline = reached
+		}
+		for _, i := range seeds {
+			if reached[i] && !baseline[i] {
+				row.LexicalOnly = append(row.LexicalOnly, pairs[i].ID)
+			}
+			if !reached[i] && baseline[i] {
+				row.Lost = append(row.Lost, pairs[i].ID)
 			}
 		}
 		if n := float64(len(seeds)); n > 0 {
@@ -110,22 +132,8 @@ func ScoreClusterArms(pairs []DedupPair, vecs [][]float32, threshold float32, ca
 		}
 		rep.Rows = append(rep.Rows, row)
 	}
-
-	for _, c := range caps {
-		for _, i := range seeds {
-			if reached[c][i] && !reached[0][i] {
-				rep.LexicalOnly[c] = append(rep.LexicalOnly[c], pairs[i].ID)
-			}
-		}
-	}
 	for _, i := range seeds {
-		missed := true
-		for _, c := range allCaps {
-			if reached[c][i] {
-				missed = false
-			}
-		}
-		if missed {
+		if !everReached[i] {
 			rep.Unreached = append(rep.Unreached, pairs[i].ID)
 		}
 	}
@@ -144,7 +152,7 @@ func statsOf(vals []float32) LabelStats {
 // EvalCluster embeds every text of the set with the configured embedder and
 // scores the clustering arms. Nothing is written to the database. A zero
 // threshold takes the configured similarity threshold.
-func (b *Brain) EvalCluster(ctx context.Context, pairs []DedupPair, threshold float32, caps []int) (ClusterEvalReport, error) {
+func (b *Brain) EvalCluster(ctx context.Context, pairs []DedupPair, threshold float32, caps []int, floors []float32) (ClusterEvalReport, error) {
 	if threshold == 0 {
 		threshold = float32(b.config.SimilarityThreshold)
 	}
@@ -158,7 +166,7 @@ func (b *Brain) EvalCluster(ctx context.Context, pairs []DedupPair, threshold fl
 			vecs = append(vecs, v)
 		}
 	}
-	rep := ScoreClusterArms(pairs, vecs, threshold, caps)
+	rep := ScoreClusterArms(pairs, vecs, threshold, caps, floors)
 	rep.Model = b.embedder.Model()
 	return rep, nil
 }

@@ -78,11 +78,13 @@ type Config struct {
 	// DedupCandidates is how many nearest facts a new fact is weighed against
 	// before it is stored as new. 0 uses the default (5).
 	DedupCandidates int
-	// CandidateCap is how many episodes a cluster may gain, and how many each of
-	// its candidate arms may propose. 0 keeps threshold-only clustering; above 0
-	// a lexical (trigram) arm is interleaved with the cosine arm so a twin that
-	// misses the threshold still reaches the extractor. See clusterMembers.
-	CandidateCap                   int
+	// CandidateCap is how many episodes the lexical (trigram) arm may add to a
+	// cluster on top of everything the cosine threshold already selects. 0 keeps
+	// threshold-only clustering. See clusterMembers.
+	CandidateCap int
+	// LexicalFloor is the lowest trigram score the lexical arm may add; 0 adds
+	// anything that shares a trigram.
+	LexicalFloor                   float64
 	Window                         time.Duration
 	DecayFactor                    float64
 	ExpiryThreshold                float32

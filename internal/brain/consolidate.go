@@ -400,23 +400,29 @@ func (b *Brain) clusterEpisodes(episodes []models.Episode) [][]models.Episode {
 // clusterMembers weighs the episodes still free against one seed and returns
 // the ones that join its cluster.
 //
-// The semantic arm is the original rule: cosine at or above the similarity
-// threshold, in batch order. With CandidateCap 0 that is the whole decision, so
-// clustering behaves exactly as before. With a cap the arm keeps only its best
-// cap hits and a second, lexical arm weighs every remaining episode by shared
-// character trigrams; the two arms are interleaved so the lexical #1 always
-// reaches the call even when the semantic arm ranks it far down or not at all.
-// The extractor then reads both texts in one call, which is the only place a
-// twin can be merged instead of becoming a duplicate.
+// The semantic arm is the original rule and is never truncated: every episode
+// with cosine at or above the similarity threshold joins, in batch order. With
+// CandidateCap 0 that is the whole decision, so clustering behaves exactly as
+// before.
 //
-// Every fact the call produces is linked to every episode in the cluster, so
-// widening a cluster widens provenance: keep the cap small, and remember that
-// it also truncates a semantic cluster that used to be larger.
+// With a cap a second, lexical arm adds episodes the threshold misses: it weighs
+// every other free episode by shared character trigrams, drops the ones below
+// LexicalFloor, and adds the best cap of them. The cap bounds only these extras.
+// Capping the semantic arm too would drop twins the threshold alone finds (measured
+// with cortexiq eval cluster: cap 2 reached 15 of 20 twins, threshold-only 16).
+// Without a floor the lexical arm pads every cluster to the cap with the least
+// unrelated episodes, which is why the floor exists.
+//
+// The extractor then reads both texts in one call, which is the only place a
+// twin can be merged instead of becoming a duplicate. Every fact the call
+// produces is linked to every episode in the cluster, so extras widen
+// provenance: keep the cap small.
 func (b *Brain) clusterMembers(seed models.Episode, episodes []models.Episode, clustered map[int64]bool, cache trigramCache) []models.Episode {
 	seedVec := seed.Embedding.Slice()
 	threshold := float32(b.config.SimilarityThreshold)
 
-	var semantic []clusterCandidate
+	var members []models.Episode
+	inCluster := make(map[int64]bool)
 	for _, candidate := range episodes {
 		if clustered[candidate.ID] {
 			continue
@@ -425,34 +431,29 @@ func (b *Brain) clusterMembers(seed models.Episode, episodes []models.Episode, c
 		if candVec == nil {
 			continue
 		}
-		if sim := cosineSimilarity(seedVec, candVec); sim >= threshold {
-			semantic = append(semantic, clusterCandidate{episode: candidate, score: sim})
+		if cosineSimilarity(seedVec, candVec) >= threshold {
+			members = append(members, candidate)
+			inCluster[candidate.ID] = true
 		}
 	}
 
 	cap := b.config.CandidateCap
 	if cap <= 0 {
-		out := make([]models.Episode, len(semantic))
-		for i, c := range semantic {
-			out[i] = c.episode
-		}
-		return out
+		return members
 	}
 
 	var lexical []clusterCandidate
 	for _, candidate := range episodes {
-		if clustered[candidate.ID] {
+		if clustered[candidate.ID] || inCluster[candidate.ID] {
 			continue
 		}
-		if score := trigramJaccard(cache.of(seed), cache.of(candidate)); score > 0 {
-			lexical = append(lexical, clusterCandidate{episode: candidate, score: score})
-		}
+		score := trigramJaccard(cache.of(seed), cache.of(candidate))
+		lexical = append(lexical, clusterCandidate{episode: candidate, score: score})
 	}
-
-	return interleaveCandidates([]candidateArm{
-		{name: "semantic", candidates: rankCandidates(semantic, cap)},
-		{name: "lexical", candidates: rankCandidates(lexical, cap)},
-	}, cap)
+	for _, c := range rankCandidates(lexical, float32(b.config.LexicalFloor), cap) {
+		members = append(members, c.episode)
+	}
+	return members
 }
 
 // storeResult describes what storeFact did with one synthesized fact.
