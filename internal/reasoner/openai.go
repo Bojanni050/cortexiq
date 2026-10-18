@@ -226,6 +226,7 @@ Rules:
 - Do NOT split a single claim into pieces, and do not repeat the same information in two facts. At most %d facts.
 - Every summary MUST be understandable on its own, without the Events and without knowing the conversation: name the project, product or subject explicitly (e.g. "CortexIQ", "Chronicle-Gaia"). Never use "the system", "the plugin", "the app", "it" or "this" as the subject.
 - If the Events contain no durable information worth remembering (small talk, a status update without outcome, an action without subject or result, a bare question), output an empty array: []
+- Turns that only keep the conversation going — picking an option from a list ("2"), confirming ("gedaan", "ok", "zo moet het goed zijn"), announcing a next step ("we gaan het zien") — are not facts about any system. Never describe such a turn as a feature, signal, reminder or design choice, and never make the text of a turn the subject of a fact. If the Events consist only of such turns, output an empty array: []
 - Every summary MUST be specific and detailed. Do NOT echo, quote, or closely paraphrase a single Event sentence; rewrite in your own words.
 - Remove first-person markers ("I", "my", "we") — state facts about subjects, not the narrator.
 - All values MUST come ONLY from the Events. Do not add outside details.
@@ -246,6 +247,9 @@ BAD example (not self-contained — DO NOT do this):
 
 BAD example (a setting stated as a permanent property — DO NOT do this):
 [{"entity": "CortexIQ", "property": "assistant response limit", "value": "612 characters", "summary": "CortexIQ limits assistant responses to 612 characters."}]
+
+BAD example (a conversational turn read as a system feature — DO NOT do this; for Events "2" and "gedaan" the correct output is []):
+[{"entity": "CortexIQ", "property": "early response content", "value": "'2' and 'gedaan'", "summary": "CortexIQ includes the content '2' and 'gedaan' in early responses as a signal for user feedback."}]
 
 GOOD example (the same setting written as an observation of the moment — DO this instead):
 [{"entity": "CortexIQ", "property": "assistant response limit", "value": "612 characters", "summary": "CortexIQ was configured to limit assistant responses to 612 characters (600 from CORTEXIQ_ASSISTANT_MAX_CHARS plus a 12-character truncation marker)."}]

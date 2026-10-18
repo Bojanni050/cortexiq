@@ -67,6 +67,19 @@ func TestParseStructuredFactsRejectsGarbage(t *testing.T) {
 	}
 }
 
+func TestStructuredPromptRejectsConversationalTurns(t *testing.T) {
+	p := structuredPrompt([]string{"2"}, "")
+	for _, want := range []string{
+		"keep the conversation going",
+		"never make the text of a turn the subject of a fact",
+		"a conversational turn read as a system feature",
+	} {
+		if !strings.Contains(strings.ToLower(p), strings.ToLower(want)) {
+			t.Errorf("prompt is missing %q", want)
+		}
+	}
+}
+
 func TestStructuredPromptAsksForOneFactPerTopic(t *testing.T) {
 	p := structuredPrompt([]string{"x"}, "")
 	for _, want := range []string{
