@@ -217,3 +217,35 @@ func TestTrigramCacheMatchesLexicalScoreAndReuses(t *testing.T) {
 		t.Fatal("second lookup recomputed instead of reusing the cached set")
 	}
 }
+
+func TestScoreClusterArmsCountsLexicalOnlyTwins(t *testing.T) {
+	pairs := []DedupPair{
+		// Twins whose vectors are orthogonal: cosine misses them, wording does not.
+		{ID: "S1", Label: PairSame, A: "CortexIQ draait op poort 9090", B: "CortexIQ draait op poort 9090 na herstart"},
+		// Twins with identical vectors: cosine alone already reaches them.
+		{ID: "S2", Label: PairSame, A: "De database is PostgreSQL", B: "Postgres wordt gebruikt als opslag"},
+		{ID: "D1", Label: PairDifferent, A: "Consolidatie draait elke vijf minuten", B: "Het logo is blauw"},
+	}
+	vecs := [][]float32{
+		{1, 0, 0}, {0, 1, 0},
+		{0, 0, 1}, {0, 0, 1},
+		{0.6, 0.6, 0.5}, {0.5, 0.6, 0.6},
+	}
+
+	rep := ScoreClusterArms(pairs, vecs, 0.85, []int{2})
+	if rep.Seeds != 2 {
+		t.Fatalf("seeds = %d, want 2", rep.Seeds)
+	}
+	if got := rep.Rows[0].TwinReached; got != 1 {
+		t.Errorf("threshold-only reached %d twins, want 1 (S2)", got)
+	}
+	if got := rep.Rows[1].TwinReached; got != 2 {
+		t.Errorf("cap 2 reached %d twins, want 2", got)
+	}
+	if got := rep.LexicalOnly[2]; len(got) != 1 || got[0] != "S1" {
+		t.Errorf("lexical-only twins = %v, want [S1]", got)
+	}
+	if len(rep.Unreached) != 0 {
+		t.Errorf("unreached = %v, want none", rep.Unreached)
+	}
+}

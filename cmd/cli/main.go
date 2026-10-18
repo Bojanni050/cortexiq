@@ -224,6 +224,16 @@ func main() {
 							&cli.BoolFlag{Name: "llm", Usage: "Also ask the reasoner about the pairs in the review band (one call each)"},
 						},
 					},
+					{
+						Name:   "cluster",
+						Usage:  "Does the lexical arm bring a twin into the seed's cluster that cosine alone misses?",
+						Action: evalClusterCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "file", Aliases: []string{"f"}, Value: "eval/dedup_pairs.jsonl", Usage: "JSON Lines pair set"},
+							&cli.FloatFlag{Name: "threshold", Usage: "Cosine threshold of the semantic arm (default: CORTEXIQ_CONSOLIDATION_SIMILARITY_THRESHOLD)"},
+							&cli.IntSliceFlag{Name: "cap", Value: []int{2, 4, 8}, Usage: "Candidate caps to compare against threshold-only clustering"},
+						},
+					},
 				},
 			},
 			{

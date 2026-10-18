@@ -68,6 +68,47 @@ func printDedupSummary(rep brain.DedupEvalReport) {
 	}
 }
 
+// evalClusterCmd scores the clustering arms against the dedup calibration set.
+// The JSON report goes to stdout, a summary to stderr. Nothing is written to the
+// database.
+func evalClusterCmd(ctx context.Context, cmd *cli.Command) error {
+	f, err := os.Open(cmd.String("file"))
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	pairs, err := brain.LoadDedupPairs(f)
+	if err != nil {
+		return fmt.Errorf("%s: %w", cmd.String("file"), err)
+	}
+	var caps []int
+	for _, c := range cmd.IntSlice("cap") {
+		caps = append(caps, int(c))
+	}
+
+	bc := getBootstrap(cmd)
+	rep, err := bc.Brain.EvalCluster(ctx, pairs, float32(cmd.Float("threshold")), caps)
+	if err != nil {
+		return err
+	}
+	if err := printJSON(rep); err != nil {
+		return err
+	}
+	w := os.Stderr
+	fmt.Fprintf(w, "\nmodel %s, %d episodes, %d seeds (same pairs), semantic threshold %.2f\n\n", rep.Model, rep.Episodes, rep.Seeds, rep.Threshold)
+	fmt.Fprintf(w, "twin cosine   min %.3f median %.3f max %.3f\n", rep.TwinCosine.Min, rep.TwinCosine.Median, rep.TwinCosine.Max)
+	fmt.Fprintf(w, "twin lexical  min %.3f median %.3f max %.3f\n\n", rep.TwinLexical.Min, rep.TwinLexical.Median, rep.TwinLexical.Max)
+	fmt.Fprintf(w, "%4s %13s %12s %10s\n", "cap", "twin reached", "avg members", "avg other")
+	for _, r := range rep.Rows {
+		fmt.Fprintf(w, "%4d %6d/%-6d %12.2f %10.2f\n", r.Cap, r.TwinReached, rep.Seeds, r.AvgMembers, r.AvgOther)
+	}
+	for _, c := range caps {
+		fmt.Fprintf(w, "only with cap %d: %v\n", c, rep.LexicalOnly[c])
+	}
+	fmt.Fprintf(w, "unreached by any cap: %v\n", rep.Unreached)
+	return nil
+}
+
 // evalRecallCmd stores the corpus in a temporary namespace under /eval/, asks
 // the question set through the normal recall path and removes the namespace
 // again. The JSON report goes to stdout, a summary to stderr.

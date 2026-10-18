@@ -74,6 +74,13 @@ threshold) and 0 missed twins each time. The highest near-miss is 0.955 and the
 highest twin 0.965, so an auto-merge threshold of 0.98 sits above everything
 measured; the range between 0.965 and 0.98 holds no pairs and is an estimate.
 
+Clustering has its own check, on the same set: `cortexiq eval cluster` pools every
+text as an episode and asks, for each `same` pair, whether the twin lands in the
+seed's cluster with threshold-only clustering and with each `--cap` (default 2, 4
+and 8). It reports how many twins the lexical arm adds (`only with cap N`), how many
+other members a cluster gains (`avg other`, the provenance price of the cap) and
+which twins no cap reaches. It needs the configured embedder and writes nothing.
+
 ## 3. Compare models safely
 
 Run the same examples with the old and new configuration. Keep the raw JSONL
