@@ -385,26 +385,73 @@ func (b *Brain) clusterEpisodes(episodes []models.Episode) [][]models.Episode {
 			continue
 		}
 
-		seedVec := seed.Embedding.Slice()
-		for _, candidate := range episodes {
-			if clustered[candidate.ID] {
-				continue
-			}
-			candVec := candidate.Embedding.Slice()
-			if candVec == nil {
-				continue
-			}
-			sim := cosineSimilarity(seedVec, candVec)
-			if sim >= float32(b.config.SimilarityThreshold) {
-				cluster = append(cluster, candidate)
-				clustered[candidate.ID] = true
-			}
+		for _, member := range b.clusterMembers(seed, episodes, clustered) {
+			cluster = append(cluster, member)
+			clustered[member.ID] = true
 		}
 
 		clusters = append(clusters, cluster)
 	}
 
 	return clusters
+}
+
+// clusterMembers weighs the episodes still free against one seed and returns
+// the ones that join its cluster.
+//
+// The semantic arm is the original rule: cosine at or above the similarity
+// threshold, in batch order. With CandidateCap 0 that is the whole decision, so
+// clustering behaves exactly as before. With a cap the arm keeps only its best
+// cap hits and a second, lexical arm weighs every remaining episode by shared
+// character trigrams; the two arms are interleaved so the lexical #1 always
+// reaches the call even when the semantic arm ranks it far down or not at all.
+// The extractor then reads both texts in one call, which is the only place a
+// twin can be merged instead of becoming a duplicate.
+//
+// Every fact the call produces is linked to every episode in the cluster, so
+// widening a cluster widens provenance: keep the cap small, and remember that
+// it also truncates a semantic cluster that used to be larger.
+func (b *Brain) clusterMembers(seed models.Episode, episodes []models.Episode, clustered map[int64]bool) []models.Episode {
+	seedVec := seed.Embedding.Slice()
+	threshold := float32(b.config.SimilarityThreshold)
+
+	var semantic []clusterCandidate
+	for _, candidate := range episodes {
+		if clustered[candidate.ID] {
+			continue
+		}
+		candVec := candidate.Embedding.Slice()
+		if candVec == nil {
+			continue
+		}
+		if sim := cosineSimilarity(seedVec, candVec); sim >= threshold {
+			semantic = append(semantic, clusterCandidate{episode: candidate, score: sim})
+		}
+	}
+
+	cap := b.config.CandidateCap
+	if cap <= 0 {
+		out := make([]models.Episode, len(semantic))
+		for i, c := range semantic {
+			out[i] = c.episode
+		}
+		return out
+	}
+
+	var lexical []clusterCandidate
+	for _, candidate := range episodes {
+		if clustered[candidate.ID] {
+			continue
+		}
+		if score := lexicalScore(seed.Content, candidate.Content); score > 0 {
+			lexical = append(lexical, clusterCandidate{episode: candidate, score: score})
+		}
+	}
+
+	return interleaveCandidates([]candidateArm{
+		{name: "semantic", candidates: rankCandidates(semantic, cap)},
+		{name: "lexical", candidates: rankCandidates(lexical, cap)},
+	}, cap)
 }
 
 // storeResult describes what storeFact did with one synthesized fact.

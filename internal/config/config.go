@@ -71,8 +71,15 @@ type Config struct {
 	// ConsolidationDedupCandidates is how many nearest facts a new fact is weighed
 	// against: one neighbour is not enough when it is a generic statement that
 	// hides the real duplicate behind it. 0 uses the default (5).
-	ConsolidationDedupCandidates int    `env:"CORTEXIQ_DEDUP_CANDIDATES" envDefault:"5"`
-	ConsolidationWindow          string `env:"CORTEXIQ_CONSOLIDATION_WINDOW" envDefault:"168h"`
+	ConsolidationDedupCandidates int `env:"CORTEXIQ_DEDUP_CANDIDATES" envDefault:"5"`
+	// ConsolidationCandidateCap is how many episodes one cluster may gain, and
+	// how many each candidate arm may propose. Above 0 clustering also weighs a
+	// lexical arm (character trigrams) next to cosine and interleaves the two, so
+	// a twin that misses the similarity threshold still reaches the extractor in
+	// the same call. 0 keeps threshold-only clustering (the original behaviour).
+	// Widening a cluster widens the fact-to-episode provenance, so keep it small.
+	ConsolidationCandidateCap int    `env:"CORTEXIQ_CONSOLIDATION_CANDIDATE_CAP" envDefault:"0"`
+	ConsolidationWindow       string `env:"CORTEXIQ_CONSOLIDATION_WINDOW" envDefault:"168h"`
 	// ExtractionMinChars is the shortest episode the extractor may read facts
 	// from. Below it an episode states nothing — one token, a greeting, a clipped
 	// acknowledgement — and the extractor reads a claim into it that nobody made.

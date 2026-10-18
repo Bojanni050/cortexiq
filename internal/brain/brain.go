@@ -77,7 +77,12 @@ type Config struct {
 	DedupReviewThreshold float64
 	// DedupCandidates is how many nearest facts a new fact is weighed against
 	// before it is stored as new. 0 uses the default (5).
-	DedupCandidates                int
+	DedupCandidates int
+	// CandidateCap is how many episodes a cluster may gain, and how many each of
+	// its candidate arms may propose. 0 keeps threshold-only clustering; above 0
+	// a lexical (trigram) arm is interleaved with the cosine arm so a twin that
+	// misses the threshold still reaches the extractor. See clusterMembers.
+	CandidateCap                   int
 	Window                         time.Duration
 	DecayFactor                    float64
 	ExpiryThreshold                float32
