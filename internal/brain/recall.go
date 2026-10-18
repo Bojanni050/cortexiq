@@ -92,7 +92,11 @@ func (b *Brain) RecallAsOf(ctx context.Context, namespaces []string, query strin
 func (b *Brain) recall(ctx context.Context, namespaces []string, query string, limit int, opts RecallOptions, tr *RecallTrace) ([]RecallResult, error) {
 	asOf := opts.AsOf
 	facts, episodes := opts.includes()
-	graph := b.config.GraphRecall && b.config.HybridRecall
+	graphOn := b.config.GraphRecall
+	if opts.Graph != nil {
+		graphOn = *opts.Graph
+	}
+	graph := graphOn && b.config.HybridRecall
 	if err := validateContent(query); err != nil {
 		return nil, err
 	}

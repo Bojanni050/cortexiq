@@ -3,6 +3,7 @@ package brain
 import (
 	"encoding/json"
 	"math"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -356,5 +357,84 @@ func TestFuseTwoArmsIsUnchangedByTheGeneralisation(t *testing.T) {
 	}
 	if got[0].Score != 1 {
 		t.Errorf("top of both lists = %v, want 1", got[0].Score)
+	}
+}
+
+func TestLoadGraphCorpusAndQueriesValidate(t *testing.T) {
+	good := `{"kind":"fact","id":"f1","entity":"pgvector","content":"a"}
+{"kind":"fact","id":"f2","entity":"PostgreSQL","content":"b"}
+{"kind":"rel","from":"pgvector","type":"extends","to":"postgresql"}
+`
+	facts, rels, err := LoadGraphCorpus(strings.NewReader(good))
+	if err != nil || len(facts) != 2 || len(rels) != 1 {
+		t.Fatalf("good corpus: %v, %d facts, %d rels", err, len(facts), len(rels))
+	}
+	if rels[0].Confidence != 0.8 {
+		t.Errorf("a missing confidence defaults to 0.8, got %v", rels[0].Confidence)
+	}
+
+	for name, bad := range map[string]string{
+		"unknown kind":        `{"kind":"x","id":"f1"}`,
+		"fact without entity": `{"kind":"fact","id":"f1","content":"a"}`,
+		"duplicate id":        `{"kind":"fact","id":"f1","entity":"e","content":"a"}` + "\n" + `{"kind":"fact","id":"f1","entity":"e","content":"b"}`,
+		"relation to nothing": `{"kind":"fact","id":"f1","entity":"e","content":"a"}` + "\n" + `{"kind":"rel","from":"e","type":"t","to":"ghost"}`,
+	} {
+		if _, _, err := LoadGraphCorpus(strings.NewReader(bad)); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+	}
+
+	if _, err := LoadGraphQueries(strings.NewReader(`{"id":"q","kind":"direct","query":"x","expect":["f1"]}`), facts); err != nil {
+		t.Errorf("good query: %v", err)
+	}
+	for name, bad := range map[string]string{
+		"unknown fact": `{"id":"q","kind":"direct","query":"x","expect":["f9"]}`,
+		"bad kind":     `{"id":"q","kind":"confuser","query":"x","expect":["f1"]}`,
+	} {
+		if _, err := LoadGraphQueries(strings.NewReader(bad), facts); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+	}
+}
+
+func TestShippedGraphSetLoads(t *testing.T) {
+	cf, err := os.Open("../../eval/graph_corpus.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cf.Close()
+	facts, rels, err := LoadGraphCorpus(cf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	qf, err := os.Open("../../eval/graph_queries.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer qf.Close()
+	qs, err := LoadGraphQueries(qf, facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]int{}
+	for _, q := range qs {
+		kinds[q.Kind]++
+	}
+	for _, k := range []string{GraphQueryDirect, GraphQueryNeighbour, GraphQueryControl, GraphQueryDistractor} {
+		if kinds[k] == 0 {
+			t.Errorf("the shipped question set has no %s question", k)
+		}
+	}
+	if len(rels) == 0 {
+		t.Error("the shipped corpus has no relationships")
+	}
+}
+
+func TestCompareGraphRunsListsOnlyMovedQuestions(t *testing.T) {
+	without := RecallEvalReport{Outcomes: []QueryOutcome{{ID: "a", Rank: 0}, {ID: "b", Rank: 1}, {ID: "c", Rank: 3}}}
+	with := RecallEvalReport{Outcomes: []QueryOutcome{{ID: "a", Rank: 2}, {ID: "b", Rank: 1}, {ID: "c", Rank: 4}}}
+	got := CompareGraphRuns(without, with)
+	if len(got) != 2 || got[0].ID != "a" || got[0].RankWith != 2 || got[1].ID != "c" || got[1].RankWithout != 3 {
+		t.Errorf("changes = %+v", got)
 	}
 }

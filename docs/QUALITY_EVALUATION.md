@@ -90,6 +90,21 @@ price: 3.80 extra members at floor 0, 1.85 at 0.20, 1.30 at 0.25, and a floor of
 0.27, 0.29 and 0.43). The default floor is 0.20: it keeps a margin under the
 weakest of those, and the cap stays 0 until you opt in.
 
+The graph arm of recall (`CORTEXIQ_GRAPH_RECALL`, off by default) has its own set,
+`eval/graph_corpus.jsonl` (26 facts with an entity, 13 relationships) and
+`eval/graph_queries.jsonl` (22 questions: `direct`, `neighbour`, `distractor` and
+`control`). It stores the corpus as facts in a temporary `/eval/` namespace, asks
+every question with the arm forced off and then on, and removes the namespace:
+
+```bash
+cortexiq eval graph          # hit@1/@3 and MRR per kind, and the questions that moved
+```
+
+Read it like this: `direct` and `neighbour` must improve, `distractor` and
+`control` must not get worse, since the arm may only add. The set is synthetic and
+written by Claude, so it can show that the arm works and that it does no harm on
+these shapes; it cannot say how much it helps on your own memories.
+
 ## 3. Compare models safely
 
 Run the same examples with the old and new configuration. Keep the raw JSONL

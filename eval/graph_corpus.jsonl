@@ -1,0 +1,39 @@
+{"kind":"fact","id":"f01","entity":"pgvector","content":"De extensie levert HNSW-indexen voor snelle nabijheidszoekopdrachten."}
+{"kind":"fact","id":"f02","entity":"pgvector","content":"Vectoren worden opgeslagen met 1024 dimensies bij het bge-m3 model."}
+{"kind":"fact","id":"f03","entity":"PostgreSQL","content":"Versie 16 draait in een container met een eigen volume voor de data."}
+{"kind":"fact","id":"f04","entity":"PostgreSQL","content":"Een nachtelijke dump wordt bewaard en naar een externe opslagbox gekopieerd."}
+{"kind":"fact","id":"f05","entity":"bge-m3","content":"Het model ondersteunt meertalige tekst, waaronder Nederlands en Engels."}
+{"kind":"fact","id":"f06","entity":"bge-m3","content":"De embeddings worden lokaal berekend via Ollama."}
+{"kind":"fact","id":"f07","entity":"Ollama","content":"De dienst luistert op poort 11434 binnen het compose-netwerk."}
+{"kind":"fact","id":"f08","entity":"Ollama","content":"Modellen worden bij de eerste aanvraag geladen en daarna in het geheugen gehouden."}
+{"kind":"fact","id":"f09","entity":"CortexIQ","content":"De HTTP-server luistert op poort 9090 en toont ook de metrics."}
+{"kind":"fact","id":"f10","entity":"CortexIQ","content":"De MCP-server luistert op poort 8080 via SSE."}
+{"kind":"fact","id":"f11","entity":"CortexIQ","content":"Consolidatie draait op de achtergrond en maakt van episodes feiten."}
+{"kind":"fact","id":"f12","entity":"CortexIQ","content":"Recall combineert vector- en keywordzoeken met reciprocal rank fusion."}
+{"kind":"fact","id":"f13","entity":"CortexIQ","content":"Namespaces ordenen het geheugen per project, inclusief onderliggende paden."}
+{"kind":"fact","id":"f14","entity":"CortexIQ","content":"De dashboard-gebruikersinterface staat onder het pad /ui."}
+{"kind":"fact","id":"f15","entity":"CortexIQ","content":"Facts verouderen met een vervalfactor tenzij ze regelmatig worden opgevraagd."}
+{"kind":"fact","id":"f16","entity":"CortexIQ","content":"Dubbele feiten worden samengevoegd op basis van cosine-gelijkenis en een LLM-review."}
+{"kind":"fact","id":"f17","entity":"Grafana","content":"De panelen tonen de consolidatie-runs en de LLM-kosten per fase."}
+{"kind":"fact","id":"f18","entity":"Prometheus","content":"Metrics worden elke vijftien seconden opgehaald van het eindpunt /metrics."}
+{"kind":"fact","id":"f19","entity":"Caddy","content":"De reverse proxy regelt TLS-certificaten voor het publieke domein."}
+{"kind":"fact","id":"f20","entity":"Tailscale","content":"Het dashboard is alleen bereikbaar via het privé netwerk op poort 8445."}
+{"kind":"fact","id":"f21","entity":"Docker Compose","content":"De productieconfiguratie staat in een server-lokaal bestand buiten de repository."}
+{"kind":"fact","id":"f22","entity":"Docker Compose","content":"Services herstarten automatisch tenzij ze expliciet zijn gestopt."}
+{"kind":"fact","id":"f23","entity":"Hermes","content":"De agent schrijft gesprekken weg via het REST-eindpunt remember."}
+{"kind":"fact","id":"f24","entity":"Hermes","content":"Samenvattingen van sessies worden na afloop opgeslagen."}
+{"kind":"fact","id":"f25","entity":"Gaia","content":"Het project gebruikt een eigen geheugenbank naast de gedeelde bank."}
+{"kind":"fact","id":"f26","entity":"Hindsight","content":"Dit systeem is de referentie voor de recall-analyzer in het dashboard."}
+{"kind":"rel","from":"CortexIQ","type":"uses","to":"PostgreSQL","confidence":0.9}
+{"kind":"rel","from":"pgvector","type":"extends","to":"PostgreSQL","confidence":0.9}
+{"kind":"rel","from":"CortexIQ","type":"uses","to":"bge-m3","confidence":0.9}
+{"kind":"rel","from":"bge-m3","type":"runs_on","to":"Ollama","confidence":0.9}
+{"kind":"rel","from":"Ollama","type":"part_of","to":"Docker Compose","confidence":0.8}
+{"kind":"rel","from":"PostgreSQL","type":"part_of","to":"Docker Compose","confidence":0.8}
+{"kind":"rel","from":"Prometheus","type":"feeds","to":"Grafana","confidence":0.8}
+{"kind":"rel","from":"Prometheus","type":"monitors","to":"CortexIQ","confidence":0.8}
+{"kind":"rel","from":"Tailscale","type":"exposes","to":"CortexIQ","confidence":0.7}
+{"kind":"rel","from":"Caddy","type":"proxies","to":"CortexIQ","confidence":0.7}
+{"kind":"rel","from":"Hermes","type":"writes_to","to":"CortexIQ","confidence":0.9}
+{"kind":"rel","from":"Gaia","type":"uses","to":"CortexIQ","confidence":0.9}
+{"kind":"rel","from":"CortexIQ","type":"inspired_by","to":"Hindsight","confidence":0.7}

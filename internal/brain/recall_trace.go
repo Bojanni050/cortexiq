@@ -12,6 +12,10 @@ type RecallOptions struct {
 	AsOf *time.Time
 	// Types limits the search to "fact", "episode" or both. Empty means both.
 	Types []string
+	// Graph overrides the configured graph arm for this call: true forces it on,
+	// false forces it off, nil keeps the configuration. The recall evaluation uses
+	// it to compare the same corpus with and without the arm.
+	Graph *bool
 }
 
 // includes reports which of the two stores the options ask for.

@@ -115,7 +115,7 @@ FROM (
 {{end}}
 ) known
 WHERE length(e) >= 3
-    AND lower({{.Bind .Args.query}}) ~ ('\m' || regexp_replace(lower(e), '([.*+?^${}()|\[\]\\])', '\\\1', 'g') || '\M')
+    AND lower({{.Bind .Args.query}}) ~ ('(?<![[:alnum:]])' || regexp_replace(lower(e), '([.*+?^${}()|\[\]\\])', '\\\1', 'g') || '(?![[:alnum:]])')
 {{end}}
 
 {{define "recall_matched_entities"}}

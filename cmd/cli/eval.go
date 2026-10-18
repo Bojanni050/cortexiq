@@ -171,3 +171,59 @@ func printRecallSummary(rep brain.RecallEvalReport) {
 		fmt.Fprintf(w, "  MISS %s (%s) %s: %q -> top %v\n", m.ID, m.Kind, rank, m.Query, m.Top)
 	}
 }
+
+// evalGraphCmd compares recall with and without the graph arm over the graph
+// corpus. The JSON report goes to stdout, a summary to stderr.
+func evalGraphCmd(ctx context.Context, cmd *cli.Command) error {
+	cf, err := os.Open(cmd.String("corpus"))
+	if err != nil {
+		return err
+	}
+	defer cf.Close()
+	facts, rels, err := brain.LoadGraphCorpus(cf)
+	if err != nil {
+		return fmt.Errorf("%s: %w", cmd.String("corpus"), err)
+	}
+	qf, err := os.Open(cmd.String("queries"))
+	if err != nil {
+		return err
+	}
+	defer qf.Close()
+	qs, err := brain.LoadGraphQueries(qf, facts)
+	if err != nil {
+		return fmt.Errorf("%s: %w", cmd.String("queries"), err)
+	}
+
+	bc := getBootstrap(cmd)
+	rep, err := bc.Brain.EvalGraph(ctx, facts, rels, qs, brain.RecallEvalOptions{Limit: cmd.Int("limit"), Keep: cmd.Bool("keep")})
+	if err != nil {
+		return err
+	}
+	if err := printJSON(rep); err != nil {
+		return err
+	}
+	printGraphSummary(rep)
+	return nil
+}
+
+func printGraphSummary(rep brain.GraphEvalReport) {
+	w := os.Stderr
+	fmt.Fprintf(w, "\nmodel %s, %d facts, %d relationships, k=%d\n\n", rep.Model, rep.Facts, rep.Rels, rep.Limit)
+	fmt.Fprintf(w, "%-11s %3s | %18s | %18s\n", "", "n", "without graph", "with graph")
+	fmt.Fprintf(w, "%-11s %3s | %5s %5s %5s | %5s %5s %5s\n", "kind", "", "@1", "@3", "MRR", "@1", "@3", "MRR")
+	row := func(name string, a, b brain.RecallStats) {
+		fmt.Fprintf(w, "%-11s %3d | %5.2f %5.2f %5.2f | %5.2f %5.2f %5.2f\n", name, a.Questions, a.HitAt1, a.HitAt3, a.MRR, b.HitAt1, b.HitAt3, b.MRR)
+	}
+	for _, k := range []string{brain.GraphQueryDirect, brain.GraphQueryNeighbour, brain.GraphQueryDistractor, brain.GraphQueryControl} {
+		row(k, rep.Without.Kinds[k], rep.With.Kinds[k])
+	}
+	row("overall", rep.Without.Overall, rep.With.Overall)
+	if len(rep.Changes) == 0 {
+		fmt.Fprintln(w, "\nno question changed rank")
+		return
+	}
+	fmt.Fprintf(w, "\nquestions that moved (rank 0 = not in the top %d):\n", rep.Limit)
+	for _, c := range rep.Changes {
+		fmt.Fprintf(w, "  %-5s %-10s %2d -> %2d  %s\n", c.ID, c.Kind, c.RankWithout, c.RankWith, c.Query)
+	}
+}

@@ -423,3 +423,157 @@ func TestIntegrationExportImportRoundTrip(t *testing.T) {
 		t.Fatalf("imported fact not recallable: %+v err=%v", res, err)
 	}
 }
+
+// insertEntityFact inserts a fact about an entity (bypassing consolidation).
+func (e *testEnv) insertEntityFact(t *testing.T, entity, content string, confidence float32) int64 {
+	t.Helper()
+	vec, _ := fakeEmbedder{}.Embed(e.ctx, content)
+	var id int64
+	err := e.b.pool.QueryRow(e.ctx,
+		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, entity, valid_from)
+		 VALUES ($1, $2, $3, 'fake', $4, $5, now()) RETURNING id`,
+		e.nsID, content, pgvector.NewVector(vec), confidence, entity,
+	).Scan(&id)
+	if err != nil {
+		t.Fatalf("insert entity fact: %v", err)
+	}
+	return id
+}
+
+func (e *testEnv) insertRelationship(t *testing.T, from, rel, to string, confidence float32) {
+	t.Helper()
+	_, err := e.b.pool.Exec(e.ctx,
+		`INSERT INTO relationships (namespace_id, from_entity, relation_type, to_entity, confidence)
+		 VALUES ($1, $2, $3, $4, $5)`,
+		e.nsID, from, rel, to, confidence)
+	if err != nil {
+		t.Fatalf("insert relationship: %v", err)
+	}
+}
+
+// The graph arm finds a fact that shares no wording and no vocabulary with the
+// query, through an entity the query names and one relationship hop.
+func TestIntegrationGraphRecallFollowsEntitiesAndNeighbours(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.GraphRecall = true })
+	direct := e.insertEntityFact(t, "pgvector", "De extensie levert HNSW-indexen voor nabijheidszoeken.", 0.8)
+	neighbour := e.insertEntityFact(t, "PostgreSQL", "Versie zestien draait op de productieserver.", 0.8)
+	e.insertEntityFact(t, "Grafana", "Panelen staan op de monitoringpagina.", 0.8)
+	e.insertRelationship(t, "pgvector", "extends", "PostgreSQL", 0.9)
+
+	res, trace, err := e.b.RecallDetailed(e.ctx, []string{e.ns}, "wat doet pgvector eigenlijk", 10, RecallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !trace.Graph || len(trace.GraphEntities) != 1 || trace.GraphEntities[0] != "pgvector" {
+		t.Fatalf("trace graph = %v, entities = %v, want graph on and [pgvector]", trace.Graph, trace.GraphEntities)
+	}
+	byID := map[int64]RecallResult{}
+	for _, r := range res {
+		if r.FactID != nil {
+			byID[*r.FactID] = r
+		}
+	}
+	d, ok := byID[direct]
+	if !ok || d.Trace.GraphRank != 1 || d.Trace.GraphScore != 1 {
+		t.Fatalf("fact about the named entity = %+v, want graph rank 1, score 1", d.Trace)
+	}
+	n, ok := byID[neighbour]
+	if !ok || n.Trace.GraphRank != 2 || n.Trace.GraphScore <= 0 || n.Trace.GraphScore > 0.5 {
+		t.Fatalf("fact about the neighbour = %+v, want graph rank 2, score in (0, 0.5]", n)
+	}
+	for _, r := range res {
+		if r.Content == "Panelen staan op de monitoringpagina." && r.Trace.GraphRank != 0 {
+			t.Errorf("an unrelated entity must not be reached by the graph arm: %+v", r.Trace)
+		}
+	}
+}
+
+// With the flag off, the graph arm does not run and the ranking is the old one.
+func TestIntegrationGraphRecallOffIsTheOldBehaviour(t *testing.T) {
+	e := newEnv(t, nil)
+	e.insertEntityFact(t, "pgvector", "De extensie levert HNSW-indexen voor nabijheidszoeken.", 0.8)
+	_, trace, err := e.b.RecallDetailed(e.ctx, []string{e.ns}, "wat doet pgvector eigenlijk", 10, RecallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trace.Graph || len(trace.GraphEntities) != 0 {
+		t.Errorf("graph arm ran with the flag off: %+v", trace)
+	}
+}
+
+// Entity names that are regular-expression syntax must match literally, and a
+// name inside another word must not match at all.
+func TestIntegrationGraphEntityMatchingIsLiteralAndWordBound(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.GraphRecall = true })
+	e.insertEntityFact(t, "C++ (stl)", "De standaardbibliotheek heeft containers.", 0.8)
+	e.insertEntityFact(t, "app", "Een korte entiteitsnaam.", 0.8)
+	e.insertEntityFact(t, "Bojanni050/cortexiq", "De repository staat op GitHub.", 0.8)
+
+	_, trace, err := e.b.RecallDetailed(e.ctx, []string{e.ns}, "vertel over c++ (stl) en de application server en Bojanni050/cortexiq", 10, RecallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, n := range trace.GraphEntities {
+		got[n] = true
+	}
+	if !got["c++ (stl)"] || !got["bojanni050/cortexiq"] {
+		t.Errorf("literal entity names not matched: %v", trace.GraphEntities)
+	}
+	if got["app"] {
+		t.Errorf("'app' matched inside 'application': %v", trace.GraphEntities)
+	}
+}
+
+// Another namespace's graph must not leak into this namespace's recall.
+func TestIntegrationGraphRecallStaysInItsNamespace(t *testing.T) {
+	a := newEnv(t, func(c *Config) { c.GraphRecall = true })
+	a.insertEntityFact(t, "pgvector", "Feit in namespace A.", 0.8)
+	b := newEnv(t, func(c *Config) { c.GraphRecall = true })
+
+	res, trace, err := b.b.RecallDetailed(b.ctx, []string{b.ns}, "wat doet pgvector", 10, RecallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(trace.GraphEntities) != 0 {
+		t.Errorf("entities from another namespace were matched: %v", trace.GraphEntities)
+	}
+	for _, r := range res {
+		if r.Content == "Feit in namespace A." {
+			t.Errorf("a fact from another namespace was recalled: %+v", r)
+		}
+	}
+}
+
+// EvalGraph runs end to end, compares both modes, and leaves nothing behind.
+func TestIntegrationEvalGraphRunsAndCleansUp(t *testing.T) {
+	e := newEnv(t, nil)
+	cf, _ := os.Open("../../eval/graph_corpus.jsonl")
+	defer cf.Close()
+	facts, rels, err := LoadGraphCorpus(cf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	qf, _ := os.Open("../../eval/graph_queries.jsonl")
+	defer qf.Close()
+	qs, err := LoadGraphQueries(qf, facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := e.b.EvalGraph(e.ctx, facts, rels, qs, RecallEvalOptions{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Facts != len(facts) || rep.Without.Overall.Questions != len(qs) || rep.With.Overall.Questions != len(qs) {
+		t.Errorf("report = %d facts, %d/%d questions", rep.Facts, rep.Without.Overall.Questions, rep.With.Overall.Questions)
+	}
+	// The temporary namespace is gone, and with it its facts and relationships.
+	var n int
+	if err := e.b.pool.QueryRow(e.ctx, `SELECT count(*) FROM namespaces WHERE slug LIKE '/eval/graph-%'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("%d /eval/graph-* namespaces left behind", n)
+	}
+}

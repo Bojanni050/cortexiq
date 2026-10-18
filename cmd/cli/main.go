@@ -214,6 +214,17 @@ func main() {
 						},
 					},
 					{
+						Name:   "graph",
+						Usage:  "Recall with and without the graph arm over labelled facts, entities and relationships, in a temporary namespace",
+						Action: evalGraphCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "corpus", Value: "eval/graph_corpus.jsonl", Usage: "JSON Lines facts (with entity) and relationships"},
+							&cli.StringFlag{Name: "queries", Value: "eval/graph_queries.jsonl", Usage: "JSON Lines questions with the expected fact ids"},
+							&cli.IntFlag{Name: "limit", Value: 10, Usage: "Results per question (k)"},
+							&cli.BoolFlag{Name: "keep", Usage: "Keep the temporary /eval/ namespace afterwards"},
+						},
+					},
+					{
 						Name:   "dedup",
 						Usage:  "Cosine distribution and threshold sweep over labelled fact pairs",
 						Action: evalDedupCmd,

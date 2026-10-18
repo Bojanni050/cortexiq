@@ -1,0 +1,22 @@
+{"id":"g01","kind":"direct","query":"Welke indexsoort gebruikt pgvector?","expect":["f01"]}
+{"id":"g02","kind":"direct","query":"Hoeveel dimensies hebben de pgvector-kolommen?","expect":["f02"]}
+{"id":"g03","kind":"direct","query":"What languages can bge-m3 handle?","expect":["f05"]}
+{"id":"g04","kind":"direct","query":"Which port does Ollama use?","expect":["f07"]}
+{"id":"g05","kind":"direct","query":"Hoe vaak scrapet Prometheus?","expect":["f18"]}
+{"id":"g06","kind":"direct","query":"Hoe komt Hermes aan zijn geheugen?","expect":["f23"]}
+{"id":"g07","kind":"neighbour","query":"Waar worden de pgvector-gegevens bewaard?","expect":["f03","f04"]}
+{"id":"g08","kind":"neighbour","query":"Hoe worden de embeddings van CortexIQ berekend?","expect":["f06"]}
+{"id":"g09","kind":"neighbour","query":"Welke poort gebruikt de dienst waarop bge-m3 draait?","expect":["f07"]}
+{"id":"g10","kind":"neighbour","query":"Wat doet Grafana met de Prometheus-gegevens?","expect":["f17"]}
+{"id":"g11","kind":"neighbour","query":"Hoe is CortexIQ van buitenaf bereikbaar?","expect":["f19","f20"]}
+{"id":"g12","kind":"distractor","query":"Op welke poort luistert de MCP-server van CortexIQ?","expect":["f10"]}
+{"id":"g13","kind":"distractor","query":"Hoe verouderen facts in CortexIQ?","expect":["f15"]}
+{"id":"g14","kind":"distractor","query":"Wat doet de consolidatie in CortexIQ?","expect":["f11"]}
+{"id":"g15","kind":"distractor","query":"Waar vind ik de interface van CortexIQ?","expect":["f14"]}
+{"id":"g16","kind":"distractor","query":"How does CortexIQ merge duplicate facts?","expect":["f16"]}
+{"id":"g17","kind":"control","query":"Welke indexsoort gebruikt de vectorextensie?","expect":["f01"]}
+{"id":"g18","kind":"control","query":"Which port serves the metrics?","expect":["f09"]}
+{"id":"g19","kind":"control","query":"Wordt er een back-up gemaakt van de database?","expect":["f04"]}
+{"id":"g20","kind":"control","query":"Waar staat de productieconfiguratie?","expect":["f21"]}
+{"id":"g21","kind":"control","query":"Hoe herstarten de services na een crash?","expect":["f22"]}
+{"id":"g22","kind":"control","query":"Welke certificaten regelt de reverse proxy?","expect":["f19"]}
