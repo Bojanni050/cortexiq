@@ -92,3 +92,77 @@ WHERE deleted_at IS NULL
 ORDER BY score DESC, id DESC
 LIMIT {{.Bind .Args.limit}}
 {{end}}
+
+{{define "graph_matched"}}
+SELECT DISTINCT lower(e) AS name
+FROM (
+    SELECT entity AS e FROM facts
+    WHERE entity IS NOT NULL AND deleted_at IS NULL
+{{if .Args.namespace_ids}}
+        AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
+{{end}}
+    UNION
+    SELECT from_entity FROM relationships
+    WHERE deleted_at IS NULL
+{{if .Args.namespace_ids}}
+        AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
+{{end}}
+    UNION
+    SELECT to_entity FROM relationships
+    WHERE deleted_at IS NULL
+{{if .Args.namespace_ids}}
+        AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
+{{end}}
+) known
+WHERE length(e) >= 3
+    AND lower({{.Bind .Args.query}}) ~ ('\m' || regexp_replace(lower(e), '([.*+?^${}()|\[\]\\])', '\\\1', 'g') || '\M')
+{{end}}
+
+{{define "recall_matched_entities"}}
+{{template "graph_matched" .}}
+ORDER BY name
+{{end}}
+
+{{define "recall_facts_graph"}}
+WITH matched AS (
+{{template "graph_matched" .}}
+),
+neighbours AS (
+    SELECT lower(CASE WHEN lower(r.from_entity) IN (SELECT name FROM matched) THEN r.to_entity ELSE r.from_entity END) AS name,
+           max(r.confidence) AS rel_conf
+    FROM relationships r
+    WHERE r.deleted_at IS NULL
+{{if .Args.namespace_ids}}
+        AND r.namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
+{{end}}
+        AND (lower(r.from_entity) IN (SELECT name FROM matched) OR lower(r.to_entity) IN (SELECT name FROM matched))
+    GROUP BY 1
+),
+candidates AS (
+    SELECT f.id, f.namespace_id, f.content, f.confidence, f.created_at, f.importance,
+           0 AS hop, 1.0::real AS arm_score
+    FROM facts f
+    WHERE lower(f.entity) IN (SELECT name FROM matched)
+    UNION ALL
+    SELECT f.id, f.namespace_id, f.content, f.confidence, f.created_at, f.importance,
+           1 AS hop, (n.rel_conf * 0.5)::real AS arm_score
+    FROM facts f
+    JOIN neighbours n ON lower(f.entity) = n.name
+    WHERE lower(f.entity) NOT IN (SELECT name FROM matched)
+)
+SELECT c.id, c.namespace_id, c.content, c.confidence, c.created_at, c.importance, c.arm_score AS score
+FROM candidates c
+JOIN facts f ON f.id = c.id
+WHERE f.deleted_at IS NULL
+{{if .Args.as_of}}
+    AND COALESCE(f.valid_from, f.created_at) <= {{.Bind .Args.as_of}}
+    AND (f.valid_until IS NULL OR f.valid_until > {{.Bind .Args.as_of}})
+{{else}}
+    AND (f.valid_until IS NULL OR f.valid_until > now())
+{{end}}
+{{if .Args.namespace_ids}}
+    AND f.namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
+{{end}}
+ORDER BY c.hop, c.confidence DESC, c.id DESC
+LIMIT {{.Bind .Args.limit}}
+{{end}}

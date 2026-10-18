@@ -91,6 +91,10 @@ type Config struct {
 	ExtractionMinChars int `env:"CORTEXIQ_EXTRACTION_MIN_CHARS" envDefault:"24"`
 	// HybridRecall adds full-text search to recall (fused with the vector ranking).
 	HybridRecall bool `env:"CORTEXIQ_HYBRID_RECALL" envDefault:"true"`
+	// GraphRecall adds a graph arm to fact recall: facts about an entity the query
+	// names and about its direct neighbours in the relationship graph, fused with
+	// the vector and keyword arms. Requires HybridRecall. Off until measured.
+	GraphRecall bool `env:"CORTEXIQ_GRAPH_RECALL" envDefault:"false"`
 	// RecallMinSimilarity drops vector-only recall results below this cosine
 	// similarity (results confirmed by keyword search always stay). 0 = off. The
 	// right value depends on the embedding model: measure relevant vs irrelevant

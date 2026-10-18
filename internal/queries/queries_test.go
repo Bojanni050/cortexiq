@@ -1,6 +1,7 @@
 package queries
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/pgvector/pgvector-go"
@@ -84,3 +85,51 @@ func TestRecallAsOfTemplatesRender(t *testing.T) {
 		t.Errorf("episodes as-of: args=%d sql=\n%s", len(args), sql)
 	}
 }
+
+// The graph templates share one entity-matching template; placeholders and
+// args must stay in step with and without namespaces and a point in time.
+func TestRecallGraphTemplatesRender(t *testing.T) {
+	q, err := New()
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	asOf := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+
+	sql, args, err := q.RecallFactsGraph([]int64{1, 2}, "welke poort draait cortexiq", 30, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sql, "WITH matched AS") || !strings.Contains(sql, "neighbours") {
+		t.Errorf("unexpected SQL:\n%s", sql)
+	}
+	// Every $N must have an argument and every argument a $N.
+	for i := range args {
+		if !strings.Contains(sql, "$"+itoa(i+1)) {
+			t.Errorf("argument %d is never used:\n%s", i+1, sql)
+		}
+	}
+	if strings.Contains(sql, "$"+itoa(len(args)+1)) {
+		t.Errorf("placeholder beyond the %d arguments:\n%s", len(args), sql)
+	}
+
+	withAsOf, argsAsOf, err := q.RecallFactsGraph(nil, "cortexiq", 10, &asOf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(withAsOf, "COALESCE(f.valid_from, f.created_at)") || strings.Contains(withAsOf, "namespace_id IN") {
+		t.Errorf("as-of without namespaces rendered wrongly:\n%s", withAsOf)
+	}
+	if len(argsAsOf) == 0 {
+		t.Error("no arguments bound")
+	}
+
+	sql, args, err = q.RecallMatchedEntities([]int64{3}, "pgvector")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sql, "ORDER BY name") || len(args) == 0 {
+		t.Errorf("matched entities rendered wrongly (%d args):\n%s", len(args), sql)
+	}
+}
+
+func itoa(i int) string { return strconv.Itoa(i) }

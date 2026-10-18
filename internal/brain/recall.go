@@ -51,7 +51,8 @@ type RecallResult struct {
 	refTime time.Time
 	// Rank bookkeeping for Trace, filled in by fuse and applyBoosts.
 	vecRank, kwRank       int
-	kwScore               float32
+	graphRank             int
+	kwScore, graphScore   float32
 	fusedScore            float32
 	recencyF, importanceF float64
 }
@@ -91,6 +92,7 @@ func (b *Brain) RecallAsOf(ctx context.Context, namespaces []string, query strin
 func (b *Brain) recall(ctx context.Context, namespaces []string, query string, limit int, opts RecallOptions, tr *RecallTrace) ([]RecallResult, error) {
 	asOf := opts.AsOf
 	facts, episodes := opts.includes()
+	graph := b.config.GraphRecall && b.config.HybridRecall
 	if err := validateContent(query); err != nil {
 		return nil, err
 	}
@@ -135,7 +137,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 	}
 
 	if tr != nil {
-		tr.Query, tr.KeywordQuery, tr.Hybrid, tr.Limit, tr.Candidates = query, kwQuery, kwQuery != "", limit, candidates
+		tr.Query, tr.KeywordQuery, tr.Hybrid, tr.Graph, tr.Limit, tr.Candidates = query, kwQuery, kwQuery != "", graph, limit, candidates
 		tr.Namespaces, tr.NamespaceIDs = namespaces, len(nsIDs)
 		if asOf != nil {
 			tr.AsOf = asOf.Format(time.RFC3339)
@@ -158,7 +160,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		}
 		stage("facts_vector", len(factVec))
 
-		var factKw []RecallResult
+		var factKw, factGraph []RecallResult
 		if kwQuery != "" {
 			kwSQL, kwArgs, err := b.queries.RecallFactsKeyword(nsIDs, kwQuery, candidates, asOf)
 			if err != nil {
@@ -169,7 +171,24 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			}
 			stage("facts_keyword", len(factKw))
 		}
-		results = fuse(factVec, factKw, candidates, kwQuery != "", b.config.MinRecallSimilarity)
+		if graph {
+			graphSQL, graphArgs, err := b.queries.RecallFactsGraph(nsIDs, query, candidates, asOf)
+			if err != nil {
+				return nil, fmt.Errorf("build fact graph query: %w", err)
+			}
+			if factGraph, err = b.runRecall(ctx, graphSQL, graphArgs, "fact"); err != nil {
+				return nil, fmt.Errorf("graph query facts: %w", err)
+			}
+			stage("facts_graph", len(factGraph))
+			if tr != nil {
+				tr.GraphEntities = b.matchedEntities(ctx, nsIDs, query)
+			}
+		}
+		if graph {
+			results = fuseArms([]rankedArm{{"vector", factVec}, {"keyword", factKw}, {"graph", factGraph}}, 3, candidates, b.config.MinRecallSimilarity)
+		} else {
+			results = fuse(factVec, factKw, candidates, kwQuery != "", b.config.MinRecallSimilarity)
+		}
 		results = b.applyBoosts(results, limit, now)
 		stage("facts_fused", len(results))
 	}
@@ -204,7 +223,14 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			}
 			stage("episodes_keyword", len(epKw))
 		}
-		eps := fuse(epVec, epKw, epCandidates, kwQuery != "", b.config.MinRecallSimilarity)
+		var eps []RecallResult
+		if graph {
+			// Episodes carry no entity, so the graph arm never ranks them; they are
+			// scored on the same scale as facts so the two stay comparable.
+			eps = fuseArms([]rankedArm{{"vector", epVec}, {"keyword", epKw}}, 3, epCandidates, b.config.MinRecallSimilarity)
+		} else {
+			eps = fuse(epVec, epKw, epCandidates, kwQuery != "", b.config.MinRecallSimilarity)
+		}
 		results = append(results, b.applyBoosts(eps, episodeLimit, now)...)
 		stage("episodes_fused", len(eps))
 	}
@@ -376,15 +402,33 @@ func fuse(vec, kw []RecallResult, limit int, hybrid bool, minSimilarity float32)
 		return truncate(relevant(vec, minSimilarity), limit)
 	}
 
+	return fuseArms([]rankedArm{{"vector", vec}, {"keyword", kw}}, 2, limit, minSimilarity)
+}
+
+// rankedArm is one ranking, best first, that reciprocal rank fusion combines.
+type rankedArm struct {
+	name    string // "vector", "keyword" or "graph"
+	results []RecallResult
+}
+
+// fuseArms merges the arms with reciprocal rank fusion. scaleArms is how many
+// arms a result could be ranked first in: the best possible score (rank 1 in all
+// of them) becomes 1. It is a property of the configuration, not of the query,
+// so a score means the same thing whether or not an arm found anything.
+func fuseArms(arms []rankedArm, scaleArms, limit int, minSimilarity float32) []RecallResult {
 	type entry struct {
 		res   RecallResult
 		score float64
 	}
-	entries := make(map[int64]*entry, len(vec)+len(kw))
+	var size int
+	for _, a := range arms {
+		size += len(a.results)
+	}
+	entries := make(map[int64]*entry, size)
 	var order []int64
 
-	add := func(list []RecallResult, match string) {
-		for rank, r := range list {
+	for _, arm := range arms {
+		for rank, r := range arm.results {
 			e, ok := entries[r.ID]
 			if !ok {
 				e = &entry{res: r}
@@ -394,23 +438,23 @@ func fuse(vec, kw []RecallResult, limit int, hybrid bool, minSimilarity float32)
 			e.score += 1.0 / float64(rrfK+rank+1)
 			switch {
 			case e.res.Match == "":
-				e.res.Match = match
-			case e.res.Match != match:
+				e.res.Match = arm.name
+			case e.res.Match != arm.name:
 				e.res.Match = "hybrid"
 			}
-			if match == "vector" {
+			switch arm.name {
+			case "vector":
 				e.res.Similarity = r.Score
 				e.res.vecRank = rank + 1
-			} else {
+			case "keyword":
 				e.res.kwRank, e.res.kwScore = rank+1, r.Score
+			case "graph":
+				e.res.graphRank, e.res.graphScore = rank+1, r.Score
 			}
 		}
 	}
-	add(vec, "vector")
-	add(kw, "keyword")
 
-	// Best possible score: rank 1 in both lists.
-	best := 2.0 / float64(rrfK+1)
+	best := float64(scaleArms) / float64(rrfK+1)
 	out := make([]RecallResult, 0, len(order))
 	for _, id := range order {
 		e := entries[id]

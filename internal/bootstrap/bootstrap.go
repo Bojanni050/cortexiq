@@ -120,6 +120,7 @@ func New(ctx context.Context) (*Context, error) {
 		RelationshipBatchSize:          cfg.RelationshipBatchSize,
 		MaxLLMCallsPerRun:              cfg.MaxLLMCallsPerRun,
 		HybridRecall:                   cfg.HybridRecall,
+		GraphRecall:                    cfg.GraphRecall,
 		MinRecallSimilarity:            cfg.RecallMinSimilarity,
 		RecencyWeight:                  cfg.RecallRecencyWeight,
 		RecencyHalfLife:                cfg.RecallRecencyHalfLife,

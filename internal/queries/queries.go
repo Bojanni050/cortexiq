@@ -75,6 +75,21 @@ func (q *Queries) RecallFactsKeyword(namespaceIDs []int64, query string, limit i
 	return q.tpl.Execute("recall_facts_keyword", keywordArgs(namespaceIDs, query, limit, asOf))
 }
 
+// RecallFactsGraph returns SQL + args for the graph arm of fact recall: facts
+// about an entity the query names, then facts about its direct neighbours in
+// the relationship graph. Rows have the columns of RecallFacts; the score is 1
+// for a named entity and at most 0.5 for a neighbour, and rows come ordered
+// best first, which is the only thing fusion uses.
+func (q *Queries) RecallFactsGraph(namespaceIDs []int64, query string, limit int, asOf *time.Time) (string, []any, error) {
+	return q.tpl.Execute("recall_facts_graph", keywordArgs(namespaceIDs, query, limit, asOf))
+}
+
+// RecallMatchedEntities returns SQL + args for the entity names (lower case)
+// that a query names. It is what the graph arm starts from.
+func (q *Queries) RecallMatchedEntities(namespaceIDs []int64, query string) (string, []any, error) {
+	return q.tpl.Execute("recall_matched_entities", keywordArgs(namespaceIDs, query, 0, nil))
+}
+
 func keywordArgs(namespaceIDs []int64, query string, limit int, asOf *time.Time) map[string]any {
 	args := map[string]any{
 		"query": query,

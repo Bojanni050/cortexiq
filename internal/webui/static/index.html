@@ -492,8 +492,9 @@ async function doRecall() {
   try {
     const res = await api('/recall', { method: 'POST', body: JSON.stringify(body) });
     const results = (res && res.results) || [];
+    const graph = !!(res && res.trace && res.trace.graph);
     document.getElementById('recall-out').innerHTML = recallTraceCard(res && res.trace) + table(
-      ['#', 'Type', 'Content', 'Score', 'Vector (cosine)', 'Keyword (ts_rank)', 'Fused', 'Boost', 'When'],
+      ['#', 'Type', 'Content', 'Score', 'Vector (cosine)', 'Keyword (ts_rank)'].concat(graph ? ['Graph'] : [], ['Fused', 'Boost', 'When']),
       results.map((r, i) => {
         const t = r.trace || {};
         const boost = (t.recency_factor != null && (t.recency_factor !== 1 || t.importance_factor !== 1))
@@ -501,7 +502,7 @@ async function doRecall() {
         return `<tr><td class="muted">${i + 1}</td>
           <td><span class="badge pending">${esc(r.type)}</span></td><td class="wrap" style="min-width:280px">${esc(r.content)}</td>
           <td>${pct(r.score)}</td><td>${armCell(t.vector_rank, t.vector_similarity, 3)}</td>
-          <td>${armCell(t.keyword_rank, t.keyword_score, 3)}</td><td class="mono">${(t.fused_score || 0).toFixed(3)}</td>
+          <td>${armCell(t.keyword_rank, t.keyword_score, 3)}</td>${graph ? `<td>${armCell(t.graph_rank, t.graph_score, 2)}</td>` : ''}<td class="mono">${(t.fused_score || 0).toFixed(3)}</td>
           <td class="muted">${boost}</td><td class="muted">${ts(r.occurred_at || r.created_at)}</td></tr>`;
       }));
   } catch (e) { toast(e.message, true); }
@@ -517,12 +518,13 @@ function recallTraceCard(tr) {
   if (tr.importance_weight > 0) weights.push(`importance ${tr.importance_weight}`);
   return `<div class="card"><h3>How this recall ran</h3>
     <div class="muted" style="margin-bottom:10px">
-      ${tr.hybrid ? 'Hybrid: vector + keyword, reciprocal rank fusion (k=' + tr.rrf_k + ')' : 'Vector only (no usable keyword terms or hybrid recall is off)'} ·
+      ${tr.hybrid ? 'Hybrid: vector + keyword' + (tr.graph ? ' + graph' : '') + ', reciprocal rank fusion (k=' + tr.rrf_k + ')' : 'Vector only (no usable keyword terms or hybrid recall is off)'} ·
       ${tr.candidates} candidates per arm · min similarity ${tr.min_similarity} · ${tr.namespace_ids} namespace${tr.namespace_ids === 1 ? '' : 's'}
       ${tr.as_of ? ' · as of ' + esc(ts(tr.as_of)) : ''}${weights.length ? ' · ' + weights.join(', ') : ' · no recency or importance weighting'}
       · total ${tr.total_ms.toFixed(1)} ms
     </div>
     ${tr.keyword_query ? `<div style="margin-bottom:10px">Keyword query: <span class="mono">${esc(tr.keyword_query)}</span></div>` : ''}
+    ${tr.graph ? `<div style="margin-bottom:10px">Entities named in the query: ${(tr.graph_entities || []).length ? (tr.graph_entities || []).map(e => `<span class="badge pending">${esc(e)}</span>`).join(' ') : '<span class="muted">none: the graph arm had nothing to start from</span>'}</div>` : ''}
     <div style="display:flex;flex-wrap:wrap;gap:6px">${steps}</div></div>`;
 }
 

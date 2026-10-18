@@ -312,3 +312,49 @@ func TestRecallTraceStagesAreRecordedInOrder(t *testing.T) {
 		t.Errorf("stages = %+v", tr.Stages)
 	}
 }
+
+func TestFuseArmsGraphArmAddsRankAndKeepsScaleFixed(t *testing.T) {
+	vec := rr(1, 2)
+	kw := rr(2)
+	graph := rr(7, 1) // 7 is found by the graph arm alone
+
+	got := fuseArms([]rankedArm{{"vector", vec}, {"keyword", kw}, {"graph", graph}}, 3, 10, 0.9)
+	byID := map[int64]RecallResult{}
+	for _, r := range got {
+		byID[r.ID] = r
+	}
+	if r := byID[7]; r.Match != "graph" || r.graphRank != 1 || r.vecRank != 0 {
+		t.Errorf("graph-only result = match %q, graph rank %d, vector rank %d", r.Match, r.graphRank, r.vecRank)
+	}
+	if byID[7].ID != 7 {
+		t.Fatal("a graph-only result must survive the similarity cutoff")
+	}
+	if r := byID[1]; r.Match != "hybrid" || r.vecRank != 1 || r.graphRank != 2 {
+		t.Errorf("id 1 = match %q, vector %d, graph %d, want hybrid, 1, 2", r.Match, r.vecRank, r.graphRank)
+	}
+
+	// The scale depends on the configuration, not on what the arms returned: a
+	// result ranked first everywhere scores 1, one ranked first by a single arm
+	// scores the same whether or not the other arms found anything.
+	all := fuseArms([]rankedArm{{"vector", rr(1)}, {"keyword", rr(1)}, {"graph", rr(1)}}, 3, 10, 0)
+	if math.Abs(float64(all[0].Score)-1) > 1e-6 {
+		t.Errorf("top of all three arms = %v, want 1", all[0].Score)
+	}
+	alone := fuseArms([]rankedArm{{"vector", rr(1)}, {"keyword", nil}, {"graph", nil}}, 3, 10, 0)
+	withEmpty := fuseArms([]rankedArm{{"vector", rr(1)}}, 3, 10, 0)
+	if alone[0].Score != withEmpty[0].Score {
+		t.Errorf("empty arms changed the scale: %v vs %v", alone[0].Score, withEmpty[0].Score)
+	}
+}
+
+func TestFuseTwoArmsIsUnchangedByTheGeneralisation(t *testing.T) {
+	// fuse delegates to fuseArms with scale 2: the pre-graph behaviour.
+	want := fuseArms([]rankedArm{{"vector", rr(1, 2)}, {"keyword", rr(1, 3)}}, 2, 10, 0)
+	got := fuse(rr(1, 2), rr(1, 3), 10, true, 0)
+	if !reflect.DeepEqual(ids(got), ids(want)) {
+		t.Errorf("fuse order %v, want %v", ids(got), ids(want))
+	}
+	if got[0].Score != 1 {
+		t.Errorf("top of both lists = %v, want 1", got[0].Score)
+	}
+}

@@ -41,9 +41,12 @@ type RecallStage struct {
 // RecallTrace explains one recall: the parameters it ran with and what each step
 // contributed. It is what the dashboard's recall analyzer shows.
 type RecallTrace struct {
-	Query         string   `json:"query"`
-	KeywordQuery  string   `json:"keyword_query,omitempty"`
-	Hybrid        bool     `json:"hybrid"`
+	Query        string `json:"query"`
+	KeywordQuery string `json:"keyword_query,omitempty"`
+	Hybrid       bool   `json:"hybrid"`
+	// Graph says the graph arm ran; GraphEntities are the entities the query named.
+	Graph         bool     `json:"graph"`
+	GraphEntities []string `json:"graph_entities,omitempty"`
 	Limit         int      `json:"limit"`
 	Candidates    int      `json:"candidates"`
 	Namespaces    []string `json:"namespaces"`
@@ -68,6 +71,10 @@ type ResultTrace struct {
 	VectorSimilarity float32 `json:"vector_similarity,omitempty"`
 	KeywordRank      int     `json:"keyword_rank,omitempty"`
 	KeywordScore     float32 `json:"keyword_score,omitempty"`
+	// GraphScore is 1 for a fact about an entity the query named and at most 0.5
+	// for a fact about a neighbour of such an entity.
+	GraphRank  int     `json:"graph_rank,omitempty"`
+	GraphScore float32 `json:"graph_score,omitempty"`
 	// FusedScore is the score after fusion and before recency and importance.
 	FusedScore       float32 `json:"fused_score"`
 	RecencyFactor    float32 `json:"recency_factor"`
@@ -78,6 +85,7 @@ func (r RecallResult) trace() *ResultTrace {
 	return &ResultTrace{
 		VectorRank: r.vecRank, VectorSimilarity: r.Similarity,
 		KeywordRank: r.kwRank, KeywordScore: r.kwScore,
+		GraphRank: r.graphRank, GraphScore: r.graphScore,
 		FusedScore:    r.fusedScore,
 		RecencyFactor: float32(r.recencyF), ImportanceFactor: float32(r.importanceF),
 	}
@@ -114,4 +122,26 @@ func (b *Brain) RecallDetailed(ctx context.Context, namespaces []string, query s
 		return nil, nil, err
 	}
 	return results, tr, nil
+}
+
+// matchedEntities lists the entities a query names. It only feeds the trace, so
+// a failure leaves the list empty instead of failing the recall.
+func (b *Brain) matchedEntities(ctx context.Context, nsIDs []int64, query string) []string {
+	sql, args, err := b.queries.RecallMatchedEntities(nsIDs, query)
+	if err != nil {
+		return nil
+	}
+	rows, err := b.pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var n string
+		if rows.Scan(&n) == nil {
+			names = append(names, n)
+		}
+	}
+	return names
 }
