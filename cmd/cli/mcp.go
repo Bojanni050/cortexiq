@@ -408,7 +408,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			Offset: request.GetInt("offset", 0),
 		}
 
-		contradictions, err := bc.Brain.ListContradictions(ctx, namespaces, page)
+		contradictions, err := bc.Brain.ListContradictions(ctx, namespaces, "", page)
 		if err != nil {
 			return nil, err
 		}

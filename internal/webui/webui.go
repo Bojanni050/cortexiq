@@ -144,6 +144,8 @@ func errStatus(err error) int {
 		errors.Is(err, brain.ErrNamespacesRequired),
 		errors.Is(err, brain.ErrNamespaceNotFound):
 		return http.StatusBadRequest
+	case errors.Is(err, brain.ErrResolutionRequired):
+		return http.StatusBadRequest
 	case errors.Is(err, brain.ErrReadOnly):
 		return http.StatusForbidden
 	default:
@@ -748,11 +750,11 @@ func (h *Handler) contradictions(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
 		return
 	}
-	items, err := h.Brain.ListContradictions(r.Context(), namespacesParam(r), pagination(r))
+	items, err := h.Brain.ListContradictions(r.Context(), namespacesParam(r), r.URL.Query().Get("status"), pagination(r))
 	if !hdl(w, err) {
 		return
 	}
-	n, err := h.Brain.CountContradictions(r.Context(), namespacesParam(r))
+	n, err := h.Brain.CountContradictions(r.Context(), namespacesParam(r), r.URL.Query().Get("status"))
 	if !hdl(w, err) {
 		return
 	}
@@ -785,6 +787,15 @@ func (h *Handler) contradictionItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "resolved"})
+	case "unresolve":
+		if r.Method != http.MethodPost {
+			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+			return
+		}
+		if !hdl(w, h.Brain.UnresolveContradiction(r.Context(), id)) {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "open"})
 	default:
 		writeErr(w, http.StatusNotFound, errors.New("not found"))
 	}

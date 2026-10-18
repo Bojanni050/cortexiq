@@ -4,6 +4,7 @@ package brain
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Bojanni050/cortexiq/internal/models"
@@ -134,18 +135,35 @@ func (b *Brain) recordContradiction(ctx context.Context, nsID, oldFactID, newFac
 	return nil
 }
 
-// CountContradictions counts the unresolved contradictions ListContradictions
-// would return, ignoring paging.
-func (b *Brain) CountContradictions(ctx context.Context, namespaceSlugs []string) (int, error) {
+// contradictionWhere builds the filter ListContradictions and CountContradictions
+// share: "open" shows unresolved ones, "resolved" only resolved ones, anything
+// else shows both.
+func contradictionWhere(nsIDs []int64, status string) (string, []any) {
+	where := "namespace_id = ANY($1)"
+	args := []any{nsIDs}
+	switch status {
+	case "open":
+		where += " AND resolved = FALSE"
+	case "resolved":
+		where += " AND resolved = TRUE"
+	}
+	return where, args
+}
+
+// CountContradictions counts the contradictions ListContradictions would
+// return for the same status filter, ignoring paging.
+func (b *Brain) CountContradictions(ctx context.Context, namespaceSlugs []string, status string) (int, error) {
 	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
 	if err != nil {
 		return 0, err
 	}
-	return b.countWhere(ctx, "contradictions", "namespace_id = ANY($1) AND resolved = FALSE", nsIDs)
+	where, args := contradictionWhere(nsIDs, status)
+	return b.countWhere(ctx, "contradictions", where, args...)
 }
 
-// ListContradictions returns unresolved contradictions for namespaces matching the given paths.
-func (b *Brain) ListContradictions(ctx context.Context, namespaceSlugs []string, page Pagination) ([]models.Contradiction, error) {
+// ListContradictions returns contradictions for namespaces matching the given
+// paths, filtered by status ("open", "resolved" or both when empty).
+func (b *Brain) ListContradictions(ctx context.Context, namespaceSlugs []string, status string, page Pagination) ([]models.Contradiction, error) {
 	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
 	if err != nil {
 		return nil, err
@@ -153,13 +171,13 @@ func (b *Brain) ListContradictions(ctx context.Context, namespaceSlugs []string,
 
 	page = page.Sanitize()
 
-	rows, err := b.pool.Query(ctx,
-		`SELECT id, namespace_id, old_fact_id, new_fact_id, entity, property, old_value, new_value,
+	where, args := contradictionWhere(nsIDs, status)
+	query := `SELECT id, namespace_id, old_fact_id, new_fact_id, entity, property, old_value, new_value,
 		 confidence, method, resolved, resolution, resolved_at, created_at
-		 FROM contradictions WHERE namespace_id = ANY($1) AND resolved = FALSE
-		 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
-		nsIDs, page.Limit, page.Offset,
-	)
+		 FROM contradictions WHERE ` + where +
+		fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	args = append(args, page.Limit, page.Offset)
+	rows, err := b.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list contradictions: %w", err)
 	}
@@ -181,8 +199,17 @@ func (b *Brain) ListContradictions(ctx context.Context, namespaceSlugs []string,
 	return result, rows.Err()
 }
 
-// ResolveContradiction marks a contradiction as resolved with the given resolution.
+// ErrResolutionRequired rejects a resolve without a note: a resolution that
+// does not say why is a verdict nobody can check later.
+var ErrResolutionRequired = fmt.Errorf("brain: a resolution note is required")
+
+// ResolveContradiction marks a contradiction as resolved with the given
+// resolution. An empty note is refused, so a stray click can never make a
+// contradiction disappear silently.
 func (b *Brain) ResolveContradiction(ctx context.Context, id int64, resolution string) error {
+	if strings.TrimSpace(resolution) == "" {
+		return ErrResolutionRequired
+	}
 	now := time.Now().UTC()
 
 	tag, err := b.pool.Exec(ctx,
@@ -191,6 +218,23 @@ func (b *Brain) ResolveContradiction(ctx context.Context, id int64, resolution s
 	)
 	if err != nil {
 		return fmt.Errorf("resolve contradiction: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrContradictionNotFound
+	}
+	return nil
+}
+
+// UnresolveContradiction reopens a resolved contradiction. The resolution note
+// is kept: it says why it was resolved, which is exactly what you want to read
+// before deciding that it should not have been.
+func (b *Brain) UnresolveContradiction(ctx context.Context, id int64) error {
+	tag, err := b.pool.Exec(ctx,
+		`UPDATE contradictions SET resolved = FALSE, resolved_at = NULL WHERE id = $1`,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("unresolve contradiction: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrContradictionNotFound

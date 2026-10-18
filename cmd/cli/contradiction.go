@@ -17,7 +17,7 @@ func contradictionsListCmd(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	bc := getBootstrap(cmd)
-	contradictions, err := bc.Brain.ListContradictions(ctx, namespaces, page)
+	contradictions, err := bc.Brain.ListContradictions(ctx, namespaces, "", page)
 	if err != nil {
 		return err
 	}

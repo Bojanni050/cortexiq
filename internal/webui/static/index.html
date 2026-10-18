@@ -719,7 +719,7 @@ async function renderContradictions() {
     ? `<span class="badge completed">resolved</span>${c.resolution ? `<div>${esc(c.resolution)}</div>` : ''}${c.resolved_at ? `<div class="muted">${ts(c.resolved_at)}</div>` : ''}`
     : '<span class="badge pending">open</span>';
   await listTab('contradictions', {
-    path: o => '/contradictions' + qs(o),
+    path: o => '/contradictions' + qs(o, '&status=' + encodeURIComponent(conStatus())),
     headers: ['About', 'Old', 'New', 'Namespace', 'Status', 'Confidence', 'Created', ''],
     fields: ['id', 'entity', 'property', 'old_value', 'new_value', 'resolution'],
     enrich: async () => {
@@ -734,15 +734,29 @@ async function renderContradictions() {
       <td class="wrap">${state_(c)}</td>
       <td>${pct(c.confidence)}</td>
       <td class="muted">${ts(c.created_at)}</td>
-      <td class="row-actions">${c.resolved ? '' : `<button onclick="conResolve(${c.id})">resolve</button>`}</td>
+      <td class="row-actions">${c.resolved ? `<button onclick="conUnresolve(${c.id})">reopen</button>` : `<button onclick="conResolve(${c.id})">resolve</button>`}</td>
     </tr>`,
+    actions: '<label class="muted">Status <select onchange="conSetStatus(this.value)">' +
+      '<option value="open"' + (conStatus() === 'open' ? ' selected' : '') + '>Open</option>' +
+      '<option value="resolved"' + (conStatus() === 'resolved' ? ' selected' : '') + '>Resolved</option>' +
+      '<option value=""' + (conStatus() === '' ? ' selected' : '') + '>All</option></select></label>',
   });
 }
 async function conResolve(id) {
-  const resolution = prompt('Resolution note:') || 'resolved via UI';
-  await api(`/contradictions/${id}/resolve`, { method: 'POST', body: JSON.stringify({ resolution }) });
+  // Cancel must mean cancel: no note, no resolve. The old fallback silently
+  // resolved on a stray click and the contradiction vanished from the list.
+  const resolution = prompt('Resolution note (required):');
+  if (resolution === null) return;
+  if (!resolution.trim()) { toast('A resolution note is required', true); return; }
+  await api(`/contradictions/${id}/resolve`, { method: 'POST', body: JSON.stringify({ resolution: resolution.trim() }) });
   refresh(); toast('Contradiction resolved');
 }
+async function conUnresolve(id) {
+  await api(`/contradictions/${id}/unresolve`, { method: 'POST' });
+  refresh(); toast('Contradiction reopened');
+}
+function conStatus() { return state.conStatus != null ? state.conStatus : 'open'; }
+function conSetStatus(v) { state.conStatus = v; goPage('contradictions', 0); }
 
 async function renderFailures() {
   const goalById = new Map();
