@@ -370,6 +370,7 @@ func (b *Brain) clusterEpisodes(episodes []models.Episode) [][]models.Episode {
 	}
 
 	clustered := make(map[int64]bool)
+	cache := make(trigramCache, len(episodes))
 	var clusters [][]models.Episode
 
 	for _, seed := range episodes {
@@ -385,7 +386,7 @@ func (b *Brain) clusterEpisodes(episodes []models.Episode) [][]models.Episode {
 			continue
 		}
 
-		for _, member := range b.clusterMembers(seed, episodes, clustered) {
+		for _, member := range b.clusterMembers(seed, episodes, clustered, cache) {
 			cluster = append(cluster, member)
 			clustered[member.ID] = true
 		}
@@ -411,7 +412,7 @@ func (b *Brain) clusterEpisodes(episodes []models.Episode) [][]models.Episode {
 // Every fact the call produces is linked to every episode in the cluster, so
 // widening a cluster widens provenance: keep the cap small, and remember that
 // it also truncates a semantic cluster that used to be larger.
-func (b *Brain) clusterMembers(seed models.Episode, episodes []models.Episode, clustered map[int64]bool) []models.Episode {
+func (b *Brain) clusterMembers(seed models.Episode, episodes []models.Episode, clustered map[int64]bool, cache trigramCache) []models.Episode {
 	seedVec := seed.Embedding.Slice()
 	threshold := float32(b.config.SimilarityThreshold)
 
@@ -443,7 +444,7 @@ func (b *Brain) clusterMembers(seed models.Episode, episodes []models.Episode, c
 		if clustered[candidate.ID] {
 			continue
 		}
-		if score := lexicalScore(seed.Content, candidate.Content); score > 0 {
+		if score := trigramJaccard(cache.of(seed), cache.of(candidate)); score > 0 {
 			lexical = append(lexical, clusterCandidate{episode: candidate, score: score})
 		}
 	}

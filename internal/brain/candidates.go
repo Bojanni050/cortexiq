@@ -87,7 +87,26 @@ func rankCandidates(candidates []clusterCandidate, limit int) []clusterCandidate
 // its wording. Trigrams rather than words, so inflections and typos still
 // count, and the score needs no model, no threshold and no database.
 func lexicalScore(a, b string) float32 {
-	ta, tb := trigrams(a), trigrams(b)
+	return trigramJaccard(trigrams(a), trigrams(b))
+}
+
+// trigramCache holds the trigram set of each episode of one clustering pass, so
+// an episode is tokenised once instead of once per seed. It lives only as long
+// as the pass (episode content does not change within it), so nothing needs
+// invalidating, and it stays out of the persisted Episode model.
+type trigramCache map[int64]map[string]bool
+
+func (c trigramCache) of(e models.Episode) map[string]bool {
+	if t, ok := c[e.ID]; ok {
+		return t
+	}
+	t := trigrams(e.Content)
+	c[e.ID] = t
+	return t
+}
+
+// trigramJaccard is the Jaccard similarity of two trigram sets, on 0..1.
+func trigramJaccard(ta, tb map[string]bool) float32 {
 	if len(ta) == 0 || len(tb) == 0 {
 		return 0
 	}

@@ -198,3 +198,22 @@ func TestClusterEpisodesKeepsSeedWithoutEmbedding(t *testing.T) {
 		t.Fatalf("clusters = %+v, want [1] then [2]", clusters)
 	}
 }
+
+func TestTrigramCacheMatchesLexicalScoreAndReuses(t *testing.T) {
+	a := models.Episode{ID: 1, Content: "CortexIQ draait op poort 9090"}
+	b := models.Episode{ID: 2, Content: "de poort van CortexIQ is 9090"}
+	cache := make(trigramCache)
+
+	want := lexicalScore(a.Content, b.Content)
+	if got := trigramJaccard(cache.of(a), cache.of(b)); got != want {
+		t.Fatalf("cached score = %v, want %v", got, want)
+	}
+	if len(cache) != 2 {
+		t.Fatalf("cache holds %d episodes, want 2", len(cache))
+	}
+	first := cache.of(a)
+	first["sentinel"] = true
+	if !cache.of(a)["sentinel"] {
+		t.Fatal("second lookup recomputed instead of reusing the cached set")
+	}
+}
