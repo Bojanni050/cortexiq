@@ -11,6 +11,7 @@ import (
 	"github.com/Bojanni050/cortexiq/internal/embedder"
 	"github.com/Bojanni050/cortexiq/internal/queries"
 	"github.com/Bojanni050/cortexiq/internal/reasoner"
+	"github.com/Bojanni050/cortexiq/internal/reranker"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -114,6 +115,13 @@ type Config struct {
 	// away: importance 0 keeps 1-ImportanceWeight of it, importance 1 keeps all.
 	// 0 disables importance weighting.
 	ImportanceWeight float64
+	// Reranker re-scores fused candidates against the query with a cross-
+	// encoder, after fusion and before recency and importance. nil = off, so a
+	// deployment without a reranker keeps the previous ranking exactly.
+	Reranker reranker.Reranker
+	// RerankCandidates caps how many fused candidates are re-scored; the rest
+	// keep their fused order behind them. 0 uses 100.
+	RerankCandidates int
 	// MinEpisodeLength is the shortest episode worth extracting facts from,
 	// measured in runes after trimming spaces. Below it an episode states nothing
 	// — one token, a greeting, a clipped acknowledgement — and the extractor

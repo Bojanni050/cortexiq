@@ -109,6 +109,18 @@ type Config struct {
 	// when they were remembered: importance 0 keeps 1-weight of the score,
 	// importance 1 keeps all of it. 0 = off (default, ranking unchanged).
 	RecallImportanceWeight float64 `env:"CORTEXIQ_RECALL_IMPORTANCE_WEIGHT" envDefault:"0"`
+	// RerankerBaseURL is a Cohere-compatible /rerank endpoint (Jina, SiliconFlow,
+	// Llama.cpp, Ollama). Used only when RerankerModel is set.
+	RerankerBaseURL string `env:"CORTEXIQ_RERANKER_BASE_URL" envDefault:""`
+	// RerankerAPIKey authenticates against the reranker endpoint.
+	RerankerAPIKey string `env:"CORTEXIQ_RERANKER_API_KEY" envDefault:""`
+	// RerankerModel is the cross-encoder that re-scores fused candidates, after
+	// reciprocal rank fusion and before recency and importance. Empty = off, so
+	// a deployment without a reranker keeps the previous ranking exactly.
+	RerankerModel string `env:"CORTEXIQ_RERANKER_MODEL" envDefault:""`
+	// RerankCandidates caps how many fused candidates are sent to the cross-
+	// encoder; the rest keep their fused order behind them. 0 uses 100.
+	RerankCandidates int `env:"CORTEXIQ_RERANK_CANDIDATES" envDefault:"100"`
 	// RelationshipBatchSize facts are sent per relationship-extraction LLM call.
 	// Keep it modest: the reply must fit in CORTEXIQ_REASONER_MAX_TOKENS.
 	RelationshipBatchSize int `env:"CORTEXIQ_RELATIONSHIP_BATCH_SIZE" envDefault:"5"`

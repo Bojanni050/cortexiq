@@ -1,12 +1,16 @@
 package brain
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/Bojanni050/cortexiq/internal/reranker"
 	"time"
 )
 
@@ -436,5 +440,90 @@ func TestCompareGraphRunsListsOnlyMovedQuestions(t *testing.T) {
 	got := CompareGraphRuns(without, with)
 	if len(got) != 2 || got[0].ID != "a" || got[0].RankWith != 2 || got[1].ID != "c" || got[1].RankWithout != 3 {
 		t.Errorf("changes = %+v", got)
+	}
+}
+
+// fakeReranker hands out fixed scores so the rerank plumbing can be tested
+// without a cross-encoder endpoint. nil scores mean "did not judge".
+type fakeReranker struct {
+	scores map[int]float32
+	err    error
+	calls  int
+}
+
+func (f *fakeReranker) Rerank(ctx context.Context, query string, candidates []reranker.Candidate) ([]reranker.Scored, error) {
+	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	var out []reranker.Scored
+	for i := range candidates {
+		if s, ok := f.scores[i]; ok {
+			out = append(out, reranker.Scored{Index: i, Score: s})
+		}
+	}
+	return out, nil
+}
+
+func TestRerankWithoutRerankerIsANoop(t *testing.T) {
+	b := &Brain{config: Config{}}
+	rs := []RecallResult{{ID: 1, Score: 0.9}, {ID: 2, Score: 0.8}}
+	got := b.rerank(context.Background(), "q", rs)
+	if len(got) != 2 || got[0].ID != 1 || got[1].ID != 2 {
+		t.Errorf("rerank without reranker = %+v, want unchanged", got)
+	}
+}
+
+func TestRerankReordersByCrossEncoderScore(t *testing.T) {
+	f := &fakeReranker{scores: map[int]float32{0: 0.1, 1: 0.9}}
+	b := &Brain{config: Config{Reranker: f}}
+	rs := []RecallResult{{ID: 1, Score: 0.9}, {ID: 2, Score: 0.8}}
+	got := b.rerank(context.Background(), "q", rs)
+	if got[0].ID != 2 || got[1].ID != 1 {
+		t.Errorf("rerank = [%d %d], want [2 1]", got[0].ID, got[1].ID)
+	}
+	if got[0].Score != 0.9 || got[1].Score != 0.1 {
+		t.Errorf("scores = [%v %v], want cross-encoder scores", got[0].Score, got[1].Score)
+	}
+	if f.calls != 1 {
+		t.Errorf("calls = %d, want 1", f.calls)
+	}
+}
+
+func TestRerankUnevaluatedCandidatesKeepOrderBehindRescored(t *testing.T) {
+	// The cross-encoder only judged index 1; index 0 and 2 keep their fused
+	// order behind the one rescored candidate.
+	f := &fakeReranker{scores: map[int]float32{1: 0.5}}
+	b := &Brain{config: Config{Reranker: f}}
+	rs := []RecallResult{{ID: 1, Score: 0.9}, {ID: 2, Score: 0.8}, {ID: 3, Score: 0.7}}
+	got := b.rerank(context.Background(), "q", rs)
+	if got[0].ID != 2 {
+		t.Errorf("first = %d, want 2", got[0].ID)
+	}
+	if got[1].ID != 1 || got[2].ID != 3 {
+		t.Errorf("rest = [%d %d], want [1 3]", got[1].ID, got[2].ID)
+	}
+}
+
+func TestRerankFailureFallsBackToFusedOrder(t *testing.T) {
+	f := &fakeReranker{err: errors.New("endpoint down")}
+	b := &Brain{config: Config{Reranker: f}}
+	rs := []RecallResult{{ID: 1, Score: 0.9}, {ID: 2, Score: 0.8}}
+	got := b.rerank(context.Background(), "q", rs)
+	if got[0].ID != 1 || got[1].ID != 2 {
+		t.Errorf("rerank on failure = %+v, want fused order", got)
+	}
+}
+
+func TestRerankCandidatesCapLimitsTheScoredPool(t *testing.T) {
+	f := &fakeReranker{scores: map[int]float32{0: 1.0}}
+	b := &Brain{config: Config{Reranker: f, RerankCandidates: 2}}
+	rs := []RecallResult{{ID: 1, Score: 0.9}, {ID: 2, Score: 0.8}, {ID: 3, Score: 0.7}}
+	got := b.rerank(context.Background(), "q", rs)
+	if got[0].ID != 1 {
+		t.Errorf("first = %d, want 1 (rescored)", got[0].ID)
+	}
+	if len(got) != 3 {
+		t.Errorf("len = %d, want 3", len(got))
 	}
 }

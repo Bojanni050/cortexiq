@@ -18,6 +18,7 @@ import (
 	"github.com/Bojanni050/cortexiq/internal/observability"
 	"github.com/Bojanni050/cortexiq/internal/queries"
 	"github.com/Bojanni050/cortexiq/internal/reasoner"
+	"github.com/Bojanni050/cortexiq/internal/reranker"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -104,6 +105,7 @@ func New(ctx context.Context) (*Context, error) {
 		return nil, fmt.Errorf("parse consolidation window: %w", err)
 	}
 
+	rerank := reranker.NewHTTP(cfg.RerankerBaseURL, cfg.RerankerAPIKey, cfg.RerankerModel)
 	br, err := brain.New(pool, cachedEmb, reas, q, brain.Config{
 		BatchSize:                      cfg.ConsolidationBatchSize,
 		SimilarityThreshold:            cfg.ConsolidationSimilarityThreshold,
@@ -125,6 +127,8 @@ func New(ctx context.Context) (*Context, error) {
 		RecencyWeight:                  cfg.RecallRecencyWeight,
 		RecencyHalfLife:                cfg.RecallRecencyHalfLife,
 		ImportanceWeight:               cfg.RecallImportanceWeight,
+		Reranker:                       rerank,
+		RerankCandidates:               cfg.RerankCandidates,
 		MinEpisodeLength:               cfg.ExtractionMinChars,
 	})
 	if err != nil {

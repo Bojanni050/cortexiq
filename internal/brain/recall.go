@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/Bojanni050/cortexiq/internal/reranker"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -193,6 +194,10 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		} else {
 			results = fuse(factVec, factKw, candidates, kwQuery != "", b.config.MinRecallSimilarity)
 		}
+		if b.config.Reranker != nil {
+			results = b.rerank(ctx, query, results)
+			stage("facts_reranked", len(results))
+		}
 		results = b.applyBoosts(results, limit, now)
 		stage("facts_fused", len(results))
 	}
@@ -235,6 +240,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		} else {
 			eps = fuse(epVec, epKw, epCandidates, kwQuery != "", b.config.MinRecallSimilarity)
 		}
+		eps = b.rerank(ctx, query, eps)
 		results = append(results, b.applyBoosts(eps, episodeLimit, now)...)
 		stage("episodes_fused", len(eps))
 	}
@@ -261,6 +267,47 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 	}
 
 	return results, nil
+}
+
+// rerank re-scores fused candidates against the query with a cross-encoder,
+// in place, best first. Without a configured reranker it is a no-op that keeps
+// the fused order and scores exactly. A failing reranker never fails the recall:
+// the candidates fall back to the fused order.
+func (b *Brain) rerank(ctx context.Context, query string, rs []RecallResult) []RecallResult {
+	if b.config.Reranker == nil || len(rs) < 2 {
+		return rs
+	}
+	cap := b.config.RerankCandidates
+	if cap <= 0 || cap > len(rs) {
+		cap = len(rs)
+	}
+	candidates := make([]reranker.Candidate, cap)
+	for i := 0; i < cap; i++ {
+		candidates[i] = reranker.Candidate{Content: rs[i].Content, Fused: rs[i].Score}
+	}
+	scored, err := b.config.Reranker.Rerank(ctx, query, candidates)
+	if err != nil {
+		return rs
+	}
+	// The cross-encoder sees the query and the candidate together, which
+	// position-based fusion cannot; its verdict replaces the fused score.
+	// Candidates it did not judge keep their fused score and land behind the
+	// re-scored ones, in their original relative order.
+	byIndex := make(map[int]float32, len(scored))
+	for _, s := range scored {
+		byIndex[s.Index] = s.Score
+	}
+	var rescored, rest []RecallResult
+	for i := 0; i < cap; i++ {
+		if s, ok := byIndex[i]; ok {
+			rs[i].Score = s
+			rescored = append(rescored, rs[i])
+		} else {
+			rest = append(rest, rs[i])
+		}
+	}
+	sort.SliceStable(rescored, func(i, j int) bool { return rescored[i].Score > rescored[j].Score })
+	return append(rescored, append(rest, rs[cap:]...)...)
 }
 
 // recencyFactor is the multiplier applied to a result's score for a given age:
