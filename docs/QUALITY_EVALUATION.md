@@ -157,6 +157,23 @@ after any change to the embedding model, the recall weights or a reranker, and
 compare the per-kind rows, not just the overall number. The set is small (36
 questions), so treat a difference of one question as noise.
 
+Baseline 2026-10-18 (bge-m3, hybrid recall, production weights, k=10):
+
+| kind | n | hit@1 | hit@3 | hit@10 | MRR |
+|---|---:|---:|---:|---:|---:|
+| identifier | 8 | 1.00 | 1.00 | 1.00 | 1.000 |
+| paraphrase | 10 | 0.70 | 1.00 | 1.00 | 0.817 |
+| cross-language | 8 | 0.50 | 1.00 | 1.00 | 0.708 |
+| confuser | 10 | 0.80 | 0.90 | 1.00 | 0.875 |
+| overall | 36 | 0.75 | 0.97 | 1.00 | 0.850 |
+
+Every answer is in the top 10 and all but one in the top 3, so the headroom is
+ordering (hit@1), not coverage. All four cross-language misses have the same
+shape: a document in the language of the question outranks the answer in the
+other language (q19, q21, q22, q26). q11 and q10 are defensible alternatives
+(a read-only-token memory and a reinforcement memory also bear on the question),
+so the set understates recall slightly.
+
 ## 5. Clean up
 
 After scoring, remove the isolated namespace and its exported evaluation file.
