@@ -226,6 +226,7 @@ func TestRecallRejectsBadTypeAndAsOf(t *testing.T) {
 	for name, body := range map[string]string{
 		"unknown type": `{"query":"x","types":["goal"]}`,
 		"bad as_of":    `{"query":"x","as_of":"yesterday"}`,
+		"bad graph":    `{"query":"x","graph":"sure"}`,
 	} {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/recall", strings.NewReader(body))

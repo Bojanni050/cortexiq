@@ -468,7 +468,9 @@ async function renderRecall() {
     `<button class="primary" onclick="doRecall()">Recall</button>`
   ) + '<div class="toolbar filters">' +
     `<label class="muted"><input type="checkbox" id="rt-fact" checked> Facts</label>` +
+
     `<label class="muted"><input type="checkbox" id="rt-episode" checked> Episodes</label>` +
+    `<label class="muted">Graph arm <select id="rt-graph"><option value="">default</option><option value="on">on</option><option value="off">off</option></select></label>` +
     `<label class="muted">Limit <select id="rlimit"><option>10</option><option selected>20</option><option>50</option><option>100</option></select></label>` +
     `<label class="muted">As of <input type="datetime-local" id="rasof"></label>` +
     '</div><div id="recall-out"></div>';
@@ -489,6 +491,8 @@ async function doRecall() {
   if (types.length === 1) body.types = types;
   const asOf = document.getElementById('rasof').value;
   if (asOf) body.as_of = new Date(asOf).toISOString();
+  const graph = document.getElementById('rt-graph').value;
+  if (graph) body.graph = graph === 'on';
   try {
     const res = await api('/recall', { method: 'POST', body: JSON.stringify(body) });
     const results = (res && res.results) || [];

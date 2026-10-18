@@ -386,6 +386,9 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 		Types []string `json:"types"`
 		// AsOf is an RFC 3339 moment: recall what was known then.
 		AsOf string `json:"as_of"`
+		// Graph overrides the configured graph arm for this call: true forces it
+		// on, false forces it off, absent keeps the configuration.
+		Graph *bool `json:"graph"`
 	}
 	if err := readBody(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -409,6 +412,7 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 		}
 		opts.AsOf = &t
 	}
+	opts.Graph = body.Graph
 	if body.Trace {
 		results, trace, err := h.Brain.RecallDetailed(r.Context(), body.Namespaces, body.Query, body.Limit, opts)
 		if !hdl(w, err) {
