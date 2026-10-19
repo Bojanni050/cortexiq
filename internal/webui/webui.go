@@ -386,7 +386,8 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 		// result where each search arm placed it, plus the steps of the recall.
 		// A traced recall does not count as use of the facts it returns.
 		Trace bool `json:"trace"`
-		// Types limits the search to "fact", "episode" or both (empty).
+		// Types limits the search to "fact", "episode", "failure" and/or "goal";
+		// empty means facts and episodes.
 		Types []string `json:"types"`
 		// AsOf is an RFC 3339 moment: recall what was known then.
 		AsOf string `json:"as_of"`
@@ -403,8 +404,8 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 	}
 	opts := brain.RecallOptions{Types: body.Types}
 	for _, t := range body.Types {
-		if t != "fact" && t != "episode" {
-			writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid type %q: use fact or episode", t))
+		if t != "fact" && t != "episode" && t != "failure" && t != "goal" {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid type %q: use fact, episode, failure or goal", t))
 			return
 		}
 	}

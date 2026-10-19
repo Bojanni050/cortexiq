@@ -22,6 +22,10 @@ func TestRecallKeywordTemplatesRender(t *testing.T) {
 		"episodes": func(ns []int64) (string, []any, error) {
 			return q.RecallEpisodesKeyword(ns, "cortexiq or port", 30, nil)
 		},
+		"failures": func(ns []int64) (string, []any, error) {
+			return q.RecallFailuresKeyword(ns, "cortexiq or port", 30, nil)
+		},
+		"goals": func(ns []int64) (string, []any, error) { return q.RecallGoalsKeyword(ns, "cortexiq or port", 30, nil) },
 	} {
 		sql, args, err := build([]int64{1, 2, 3})
 		if err != nil {

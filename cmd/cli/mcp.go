@@ -122,8 +122,8 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			}
 			// An unknown type would otherwise match neither store and return an
 			// empty list that looks like "nothing remembered".
-			if t != "fact" && t != "episode" {
-				return nil, fmt.Errorf("unknown type %q: use fact, episode or both", t)
+			if t != "fact" && t != "episode" && t != "failure" && t != "goal" {
+				return nil, fmt.Errorf("unknown type %q: use fact, episode, failure or goal", t)
 			}
 			types = append(types, t)
 		}

@@ -10,7 +10,8 @@ import (
 type RecallOptions struct {
 	// AsOf answers "what did we know at that moment"; see RecallAsOf.
 	AsOf *time.Time
-	// Types limits the search to "fact", "episode" or both. Empty means both.
+	// Types limits the search to "fact", "episode", "failure" and/or "goal". Empty
+	// means facts and episodes; failures and goals are only searched when named.
 	Types []string
 	// Graph overrides the configured graph arm for this call: true forces it on,
 	// false forces it off, nil keeps the configuration. The recall evaluation uses

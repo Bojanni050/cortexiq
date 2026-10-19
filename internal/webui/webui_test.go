@@ -224,7 +224,7 @@ func TestRecallRejectsBadTypeAndAsOf(t *testing.T) {
 	(&Handler{}).Register(mux)
 
 	for name, body := range map[string]string{
-		"unknown type": `{"query":"x","types":["goal"]}`,
+		"unknown type": `{"query":"x","types":["hypothesis"]}`,
 		"bad as_of":    `{"query":"x","as_of":"yesterday"}`,
 		"bad graph":    `{"query":"x","graph":"sure"}`,
 	} {

@@ -166,3 +166,60 @@ WHERE f.deleted_at IS NULL
 ORDER BY c.hop, COALESCE(1 - (f.embedding <=> {{.Bind .Args.vector}}), -1) DESC, c.confidence DESC, c.id DESC
 LIMIT {{.Bind .Args.limit}}
 {{end}}
+
+{{/*
+  Failures and goals carry no embedding and no stored tsvector: they are few and
+  hand-written, so the tsvector is built on the fly (same tokenizer as
+  facts.content_tsv) instead of paying for a migration and an index.
+*/}}
+{{define "recall_failures_keyword"}}
+SELECT
+    id,
+    namespace_id,
+    content,
+    reason,
+    lesson,
+    created_at,
+    ts_rank_cd(doc, websearch_to_tsquery('simple', {{.Bind .Args.query}})) AS score
+FROM (
+    SELECT id, namespace_id, content, reason, lesson, created_at,
+           to_tsvector('simple', regexp_replace(content || ' ' || reason || ' ' || lesson, '[^[:alnum:]]+', ' ', 'g')) AS doc
+    FROM failures
+    WHERE deleted_at IS NULL
+{{if .Args.as_of}}
+        AND created_at <= {{.Bind .Args.as_of}}
+{{end}}
+{{if .Args.namespace_ids}}
+        AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
+{{end}}
+) f
+WHERE doc @@ websearch_to_tsquery('simple', {{.Bind .Args.query}})
+ORDER BY score DESC, id DESC
+LIMIT {{.Bind .Args.limit}}
+{{end}}
+
+{{define "recall_goals_keyword"}}
+SELECT
+    id,
+    namespace_id,
+    content,
+    status,
+    notes,
+    created_at,
+    ts_rank_cd(doc, websearch_to_tsquery('simple', {{.Bind .Args.query}})) AS score
+FROM (
+    SELECT id, namespace_id, content, status, notes, created_at,
+           to_tsvector('simple', regexp_replace(content || ' ' || notes, '[^[:alnum:]]+', ' ', 'g')) AS doc
+    FROM goals
+    WHERE deleted_at IS NULL
+{{if .Args.as_of}}
+        AND created_at <= {{.Bind .Args.as_of}}
+{{end}}
+{{if .Args.namespace_ids}}
+        AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
+{{end}}
+) g
+WHERE doc @@ websearch_to_tsquery('simple', {{.Bind .Args.query}})
+ORDER BY score DESC, id DESC
+LIMIT {{.Bind .Args.limit}}
+{{end}}

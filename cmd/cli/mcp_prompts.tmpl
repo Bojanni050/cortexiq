@@ -353,8 +353,8 @@ Comma-separated namespace paths to search. Each path matches itself and all desc
 {{end}}
 
 {{define "recall_types"}}
-Optional comma-separated filter: 'fact' (consolidated knowledge), 'episode' (raw remembered events) or both. Omit to search both.
-Use 'fact' for durable decisions and preferences; use 'episode' to find what was said or happened.
+Optional comma-separated filter: 'fact' (consolidated knowledge), 'episode' (raw remembered events), 'failure' (approaches that did not work, with reason and lesson) and 'goal' (goals with status and notes). Omit to search facts and episodes; failures and goals are only searched when named.
+Use 'fact' for durable decisions and preferences; 'episode' for what was said or happened; 'failure' before retrying an approach ("what did we already try?"); 'goal' for what is planned or done. Failures and goals match on keywords only, so use the words they would contain.
 {{end}}
 
 

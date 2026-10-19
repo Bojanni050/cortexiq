@@ -605,3 +605,66 @@ func TestIntegrationGraphArmOrdersAnEntitysFactsBySimilarity(t *testing.T) {
 	}
 	t.Fatalf("the answer was not returned: %+v", res)
 }
+
+// Failures and goals have no embedding: recall finds them by keyword, only when
+// asked for by type, and names the right id field.
+func TestIntegrationRecallFindsFailuresAndGoalsByType(t *testing.T) {
+	e := newEnv(t, nil)
+	e.insertFact(t, "the deploy pipeline uses blue green releases", nil)
+	f, err := e.b.CreateFailure(e.ctx, e.nsID, "tried rolling restart of the deploy pipeline", "sessions dropped", "use blue green instead", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := e.b.CreateGoal(e.ctx, e.nsID, "migrate the deploy pipeline to blue green", nil, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Default recall must not change: no failures or goals.
+	res, err := e.b.RecallWith(e.ctx, []string{e.ns}, "deploy pipeline", 10, RecallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range res {
+		if r.Type == "failure" || r.Type == "goal" {
+			t.Fatalf("default recall returned a %s", r.Type)
+		}
+	}
+
+	res, err = e.b.RecallWith(e.ctx, []string{e.ns}, "deploy pipeline", 10, RecallOptions{Types: []string{"failure", "goal"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotF, gotG bool
+	for _, r := range res {
+		switch r.Type {
+		case "failure":
+			gotF = r.FailureID != nil && *r.FailureID == f.ID && strings.Contains(r.Content, "lesson: use blue green instead")
+		case "goal":
+			gotG = r.GoalID != nil && *r.GoalID == g.ID && strings.Contains(r.Content, "status: active")
+		case "fact", "episode":
+			t.Fatalf("asked for failures and goals only, got %s", r.Type)
+		}
+	}
+	if !gotF || !gotG {
+		t.Fatalf("failure found %v, goal found %v: %+v", gotF, gotG, res)
+	}
+
+	// Mixed with facts they compete in one ranking and stay within the limit.
+	res, err = e.b.RecallWith(e.ctx, []string{e.ns}, "deploy pipeline", 2, RecallOptions{Types: []string{"fact", "failure", "goal"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) > 2 {
+		t.Fatalf("limit 2 returned %d results", len(res))
+	}
+
+	// A deleted failure disappears.
+	if err := e.b.DeleteFailure(e.ctx, f.ID); err != nil {
+		t.Fatal(err)
+	}
+	res, _ = e.b.RecallWith(e.ctx, []string{e.ns}, "deploy pipeline", 10, RecallOptions{Types: []string{"failure"}})
+	if len(res) != 0 {
+		t.Fatalf("deleted failure still recalled: %+v", res)
+	}
+}

@@ -25,6 +25,8 @@ type RecallResult struct {
 	// belongs to, so a client never has to guess.
 	FactID      *int64  `json:"fact_id,omitempty"`
 	EpisodeID   *int64  `json:"episode_id,omitempty"`
+	FailureID   *int64  `json:"failure_id,omitempty"`
+	GoalID      *int64  `json:"goal_id,omitempty"`
 	NamespaceID int64   `json:"namespace_id"`
 	Content     string  `json:"content"`
 	Confidence  float32 `json:"confidence,omitempty"`
@@ -245,6 +247,17 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		stage("episodes_fused", len(eps))
 	}
 
+	// Failures and goals only take part when asked for by type; they compete with
+	// facts and episodes in the final sort.
+	if failures, goals := opts.includesWork(); failures || goals {
+		work, err := b.recallWork(ctx, nsIDs, query, limit, asOf, failures, goals)
+		if err != nil {
+			return nil, err
+		}
+		stage("work_keyword", len(work))
+		results = append(results, work...)
+	}
+
 	// Sort all results by score descending
 	sort.SliceStable(results, func(i, j int) bool {
 		return results[i].Score > results[j].Score
@@ -395,11 +408,16 @@ func (b *Brain) touchRecalledFacts(ctx context.Context, results []RecallResult) 
 // it got the id from; naming it here means a client never has to infer it.
 func (r *RecallResult) typedID(kind string) {
 	id := r.ID
-	if kind == "fact" {
+	switch kind {
+	case "fact":
 		r.FactID = &id
-		return
+	case "failure":
+		r.FailureID = &id
+	case "goal":
+		r.GoalID = &id
+	default:
+		r.EpisodeID = &id
 	}
-	r.EpisodeID = &id
 }
 
 // runRecall executes one recall query and scans its rows. kind is "fact" or

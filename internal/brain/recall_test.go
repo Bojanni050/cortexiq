@@ -527,3 +527,45 @@ func TestRerankCandidatesCapLimitsTheScoredPool(t *testing.T) {
 		t.Errorf("len = %d, want 3", len(got))
 	}
 }
+
+func TestRecallOptionsIncludesWork(t *testing.T) {
+	for _, tt := range []struct {
+		types           []string
+		failures, goals bool
+	}{
+		{nil, false, false}, // never searched by default
+		{[]string{"fact", "episode"}, false, false},
+		{[]string{"failure"}, true, false},
+		{[]string{"goal"}, false, true},
+		{[]string{"fact", "failure", "goal"}, true, true},
+	} {
+		f, g := RecallOptions{Types: tt.types}.includesWork()
+		if f != tt.failures || g != tt.goals {
+			t.Errorf("types %v: failures %v goals %v, want %v %v", tt.types, f, g, tt.failures, tt.goals)
+		}
+	}
+}
+
+func TestTypedIDNamesTheRightTable(t *testing.T) {
+	for kind, get := range map[string]func(RecallResult) *int64{
+		"fact":    func(r RecallResult) *int64 { return r.FactID },
+		"episode": func(r RecallResult) *int64 { return r.EpisodeID },
+		"failure": func(r RecallResult) *int64 { return r.FailureID },
+		"goal":    func(r RecallResult) *int64 { return r.GoalID },
+	} {
+		r := RecallResult{ID: 7}
+		r.typedID(kind)
+		if p := get(r); p == nil || *p != 7 {
+			t.Errorf("%s: typed id not set", kind)
+		}
+		n := 0
+		for _, p := range []*int64{r.FactID, r.EpisodeID, r.FailureID, r.GoalID} {
+			if p != nil {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("%s: %d typed ids set, want exactly 1", kind, n)
+		}
+	}
+}
