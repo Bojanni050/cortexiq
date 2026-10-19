@@ -4,6 +4,7 @@ package brain
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Bojanni050/cortexiq/internal/models"
@@ -61,6 +62,12 @@ func (b *Brain) RememberWithImportance(ctx context.Context, namespaceSlug, conte
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("insert episode: %w", err)
+	}
+	// Let the consolidator pick this up right away, unless this is an eval
+	// write: /eval/ episodes exist to measure recall and must not turn into
+	// facts while the evaluation is still running.
+	if !strings.HasPrefix(namespaceSlug, "/eval/") {
+		b.noteEpisode(nsID)
 	}
 	return id, nil
 }

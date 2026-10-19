@@ -900,41 +900,7 @@ func mcpExecuteCmd(ctx context.Context, cmd *cli.Command) error {
 }
 
 func runConsolidationTicker(ctx context.Context, bc *bootstrap.Context, cmd *cli.Command) {
-	interval := cmd.Duration("consolidate-interval")
-	namespaces := cmd.StringSlice("consolidate-namespaces")
-
-	if len(namespaces) == 0 {
-		namespaces = []string{"/"}
-	}
-
-	log.Printf("Starting background consolidation with interval %s", interval)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			ids, err := bc.Brain.ResolveNamespaceIDs(ctx, namespaces)
-			if err != nil {
-				log.Printf("Consolidation: failed to resolve namespaces: %v", err)
-				continue
-			}
-			for _, id := range ids {
-				result, err := bc.Brain.ConsolidateByID(ctx, id)
-				if err != nil {
-					log.Printf("Consolidation failed for namespace ID %d: %v", id, err)
-					continue
-				}
-				log.Printf("Consolidation completed for %s: episodes_read=%d llm_calls=%d facts=%d relationships=%d goals_annotated=%d failure_repeats=%d hypotheses_updated=%d errors=%d",
-					result.Namespace, result.EpisodesRead, result.LLMCalls, result.FactsCreated, result.RelationshipsFound, result.GoalsAnnotated, result.FailureRepeatsDetected, result.HypothesesUpdated, len(result.Errors))
-				for _, e := range result.Errors {
-					log.Printf("Consolidation error in %s: %s", result.Namespace, e)
-				}
-			}
-		case <-ctx.Done():
-			log.Printf("Background consolidation shutting down")
-			return
-		}
+	if err := runSchedule(ctx, bc, cmd.Duration("consolidate-interval"), cmd.StringSlice("consolidate-namespaces")); err != nil {
+		log.Printf("Consolidation service stopped: %v", err)
 	}
 }

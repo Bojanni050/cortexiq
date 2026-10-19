@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Bojanni050/cortexiq/internal/embedder"
@@ -160,6 +161,14 @@ type Brain struct {
 	reasoner reasoner.Reasoner
 	queries  *queries.Queries
 	config   Config
+
+	// The consolidator runs in another goroutine in the same process (or in a
+	// sibling process for the stdio server). These channels let it react to new
+	// episodes and to a schedule changed from the dashboard without polling.
+	episodeMu       sync.Mutex
+	episodeNS       map[int64]struct{}
+	episodeSignal   chan struct{}
+	scheduleChanged chan struct{}
 }
 
 func New(pool *pgxpool.Pool, e embedder.Embedder, r reasoner.Reasoner, q *queries.Queries, cfg Config) (*Brain, error) {
@@ -181,6 +190,9 @@ func New(pool *pgxpool.Pool, e embedder.Embedder, r reasoner.Reasoner, q *querie
 		reasoner: budgetReasoner{inner: r},
 		queries:  q,
 		config:   cfg,
+
+		episodeSignal:   make(chan struct{}, 1),
+		scheduleChanged: make(chan struct{}, 1),
 	}, nil
 }
 

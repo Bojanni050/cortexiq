@@ -16,6 +16,7 @@ import (
 	"github.com/Bojanni050/cortexiq/internal/auth"
 	"github.com/Bojanni050/cortexiq/internal/brain"
 	"github.com/Bojanni050/cortexiq/internal/models"
+	"github.com/Bojanni050/cortexiq/internal/schedule"
 	"github.com/Bojanni050/cortexiq/internal/scope"
 )
 
@@ -61,6 +62,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/consolidation", h.consolidation)
 	api.HandleFunc("/api/v1/graph", h.graph)
 	api.HandleFunc("/api/v1/stats", h.stats)
+	api.HandleFunc("/api/v1/settings/schedule", h.schedule)
 	api.HandleFunc("/api/v1/metrics", h.metrics)
 	mux.Handle("/api/v1/", auth.Require(h.Auth, readOnlyWeb(api)))
 }
@@ -934,6 +936,44 @@ func (h *Handler) runs(w http.ResponseWriter, r *http.Request) {
 	}
 	total(w, n)
 	writeJSON(w, http.StatusOK, nonNil(items))
+}
+
+// scheduleView is the stored schedule plus the choices the dashboard may offer,
+// so the UI never has to hardcode them.
+type scheduleView struct {
+	schedule.Config
+	Modes     []schedule.Mode `json:"modes"`
+	Intervals []int           `json:"intervals"`
+}
+
+// schedule reads or replaces the global consolidation schedule. The background
+// consolidator picks the new value up immediately; no restart is needed.
+func (h *Handler) schedule(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		cfg, err := h.Brain.ScheduleConfig(r.Context())
+		if !hdl(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, scheduleView{
+			Config:    cfg,
+			Modes:     schedule.Modes(),
+			Intervals: schedule.IntervalChoices(),
+		})
+	case http.MethodPut:
+		var req schedule.Config
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid schedule: %w", err))
+			return
+		}
+		if err := h.Brain.SetScheduleConfig(r.Context(), req); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, req)
+	default:
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+	}
 }
 
 // consolidation reports the extraction backlog: how many episodes are waiting
