@@ -1149,15 +1149,15 @@ func extractJSON(s string) string {
 	return repairJSONStrings(s)
 }
 
-// repairJSONStrings escapes raw control characters (a literal newline, tab or
-// carriage return) that sit inside a JSON string literal. Models regularly emit
-// a multi-line summary without escaping the line break, which makes the reply
-// invalid JSON ("invalid character '\n' in string literal"); the intent is
-// unambiguous, so the break is escaped instead of the whole reply being thrown
-// away. Outside string literals a stray control character is not valid JSON
-// whitespace either, so it is replaced by a space.
+// repairJSONStrings makes a model's almost-JSON parseable without changing what
+// it meant. Two shapes show up in practice: a raw control character inside a
+// string literal (a multi-line summary that was never escaped — "invalid
+// character '\n' in string literal") and a backslash followed by a character
+// JSON never allows (an over-eager markdown escape such as \` — "invalid
+// character '`' in string escape code"). In both cases the intent is
+// unambiguous, so the text is escaped rather than the whole reply thrown away.
 func repairJSONStrings(s string) string {
-	if !strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 }) {
+	if !needsStringRepair(s) {
 		return s
 	}
 
@@ -1188,6 +1188,17 @@ func repairJSONStrings(s string) string {
 
 		switch {
 		case c == '\\':
+			// A backslash followed by a character JSON never allows there is an
+			// escaping slip, not data: it is kept as a literal backslash, which
+			// is the only repair that loses nothing. A backslash that does start
+			// a legal escape is left untouched, even when the text reads like a
+			// Windows path — "C:\users\bojan" cannot be told apart from the
+			// escapes the model meant, so it stays an error for the retry path
+			// rather than being silently turned into a backspace.
+			if i+1 >= len(s) || !jsonEscapeStarts(s[i+1]) {
+				b.WriteString(`\\`)
+				continue
+			}
 			escaped = true
 			b.WriteByte(c)
 		case c == '"':
@@ -1207,6 +1218,33 @@ func repairJSONStrings(s string) string {
 	}
 
 	return b.String()
+}
+
+// needsStringRepair reports whether s holds anything repairJSONStrings would
+// change: a control character, or a backslash that cannot start a JSON escape.
+func needsStringRepair(s string) bool {
+	if strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 }) {
+		return true
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' {
+			continue
+		}
+		if i+1 >= len(s) || !jsonEscapeStarts(s[i+1]) {
+			return true
+		}
+		i++ // skip the byte the escape consumed
+	}
+	return false
+}
+
+// jsonEscapeStarts reports whether c may legally follow a backslash in JSON.
+func jsonEscapeStarts(c byte) bool {
+	switch c {
+	case '"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u':
+		return true
+	}
+	return false
 }
 
 func ptrStr(p *looseText) string {

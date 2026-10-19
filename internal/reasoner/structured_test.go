@@ -73,6 +73,56 @@ func TestRepairJSONStringsKeepsValidEscapes(t *testing.T) {
 	if out != in {
 		t.Errorf("valid JSON must be left untouched:\nwant %q\ngot  %q", in, out)
 	}
+	valid := `{"summary": "caf\u00e9 \u0000 \/ done"}`
+	if out := repairJSONStrings(valid); out != valid {
+		t.Errorf("valid JSON must be left untouched:\nwant %q\ngot  %q", valid, out)
+	}
+}
+
+func TestParseStructuredFactsRepairsInvalidEscapes(t *testing.T) {
+	// A backslash followed by a character JSON never allows (a markdown-escaped
+	// backtick, a regex) must keep both of its characters rather than cost us
+	// the reply.
+	for _, tc := range []struct {
+		name string
+		out  string
+		want string
+	}{
+		{
+			name: "escaped backtick",
+			out:  "{\"summary\": \"CortexIQ calls the flag \\`recall\\` in the config.\"}",
+			want: "CortexIQ calls the flag \\`recall\\` in the config.",
+		},
+		{
+			name: "regex class",
+			out:  "{\"summary\": \"CortexIQ matches \\d+ digits with the pattern \\w+.\"}",
+			want: "CortexIQ matches \\d+ digits with the pattern \\w+.",
+		},
+		{
+			name: "escaped single quote",
+			out:  "{\"summary\": \"CortexIQ keeps \\'quoted\\' text.\"}",
+			want: "CortexIQ keeps \\'quoted\\' text.",
+		},
+	} {
+		facts, err := parseStructuredFacts(tc.out)
+		if err != nil {
+			t.Errorf("%s: %v", tc.name, err)
+			continue
+		}
+		if len(facts) != 1 || facts[0].Summary != tc.want {
+			t.Errorf("%s: want %q, got %+v", tc.name, tc.want, facts)
+		}
+	}
+}
+
+func TestParseStructuredFactsLeavesWindowsPathToRetry(t *testing.T) {
+	// "C:\users\bojan" cannot be told apart from the escapes the model may have
+	// meant (\u, \b), so it must not be silently turned into control
+	// characters: it stays an error and the retry path owns it.
+	_, err := parseStructuredFacts(`{"summary": "CortexIQ reads C:\users\bojan\config."}`)
+	if err == nil {
+		t.Error("an ambiguous backslash escape must still fail")
+	}
 }
 
 func TestParseStructuredFactsEmptyMeansNothingDurable(t *testing.T) {
