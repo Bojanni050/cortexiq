@@ -30,6 +30,24 @@ func TestParseStructuredFactsAcceptsSingleObject(t *testing.T) {
 	}
 }
 
+func TestParseStructuredFactsAcceptsScalarValue(t *testing.T) {
+	// Models sometimes emit a bare number (or boolean) where the schema wants a
+	// string; that must not cost us the whole reply.
+	facts, err := parseStructuredFacts(`[{"entity": "CortexIQ", "property": "response limit", "value": 612, "summary": "CortexIQ limits assistant responses to 612 characters."}, {"entity": "CortexIQ", "property": "graph recall", "value": true, "summary": "CortexIQ enables graph recall by default."}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts) != 2 {
+		t.Fatalf("want 2 facts, got %d: %+v", len(facts), facts)
+	}
+	if facts[0].Value != "612" {
+		t.Errorf("numeric value: want %q, got %q", "612", facts[0].Value)
+	}
+	if facts[1].Value != "true" {
+		t.Errorf("boolean value: want %q, got %q", "true", facts[1].Value)
+	}
+}
+
 func TestParseStructuredFactsEmptyMeansNothingDurable(t *testing.T) {
 	for _, out := range []string{
 		`[]`,

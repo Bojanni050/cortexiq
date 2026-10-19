@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -94,11 +95,36 @@ func (o *OpenAI) chat(ctx context.Context, stage string, msgs []openai.ChatCompl
 
 // --- JSON response types ---
 
+// looseText decodes a JSON string, number or boolean into its text form. Models
+// sometimes emit a bare number where the schema asks for a string (for example
+// "value": 612); rejecting the entire reply over that would drop otherwise good
+// facts, so the scalar is converted instead. A JSON null leaves the pointer nil.
+type looseText string
+
+func (t *looseText) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		*t = looseText(s)
+		return nil
+	}
+	var bo bool
+	if err := json.Unmarshal(b, &bo); err == nil {
+		*t = looseText(strconv.FormatBool(bo))
+		return nil
+	}
+	var n json.Number
+	if err := json.Unmarshal(b, &n); err == nil {
+		*t = looseText(n.String())
+		return nil
+	}
+	return fmt.Errorf("expected a string, number or boolean, got %.40s", string(b))
+}
+
 type jsonFact struct {
-	Entity   *string `json:"entity"`
-	Property *string `json:"property"`
-	Value    *string `json:"value"`
-	Summary  *string `json:"summary"`
+	Entity   *looseText `json:"entity"`
+	Property *looseText `json:"property"`
+	Value    *looseText `json:"value"`
+	Summary  *looseText `json:"summary"`
 }
 
 type jsonRelationship struct {
@@ -1123,11 +1149,11 @@ func extractJSON(s string) string {
 	return s
 }
 
-func ptrStr(p *string) string {
+func ptrStr(p *looseText) string {
 	if p == nil {
 		return ""
 	}
-	return *p
+	return string(*p)
 }
 
 func validateFactGrounding(sf *StructuredFact, texts []string) error {
