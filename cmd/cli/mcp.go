@@ -108,11 +108,24 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("namespaces", mcp.Description(render("recall_namespaces"))),
 		mcp.WithNumber("limit", mcp.Description(render("limit_param")), mcp.DefaultNumber(10)),
 		mcp.WithString("as_of", mcp.Description(render("as_of_param"))),
+		mcp.WithString("types", mcp.Description(render("recall_types"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query := request.GetString("query", "")
 		asOf, err := parseAsOf(request.GetString("as_of", ""))
 		if err != nil {
 			return nil, err
+		}
+		var types []string
+		for _, t := range strings.Split(request.GetString("types", ""), ",") {
+			if t = strings.TrimSpace(strings.ToLower(t)); t == "" {
+				continue
+			}
+			// An unknown type would otherwise match neither store and return an
+			// empty list that looks like "nothing remembered".
+			if t != "fact" && t != "episode" {
+				return nil, fmt.Errorf("unknown type %q: use fact, episode or both", t)
+			}
+			types = append(types, t)
 		}
 		nsRaw := request.GetString("namespaces", "/")
 		limit := request.GetInt("limit", 10)
@@ -124,7 +137,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			}
 		}
 
-		results, err := bc.Brain.RecallAsOf(ctx, namespaces, query, limit, asOf)
+		results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, Types: types})
 		if err != nil {
 			return nil, err
 		}

@@ -352,6 +352,11 @@ Comma-separated namespace paths to search. Each path matches itself and all desc
 / → everything.
 {{end}}
 
+{{define "recall_types"}}
+Optional comma-separated filter: 'fact' (consolidated knowledge), 'episode' (raw remembered events) or both. Omit to search both.
+Use 'fact' for durable decisions and preferences; use 'episode' to find what was said or happened.
+{{end}}
+
 
 {{define "forget_description"}}
 Removes incorrect or outdated information from memory.
