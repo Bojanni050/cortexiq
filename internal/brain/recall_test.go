@@ -1,6 +1,7 @@
 package brain
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -566,6 +567,54 @@ func TestTypedIDNamesTheRightTable(t *testing.T) {
 		}
 		if n != 1 {
 			t.Errorf("%s: %d typed ids set, want exactly 1", kind, n)
+		}
+	}
+}
+
+func TestRouteTypes(t *testing.T) {
+	for _, tt := range []struct {
+		query string
+		want  []string
+	}{
+		{"what did we try that failed with the deploy", []string{"failure"}},
+		{"wat hebben we al geprobeerd voor de import", []string{"failure"}},
+		{"that didn't work last time", []string{"failure"}},
+		{"dat werkte niet", []string{"failure"}},
+		{"what is the goal for the migration", []string{"goal"}},
+		{"wat zijn de doelen van dit project", []string{"goal"}},
+		{"what failed and what is the roadmap", []string{"failure", "goal"}},
+		// no cue, or the cue only appears inside a longer word
+		{"which port does the mcp server use", nil},
+		{"goalkeeper tryout", nil},
+		{"CORTEXIQ_RECALL_RECENCY_WEIGHT", nil},
+		{"", nil},
+	} {
+		got := routeTypes(tt.query)
+		if strings.Join(got, ",") != strings.Join(tt.want, ",") {
+			t.Errorf("routeTypes(%q) = %v, want %v", tt.query, got, tt.want)
+		}
+	}
+}
+
+// Routing may only widen a recall, and the existing recall question set contains
+// no cue, so switching it on cannot change those measurements.
+func TestRouteTypesLeavesTheRecallEvalAlone(t *testing.T) {
+	f, err := os.Open("../../eval/recall_queries.jsonl")
+	if err != nil {
+		t.Skipf("eval set not found: %v", err)
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		var q struct {
+			ID    string `json:"id"`
+			Query string `json:"query"`
+		}
+		if err := json.Unmarshal(sc.Bytes(), &q); err != nil || q.Query == "" {
+			continue
+		}
+		if got := routeTypes(q.Query); len(got) > 0 {
+			t.Errorf("%s %q is routed to %v; the eval set must stay unaffected", q.ID, q.Query, got)
 		}
 	}
 }

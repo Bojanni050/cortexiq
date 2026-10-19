@@ -95,6 +95,10 @@ type Config struct {
 	// names and about its direct neighbours in the relationship graph, fused with
 	// the vector and keyword arms. Requires HybridRecall. Off until measured.
 	GraphRecall bool `env:"CORTEXIQ_GRAPH_RECALL" envDefault:"false"`
+	// RouteRecall lets recall look at failures and goals too when no types are
+	// given and the query's wording points to them ("what did we try that failed",
+	// "what is the goal"). It only ever widens a recall. Off until measured.
+	RouteRecall bool `env:"CORTEXIQ_ROUTE_RECALL" envDefault:"false"`
 	// RecallMinSimilarity drops vector-only recall results below this cosine
 	// similarity (results confirmed by keyword search always stay). 0 = off. The
 	// right value depends on the embedding model: measure relevant vs irrelevant

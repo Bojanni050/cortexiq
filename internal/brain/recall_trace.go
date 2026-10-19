@@ -17,6 +17,10 @@ type RecallOptions struct {
 	// false forces it off, nil keeps the configuration. The recall evaluation uses
 	// it to compare the same corpus with and without the arm.
 	Graph *bool
+	// Route overrides the configured routing for this call, like Graph: true
+	// forces it on, false forces it off, nil keeps the configuration. Routing only
+	// applies when Types is empty.
+	Route *bool
 }
 
 // includes reports which of the two stores the options ask for.
@@ -52,6 +56,8 @@ type RecallTrace struct {
 	// Graph says the graph arm ran; GraphEntities are the entities the query named.
 	Graph         bool     `json:"graph"`
 	GraphEntities []string `json:"graph_entities,omitempty"`
+	// Routed lists the extra types the query's wording added ("failure", "goal").
+	Routed        []string `json:"routed,omitempty"`
 	Limit         int      `json:"limit"`
 	Candidates    int      `json:"candidates"`
 	Namespaces    []string `json:"namespaces"`

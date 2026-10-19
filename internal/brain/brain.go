@@ -104,6 +104,10 @@ type Config struct {
 	// It needs HybridRecall (it is fused with the other arms) and is off by default
 	// until it has been measured.
 	GraphRecall bool
+	// RouteRecall widens a recall that names no types with failures and/or goals
+	// when the query's wording points to them (see routeTypes). Off by default
+	// until it has been measured.
+	RouteRecall bool
 	// MinRecallSimilarity is the minimum cosine similarity for a result that was only
 	// found by the vector search. 0 disables the cutoff. Model dependent.
 	MinRecallSimilarity float32

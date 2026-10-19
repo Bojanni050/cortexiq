@@ -94,6 +94,16 @@ func (b *Brain) RecallAsOf(ctx context.Context, namespaces []string, query strin
 // trace records nothing.
 func (b *Brain) recall(ctx context.Context, namespaces []string, query string, limit int, opts RecallOptions, tr *RecallTrace) ([]RecallResult, error) {
 	asOf := opts.AsOf
+	var routed []string
+	routeOn := b.config.RouteRecall
+	if opts.Route != nil {
+		routeOn = *opts.Route
+	}
+	if routeOn && len(opts.Types) == 0 {
+		if routed = routeTypes(query); len(routed) > 0 {
+			opts.Types = append([]string{"fact", "episode"}, routed...)
+		}
+	}
 	facts, episodes := opts.includes()
 	graphOn := b.config.GraphRecall
 	if opts.Graph != nil {
@@ -145,7 +155,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 
 	if tr != nil {
 		tr.Query, tr.KeywordQuery, tr.Hybrid, tr.Graph, tr.Limit, tr.Candidates = query, kwQuery, kwQuery != "", graph, limit, candidates
-		tr.Namespaces, tr.NamespaceIDs = namespaces, len(nsIDs)
+		tr.Namespaces, tr.NamespaceIDs, tr.Routed = namespaces, len(nsIDs), routed
 		if asOf != nil {
 			tr.AsOf = asOf.Format(time.RFC3339)
 		}

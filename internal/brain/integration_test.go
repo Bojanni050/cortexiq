@@ -668,3 +668,38 @@ func TestIntegrationRecallFindsFailuresAndGoalsByType(t *testing.T) {
 		t.Fatalf("deleted failure still recalled: %+v", res)
 	}
 }
+
+// With routing on, a query that points to failures finds them without naming a
+// type; with routing off (the default) the same query does not.
+func TestIntegrationRecallRoutesToFailures(t *testing.T) {
+	e := newEnv(t, nil)
+	e.insertFact(t, "the import job runs nightly", nil)
+	if _, err := e.b.CreateFailure(e.ctx, e.nsID, "tried parallel import of the nightly job", "deadlocks", "keep the import sequential", nil); err != nil {
+		t.Fatal(err)
+	}
+	q := "what did we try for the import job that failed"
+	count := func(opts RecallOptions) (failures int, tr *RecallTrace) {
+		res, tr, err := e.b.RecallDetailed(e.ctx, []string{e.ns}, q, 10, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range res {
+			if r.Type == "failure" {
+				failures++
+			}
+		}
+		return failures, tr
+	}
+	on, off := true, false
+
+	if n, tr := count(RecallOptions{Route: &off}); n != 0 || len(tr.Routed) != 0 {
+		t.Fatalf("routing off: %d failures, routed %v", n, tr.Routed)
+	}
+	if n, tr := count(RecallOptions{Route: &on}); n != 1 || len(tr.Routed) != 1 || tr.Routed[0] != "failure" {
+		t.Fatalf("routing on: %d failures, routed %v", n, tr.Routed)
+	}
+	// Explicit types win over the router.
+	if n, tr := count(RecallOptions{Route: &on, Types: []string{"fact"}}); n != 0 || len(tr.Routed) != 0 {
+		t.Fatalf("explicit types: %d failures, routed %v", n, tr.Routed)
+	}
+}
