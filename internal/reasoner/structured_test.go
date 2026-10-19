@@ -48,6 +48,33 @@ func TestParseStructuredFactsAcceptsScalarValue(t *testing.T) {
 	}
 }
 
+func TestParseStructuredFactsRepairsRawNewlinesInStrings(t *testing.T) {
+	// A model that writes a multi-line summary without escaping the line break
+	// must not cost us the whole reply.
+	out := "[{\"entity\": \"CortexIQ\", \"property\": \"summary lines\",\n  \"value\": \"two lines\",\n  \"summary\": \"CortexIQ writes a summary\nacross two lines.\"}]"
+	facts, err := parseStructuredFacts(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("want 1 fact, got %d: %+v", len(facts), facts)
+	}
+	if facts[0].Summary != "CortexIQ writes a summary\nacross two lines." {
+		t.Errorf("summary: got %q", facts[0].Summary)
+	}
+	if facts[0].Property != "summary lines" || facts[0].Value != "two lines" {
+		t.Errorf("neighbouring fields must survive the repair: %+v", facts[0])
+	}
+}
+
+func TestRepairJSONStringsKeepsValidEscapes(t *testing.T) {
+	in := `{"summary": "a \"quoted\" word, a tab\t and a backslash \\ end"}`
+	out := repairJSONStrings(in)
+	if out != in {
+		t.Errorf("valid JSON must be left untouched:\nwant %q\ngot  %q", in, out)
+	}
+}
+
 func TestParseStructuredFactsEmptyMeansNothingDurable(t *testing.T) {
 	for _, out := range []string{
 		`[]`,

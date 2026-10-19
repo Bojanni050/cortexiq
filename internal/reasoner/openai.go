@@ -1143,10 +1143,70 @@ func extractJSON(s string) string {
 	trimmed = strings.TrimSpace(trimmed)
 
 	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
-		return trimmed
+		return repairJSONStrings(trimmed)
 	}
 
-	return s
+	return repairJSONStrings(s)
+}
+
+// repairJSONStrings escapes raw control characters (a literal newline, tab or
+// carriage return) that sit inside a JSON string literal. Models regularly emit
+// a multi-line summary without escaping the line break, which makes the reply
+// invalid JSON ("invalid character '\n' in string literal"); the intent is
+// unambiguous, so the break is escaped instead of the whole reply being thrown
+// away. Outside string literals a stray control character is not valid JSON
+// whitespace either, so it is replaced by a space.
+func repairJSONStrings(s string) string {
+	if !strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 }) {
+		return s
+	}
+
+	var b strings.Builder
+	b.Grow(len(s) + 16)
+
+	inString, escaped := false, false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+
+		if !inString {
+			switch {
+			case c == '"':
+				inString = true
+			case c < 0x20 && c != '\n' && c != '\r' && c != '\t':
+				b.WriteByte(' ')
+				continue
+			}
+			b.WriteByte(c)
+			continue
+		}
+
+		if escaped {
+			b.WriteByte(c)
+			escaped = false
+			continue
+		}
+
+		switch {
+		case c == '\\':
+			escaped = true
+			b.WriteByte(c)
+		case c == '"':
+			inString = false
+			b.WriteByte(c)
+		case c == '\n':
+			b.WriteString(`\n`)
+		case c == '\r':
+			b.WriteString(`\r`)
+		case c == '\t':
+			b.WriteString(`\t`)
+		case c < 0x20:
+			fmt.Fprintf(&b, `\u%04x`, c)
+		default:
+			b.WriteByte(c)
+		}
+	}
+
+	return b.String()
 }
 
 func ptrStr(p *looseText) string {
