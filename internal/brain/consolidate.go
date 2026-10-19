@@ -911,6 +911,12 @@ func (b *Brain) consolidateToPatterns(ctx context.Context, nsID int64, cp *model
 			}
 		}
 
+		// A NOT NULL array column takes an empty array, not NULL: a pattern that
+		// came with facts but no relations (or the other way round) would
+		// otherwise reach the database as a nil slice, which pgx sends as NULL.
+		sourceFactIDs = nonNilIDs(sourceFactIDs)
+		sourceRelIDs = nonNilIDs(sourceRelIDs)
+
 		_, err := b.pool.Exec(ctx,
 			`INSERT INTO patterns (namespace_id, content, confidence, source_fact_ids, source_rel_ids, coherence_score)
 			 VALUES ($1, $2, $3, $4, $5, $6)`,

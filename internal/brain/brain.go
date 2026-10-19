@@ -238,6 +238,16 @@ func likePatternForDescendants(path string) string {
 	return escapeLikePattern(path) + "/%"
 }
 
+// nonNilIDs returns ids unchanged, or an empty slice when ids is nil. The array
+// columns in the schema are NOT NULL, and pgx sends a nil slice as NULL, so an
+// insert with no ids must pass an empty array instead of nil.
+func nonNilIDs(ids []int64) []int64 {
+	if ids == nil {
+		return []int64{}
+	}
+	return ids
+}
+
 // resolveNamespaceID returns the namespace ID for an exact path.
 // Returns ErrNamespaceNotFound if no matching namespace exists.
 func (b *Brain) resolveNamespaceID(ctx context.Context, path string) (int64, error) {

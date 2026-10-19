@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Bojanni050/cortexiq/internal/models"
+	"github.com/Bojanni050/cortexiq/internal/reasoner"
 )
 
 func TestContiguousCheckpoint(t *testing.T) {
@@ -42,6 +43,61 @@ func TestCalculateConfidence(t *testing.T) {
 	}
 	if got := calculateConfidence(1000, true); got > 1 {
 		t.Errorf("confidence %v exceeds 1", got)
+	}
+}
+
+func TestNonNilIDs(t *testing.T) {
+	if got := nonNilIDs(nil); got == nil || len(got) != 0 {
+		t.Errorf("nil must become an empty, non-nil slice: got %#v", got)
+	}
+	in := []int64{7, 8}
+	if got := nonNilIDs(in); len(got) != 2 || got[0] != 7 || got[1] != 8 {
+		t.Errorf("non-nil ids must pass through: got %#v", got)
+	}
+	if got := nonNilIDs([]int64{}); got == nil {
+		t.Error("an empty slice must stay non-nil")
+	}
+}
+
+// Regression: a pattern that carries fact IDs but no relationship IDs used to
+// reach the database as a nil slice, which pgx sends as NULL, so the NOT NULL
+// source_rel_ids column rejected the insert and the pattern was lost.
+func TestIntegrationPatternWithoutRelsInsertsEmptyArray(t *testing.T) {
+	e := newEnv(t, nil)
+	source := e.insertFact(t, "cortexiq consolidates every 5 minutes", nil)
+	e.insertFact(t, "cortexiq stores facts in postgres", nil)
+	e.insertFact(t, "cortexiq uses pgvector for recall", nil)
+
+	e.r.patterns = []*reasoner.StructuredPattern{{
+		Content:        "CortexIQ runs consolidation on Postgres with pgvector recall.",
+		CoherenceScore: 0.7,
+		SourceFactIDs:  []int64{source},
+	}}
+
+	cp := &models.ConsolidationProgress{NamespaceID: e.nsID}
+	count, _, errs := e.b.consolidateToPatterns(e.ctx, e.nsID, cp)
+	if len(errs) != 0 {
+		t.Fatalf("pattern stage errors: %v", errs)
+	}
+	if count != 1 {
+		t.Fatalf("want 1 pattern, got %d", count)
+	}
+
+	var factIDs []int64
+	var relsAreEmpty bool
+	err := e.b.pool.QueryRow(e.ctx,
+		`SELECT source_fact_ids, source_rel_ids = '{}'::bigint[]
+		 FROM patterns WHERE namespace_id = $1 AND deleted_at IS NULL`,
+		e.nsID,
+	).Scan(&factIDs, &relsAreEmpty)
+	if err != nil {
+		t.Fatalf("read pattern: %v", err)
+	}
+	if len(factIDs) != 1 || factIDs[0] != source {
+		t.Errorf("source_fact_ids = %v, want [%d]", factIDs, source)
+	}
+	if !relsAreEmpty {
+		t.Error("source_rel_ids must be an empty array, not NULL")
 	}
 }
 

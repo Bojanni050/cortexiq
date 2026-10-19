@@ -68,9 +68,7 @@ func (b *Brain) CreateHypothesis(ctx context.Context, nsID int64, content, verif
 	if content == "" {
 		return nil, ErrEmptyContent
 	}
-	if sourceFactIDs == nil {
-		sourceFactIDs = []int64{}
-	}
+	sourceFactIDs = nonNilIDs(sourceFactIDs)
 
 	var h models.Hypothesis
 	err := b.pool.QueryRow(ctx,
