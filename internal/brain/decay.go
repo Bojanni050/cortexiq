@@ -35,7 +35,7 @@ func (b *Brain) DecayConfidence(ctx context.Context, nsID int64) (DecayResult, e
 	result.FactsDecayed = int(decayTag.RowsAffected())
 
 	expireTag, err := b.pool.Exec(ctx,
-		`UPDATE facts SET valid_until = now(), updated_at = now()
+		`UPDATE facts SET valid_until = now(), known_until = now(), updated_at = now()
 		 WHERE namespace_id = $1 AND deleted_at IS NULL AND valid_until IS NULL
 		 AND confidence < $2`,
 		nsID, b.config.ExpiryThreshold,

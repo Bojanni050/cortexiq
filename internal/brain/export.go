@@ -51,6 +51,7 @@ type ExportRecord struct {
 	Value      *string    `json:"value,omitempty"`
 	ValidFrom  *time.Time `json:"valid_from,omitempty"`
 	ValidUntil *time.Time `json:"valid_until,omitempty"`
+	KnownUntil *time.Time `json:"known_until,omitempty"` // facts: end of the knowledge interval
 }
 
 // ExportResult counts what an export wrote.
@@ -129,7 +130,7 @@ func (b *Brain) Export(ctx context.Context, w io.Writer, namespaces []string, ty
 	if want[RecordFact] {
 		rows, err := b.pool.Query(ctx,
 			`SELECT n.slug, f.content, f.confidence, f.entity, f.property, f.value,
-			        f.valid_from, f.valid_until, f.created_at, f.importance
+			        f.valid_from, f.valid_until, f.known_until, f.created_at, f.importance
 			 FROM facts f JOIN namespaces n ON n.id = f.namespace_id
 			 WHERE f.namespace_id = ANY($1) AND f.deleted_at IS NULL
 			 ORDER BY f.id`, nsIDs)
@@ -141,7 +142,7 @@ func (b *Brain) Export(ctx context.Context, w io.Writer, namespaces []string, ty
 			var conf, importance float32
 			var created time.Time
 			if err := rows.Scan(&rec.Namespace, &rec.Content, &conf, &rec.Entity, &rec.Property, &rec.Value,
-				&rec.ValidFrom, &rec.ValidUntil, &created, &importance); err != nil {
+				&rec.ValidFrom, &rec.ValidUntil, &rec.KnownUntil, &created, &importance); err != nil {
 				rows.Close()
 				return res, fmt.Errorf("scan fact: %w", err)
 			}
@@ -314,10 +315,10 @@ func (b *Brain) importRecord(ctx context.Context, rec ExportRecord, nsCache map[
 	}
 	_, err = b.pool.Exec(ctx,
 		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence,
-		                    entity, property, value, valid_from, valid_until, created_at, importance)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		                    entity, property, value, valid_from, valid_until, known_until, created_at, importance)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
 		nsID, rec.Content, pgVec, b.embedder.Model(), conf,
-		rec.Entity, rec.Property, rec.Value, rec.ValidFrom, rec.ValidUntil, created, importance)
+		rec.Entity, rec.Property, rec.Value, rec.ValidFrom, rec.ValidUntil, rec.KnownUntil, created, importance)
 	return err == nil, err
 }
 

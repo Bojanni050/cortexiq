@@ -103,7 +103,7 @@ func (b *Brain) autoSupersede(ctx context.Context, nsID, oldFactID, newFactID in
 	now := time.Now().UTC()
 
 	_, err := b.pool.Exec(ctx,
-		"UPDATE facts SET valid_until = $2, updated_at = $3 WHERE id = $1",
+		"UPDATE facts SET valid_until = $2, known_until = $2, updated_at = $3 WHERE id = $1",
 		oldFactID, now, now,
 	)
 	if err != nil {
