@@ -89,6 +89,71 @@ func recallCmd(ctx context.Context, cmd *cli.Command) error {
 	return printJSON(results)
 }
 
+func reflectCmd(ctx context.Context, cmd *cli.Command) error {
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("query argument is required")
+	}
+	query := args.First()
+	if strings.TrimSpace(query) == "" {
+		return fmt.Errorf("query cannot be empty")
+	}
+
+	namespaces := cmd.StringSlice("namespaces")
+	limit := cmd.Int("limit")
+	contextStr := cmd.String("context")
+
+	asOf, err := parseAsOf(cmd.String("as-of"))
+	if err != nil {
+		return err
+	}
+	from, err := parseAsOf(cmd.String("from"))
+	if err != nil {
+		return fmt.Errorf("invalid from: %w", err)
+	}
+	to, err := parseAsOf(cmd.String("to"))
+	if err != nil {
+		return fmt.Errorf("invalid to: %w", err)
+	}
+	knownFrom, err := parseAsOf(cmd.String("known-from"))
+	if err != nil {
+		return fmt.Errorf("invalid known-from: %w", err)
+	}
+	knownTo, err := parseAsOf(cmd.String("known-to"))
+	if err != nil {
+		return fmt.Errorf("invalid known-to: %w", err)
+	}
+
+	var types []string
+	for _, t := range strings.Split(cmd.String("types"), ",") {
+		if t = strings.TrimSpace(strings.ToLower(t)); t == "" {
+			continue
+		}
+		if t != "fact" && t != "episode" && t != "failure" && t != "goal" {
+			return fmt.Errorf("unknown type %q: use fact, episode, failure or goal", t)
+		}
+		types = append(types, t)
+	}
+
+	bc := getBootstrap(cmd)
+	result, err := bc.Brain.Reflect(ctx, query, brain.ReflectOptions{
+		Namespaces: namespaces,
+		Limit:      limit,
+		Context:    contextStr,
+		AsOf:       asOf,
+		From:       from,
+		To:         to,
+		KnownFrom:  knownFrom,
+		KnownTo:    knownTo,
+		Types:      types,
+	})
+	if err != nil {
+		return err
+	}
+
+	return printJSON(result)
+}
+
 func forgetCmd(ctx context.Context, cmd *cli.Command) error {
 	args := cmd.Args()
 	if args.Len() == 0 {

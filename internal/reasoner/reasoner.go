@@ -84,8 +84,20 @@ type HypothesisEvidenceResult struct {
 	NewConfidence float32
 }
 
+// ChatMessage is one message in a chat conversation.
+type ChatMessage struct {
+	Role    string // "system", "user", or "assistant"
+	Content string
+}
+
 // Reasoner synthesizes structured reasoning over text input.
 type Reasoner interface {
+	// Chat performs a free-form chat completion. Unlike the structured Reason*
+	// methods, this returns natural language: it is what reflect uses to
+	// synthesize an answer from recalled memories. The messages follow the
+	// standard chat format (system/user/assistant roles).
+	Chat(ctx context.Context, messages []ChatMessage) (string, error)
+
 	// ReasonStructured synthesizes the facts that the given texts state. Each distinct
 	// claim or topic becomes its own fact, so a note about two things yields two facts
 	// instead of losing one. It returns no facts when the texts hold nothing durable.

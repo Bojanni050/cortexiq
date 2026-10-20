@@ -182,6 +182,85 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
+	mcpServer.AddTool(mcp.NewTool("reflect",
+		mcp.WithDescription(render("reflect_description")),
+		mcp.WithString("query", mcp.Description(render("reflect_query")), mcp.Required()),
+		mcp.WithString("namespaces", mcp.Description(render("reflect_namespaces"))),
+		mcp.WithNumber("limit", mcp.Description(render("reflect_limit")), mcp.DefaultNumber(10)),
+		mcp.WithString("context", mcp.Description(render("reflect_context"))),
+		mcp.WithString("as_of", mcp.Description(render("as_of_param"))),
+		mcp.WithString("from", mcp.Description(render("from_param"))),
+		mcp.WithString("to", mcp.Description(render("to_param"))),
+		mcp.WithString("known_from", mcp.Description(render("known_from_param"))),
+		mcp.WithString("known_to", mcp.Description(render("known_to_param"))),
+		mcp.WithString("types", mcp.Description(render("recall_types"))),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		query := request.GetString("query", "")
+		if strings.TrimSpace(query) == "" {
+			return nil, fmt.Errorf("query is required")
+		}
+
+		asOf, err := parseAsOf(request.GetString("as_of", ""))
+		if err != nil {
+			return nil, err
+		}
+		from, err := parseAsOf(request.GetString("from", ""))
+		if err != nil {
+			return nil, fmt.Errorf("invalid from: %w", err)
+		}
+		to, err := parseAsOf(request.GetString("to", ""))
+		if err != nil {
+			return nil, fmt.Errorf("invalid to: %w", err)
+		}
+		knownFrom, err := parseAsOf(request.GetString("known_from", ""))
+		if err != nil {
+			return nil, fmt.Errorf("invalid known_from: %w", err)
+		}
+		knownTo, err := parseAsOf(request.GetString("known_to", ""))
+		if err != nil {
+			return nil, fmt.Errorf("invalid known_to: %w", err)
+		}
+
+		var types []string
+		for _, t := range strings.Split(request.GetString("types", ""), ",") {
+			if t = strings.TrimSpace(strings.ToLower(t)); t == "" {
+				continue
+			}
+			if t != "fact" && t != "episode" && t != "failure" && t != "goal" {
+				return nil, fmt.Errorf("unknown type %q: use fact, episode, failure or goal", t)
+			}
+			types = append(types, t)
+		}
+
+		var namespaces []string
+		nsRaw := request.GetString("namespaces", "/")
+		for _, ns := range strings.Split(nsRaw, ",") {
+			if ns = strings.TrimSpace(ns); ns != "" {
+				namespaces = append(namespaces, ns)
+			}
+		}
+
+		limit := request.GetInt("limit", 10)
+		contextStr := request.GetString("context", "")
+
+		result, err := bc.Brain.Reflect(ctx, query, brain.ReflectOptions{
+			Namespaces: namespaces,
+			Limit:      limit,
+			Context:    contextStr,
+			AsOf:       asOf,
+			From:       from,
+			To:         to,
+			KnownFrom:  knownFrom,
+			KnownTo:    knownTo,
+			Types:      types,
+		})
+		if err != nil {
+			return nil, err
+		}
+		b, _ := json.Marshal(result)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
 	mcpServer.AddTool(mcp.NewTool("forget",
 		mcp.WithDescription(render("forget_description")),
 		mcp.WithString("about", mcp.Description(render("forget_about")), mcp.Required()),

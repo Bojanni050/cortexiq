@@ -63,6 +63,27 @@ cortexiq remember "push naar main"                   # stored
 
 The test is not length (`CORTEXIQ_EXTRACTION_MIN_CHARS` already keeps fragments away from the extractor) and not politeness: `ja doe maar` and `nee, dat werkt niet` are decisions and instructions, and they survive because `doe` and `werkt` say something. Only a closed vocabulary of phatic words matches, in Dutch and English, so a closer that slips through costs one episode while nothing with a subject is ever swallowed. `CORTEXIQ_SOCIAL_FILTER=false` stores everything again.
 
+## Reflect: from memories to answers
+
+`recall` returns ranked memories; `reflect` returns an answer. It recalls relevant memories, then synthesizes a grounded response with the LLM — every claim traces back to a recalled memory, and when nothing relevant is found the answer says so instead of inventing one.
+
+```bash
+cortexiq reflect "what queue do we use and why did we switch?"
+# {
+#   "answer": "We use Kafka. We switched from RabbitMQ in March because...",
+#   "sources": [
+#     {"type": "fact", "id": 42, "content": "the queue is kafka", "score": 0.91},
+#     {"type": "fact", "id": 38, "content": "switched from rabbitmq to kafka in march", "score": 0.87}
+#   ],
+#   "recall_count": 5,
+#   "duration_ms": 340
+# }
+```
+
+The same operation is available as the MCP `reflect` tool and as `POST /api/v1/reflect`. All recall options carry over: `namespaces`, `limit`, `types`, `context` (extra text the answer should consider), and the time bounds (`as_of`, `from`/`to`, `known_from`/`known_to`) — so `reflect "what did we know in March about the outage?"` answers from what the system held then, not from what it knows now.
+
+Use `recall` when you need the raw memories (exact wording, IDs to act on). Use `reflect` when you need an answer — summaries, explanations, "what do we know about...".
+
 ## Backup, export and import
 
 ```bash

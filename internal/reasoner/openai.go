@@ -63,6 +63,24 @@ func NewOpenAI(baseURL, apiKey, model string, maxTokens int, jsonMode bool) (*Op
 	}, nil
 }
 
+// Chat performs a free-form chat completion for the reflect operation.
+// It converts the generic ChatMessage list to the OpenAI format and calls the
+// chat endpoint without JSON mode, returning natural language.
+func (o *OpenAI) Chat(ctx context.Context, messages []ChatMessage) (string, error) {
+	msgs := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
+	for _, m := range messages {
+		switch m.Role {
+		case "system":
+			msgs = append(msgs, openai.SystemMessage(m.Content))
+		case "assistant":
+			msgs = append(msgs, openai.AssistantMessage(m.Content))
+		default:
+			msgs = append(msgs, openai.UserMessage(m.Content))
+		}
+	}
+	return o.chat(ctx, "reflect", msgs)
+}
+
 // chat performs a single chat completion with the configured output constraints.
 // max_tokens is only sent when greater than zero, so "unlimited" truly omits the
 // field (sending 0 would request zero output). Native JSON output is requested

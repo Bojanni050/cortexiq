@@ -41,6 +41,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/ui/vendor/", h.serveVendor)
 	api := http.NewServeMux()
 	api.HandleFunc("/api/v1/recall", h.recall)
+	api.HandleFunc("/api/v1/reflect", h.reflect)
 	api.HandleFunc("/api/v1/remember", h.remember)
 	api.HandleFunc("/api/v1/namespaces", h.namespaces)
 	api.HandleFunc("/api/v1/namespaces/", h.namespaceItem)
@@ -84,7 +85,10 @@ func isReadRequest(r *http.Request) bool {
 	case http.MethodGet, http.MethodHead:
 		return true
 	case http.MethodPost:
-		return strings.TrimSuffix(r.URL.Path, "/") == "/api/v1/recall"
+		// Recall and reflect are reads: they retrieve memories and synthesize
+		// an answer, but store nothing.
+		path := strings.TrimSuffix(r.URL.Path, "/")
+		return path == "/api/v1/recall" || path == "/api/v1/reflect"
 	default:
 		return false
 	}
@@ -487,6 +491,89 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// reflect answers a question by recalling relevant memories and synthesizing
+// an answer with the LLM. It is a read operation: it recalls memories and calls
+// the reasoner, but stores nothing.
+func (h *Handler) reflect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	var body struct {
+		Query      string   `json:"query"`
+		Namespaces []string `json:"namespaces"`
+		Limit      int      `json:"limit"`
+		Context    string   `json:"context"`
+		Types      []string `json:"types"`
+		AsOf       string   `json:"as_of"`
+		From       string   `json:"from"`
+		To         string   `json:"to"`
+		KnownFrom  string   `json:"known_from"`
+		KnownTo    string   `json:"known_to"`
+	}
+	if err := readBody(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if strings.TrimSpace(body.Query) == "" {
+		writeErr(w, http.StatusBadRequest, errors.New("query is required"))
+		return
+	}
+	if len(body.Namespaces) == 0 {
+		body.Namespaces = []string{"/"}
+	}
+	for _, t := range body.Types {
+		if t != "fact" && t != "episode" && t != "failure" && t != "goal" {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid type %q: use fact, episode, failure or goal", t))
+			return
+		}
+	}
+	opts := brain.ReflectOptions{
+		Namespaces: body.Namespaces,
+		Limit:      body.Limit,
+		Context:    body.Context,
+		Types:      body.Types,
+	}
+	if body.AsOf != "" {
+		t, err := time.Parse(time.RFC3339, body.AsOf)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid as_of: %w", err))
+			return
+		}
+		opts.AsOf = &t
+	}
+	from, err := parseTimeBound(body.From)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid from: %w", err))
+		return
+	}
+	opts.From = from
+	to, err := parseTimeBound(body.To)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid to: %w", err))
+		return
+	}
+	opts.To = to
+	knownFrom, err := parseTimeBound(body.KnownFrom)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid known_from: %w", err))
+		return
+	}
+	opts.KnownFrom = knownFrom
+	knownTo, err := parseTimeBound(body.KnownTo)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid known_to: %w", err))
+		return
+	}
+	opts.KnownTo = knownTo
+
+	result, err := h.Brain.Reflect(r.Context(), body.Query, opts)
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func parseTimeBound(value string) (*time.Time, error) {

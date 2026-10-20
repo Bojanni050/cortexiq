@@ -69,6 +69,19 @@ type fakeReasoner struct {
 	sameCalls   int
 	rels        map[int64][]*reasoner.StructuredRelationship // what ReasonRelationshipsBatch returns, by fact ID
 	patterns    []*reasoner.StructuredPattern                // what ReasonPatterns returns
+	chatAnswer  string                                       // what Chat returns
+	chatCalls   int
+}
+
+// Chat returns the canned chatAnswer, or a default grounded answer.
+func (r *fakeReasoner) Chat(_ context.Context, messages []reasoner.ChatMessage) (string, error) {
+	r.mu.Lock()
+	r.chatCalls++
+	r.mu.Unlock()
+	if r.chatAnswer != "" {
+		return r.chatAnswer, nil
+	}
+	return "Based on the memories, here is the answer.", nil
 }
 
 // ReasonStructured fakes the synthesis: the text is split on " || " into one fact
@@ -701,5 +714,99 @@ func TestIntegrationRecallRoutesToFailures(t *testing.T) {
 	// Explicit types win over the router.
 	if n, tr := count(RecallOptions{Route: &on, Types: []string{"fact"}}); n != 0 || len(tr.Routed) != 0 {
 		t.Fatalf("explicit types: %d failures, routed %v", n, tr.Routed)
+	}
+}
+
+// Reflect synthesizes an answer from recalled memories. The fake reasoner
+// returns a canned answer, so this tests the recall grounding and result shape,
+// not the LLM output itself.
+func TestIntegrationReflect(t *testing.T) {
+	e := newEnv(t, nil)
+	e.insertFact(t, "the queue is kafka", nil)
+	e.insertFact(t, "we switched from rabbitmq to kafka in march", nil)
+	e.insertFact(t, "the database is postgres", nil)
+
+	e.r.chatAnswer = "We use kafka for the queue, after switching from rabbitmq in March."
+
+	result, err := e.b.Reflect(e.ctx, "what queue do we use?", ReflectOptions{
+		Namespaces: []string{e.ns},
+		Limit:      5,
+	})
+	if err != nil {
+		t.Fatalf("Reflect: %v", err)
+	}
+
+	if result.Answer != e.r.chatAnswer {
+		t.Errorf("Answer = %q, want %q", result.Answer, e.r.chatAnswer)
+	}
+	if result.RecallCount == 0 {
+		t.Error("RecallCount = 0, want > 0: reflect should ground the answer in recalled memories")
+	}
+	if len(result.Sources) == 0 {
+		t.Error("Sources is empty, want at least one source")
+	}
+	if result.DurationMs < 0 {
+		t.Errorf("DurationMs = %d, want >= 0", result.DurationMs)
+	}
+	// The kafka facts should be among the sources.
+	foundKafka := false
+	for _, s := range result.Sources {
+		if s.Type == "fact" && s.Content == "the queue is kafka" {
+			foundKafka = true
+		}
+	}
+	if !foundKafka {
+		t.Errorf("sources do not include the kafka fact: %+v", result.Sources)
+	}
+}
+
+// Reflect with no relevant memories still returns an answer (the LLM is told
+// the memories are empty), and reports zero sources.
+func TestIntegrationReflectNoMemories(t *testing.T) {
+	e := newEnv(t, nil)
+	e.r.chatAnswer = "I don't have any memory about that."
+
+	result, err := e.b.Reflect(e.ctx, "what is the meaning of life?", ReflectOptions{
+		Namespaces: []string{e.ns},
+		Limit:      5,
+	})
+	if err != nil {
+		t.Fatalf("Reflect: %v", err)
+	}
+	if result.Answer != e.r.chatAnswer {
+		t.Errorf("Answer = %q, want %q", result.Answer, e.r.chatAnswer)
+	}
+	if len(result.Sources) != 0 {
+		t.Errorf("Sources = %+v, want empty", result.Sources)
+	}
+}
+
+// Reflect passes the additional context to the LLM prompt.
+func TestIntegrationReflectWithContext(t *testing.T) {
+	e := newEnv(t, nil)
+	e.insertFact(t, "the project uses go", nil)
+
+	_, err := e.b.Reflect(e.ctx, "what language?", ReflectOptions{
+		Namespaces: []string{e.ns},
+		Limit:      5,
+		Context:    "The user is asking about the backend service.",
+	})
+	if err != nil {
+		t.Fatalf("Reflect: %v", err)
+	}
+	if e.r.chatCalls != 1 {
+		t.Fatalf("chatCalls = %d, want 1", e.r.chatCalls)
+	}
+}
+
+// Reflect rejects an empty query before touching the database or the LLM.
+func TestIntegrationReflectEmptyQuery(t *testing.T) {
+	e := newEnv(t, nil)
+	_, err := e.b.Reflect(e.ctx, "", ReflectOptions{Namespaces: []string{e.ns}})
+	if err == nil {
+		t.Fatal("Reflect with empty query should fail")
+	}
+	if e.r.chatCalls != 0 {
+		t.Errorf("chatCalls = %d, want 0: no LLM call for an invalid query", e.r.chatCalls)
 	}
 }
