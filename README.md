@@ -137,8 +137,15 @@ combined with `known_from`/`known_to`; either can be combined with `from`/`to`.
 A fact recorded in October about March is not returned by `as_of` in March, and
 a fact whose validity ended is still returned by an `as_of` after that, as long
 as it had not been replaced. CLI and MCP recall also recognize a small deterministic set of
-Dutch and English date phrases such as “yesterday”, “last month”, “gisteren”, or
-“maart 2025”; explicit bounds take precedence. This inference can be disabled
+Dutch and English date phrases such as “yesterday”, “last month”, “last March”,
+“gisteren”, or “maart 2025”; explicit bounds take precedence. Wording decides the
+axis: past-tense epistemic phrasing (“what did we know in March”, “wat wisten we in
+maart”, “as of March”) makes the expression a knowledge window, while plain
+“what happened in March” stays valid time. “About” or “over” ties an expression to the
+subject instead (“what did we know about the outage in March” is the outage’s March),
+and one query can carry both axes (“what did we know in March about the outage in
+January”). Present tense (“what do we know”) is not a cue. A recall trace lists what
+was inferred under `inferred`. This inference can be disabled
 with `CORTEXIQ_TEMPORAL_RECALL=false`; the time-ranked recall arm can be disabled
 separately with `CORTEXIQ_TEMPORAL_ARM=false`.
 

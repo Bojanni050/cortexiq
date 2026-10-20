@@ -299,7 +299,7 @@ Optional inclusive start of a half-open [from,to) event/valid-time window (RFC33
 {{end}}
 
 {{define "known_from_param"}}
-Optional start of a half-open [known_from,known_to) knowledge-time window (RFC3339 or YYYY-MM-DD). Returns what the system held at some point in the window, including beliefs replaced or expired inside it. Use it for "what did we know during March"; use as_of for a single moment. Not combinable with as_of.
+Optional start of a half-open [known_from,known_to) knowledge-time window (RFC3339 or YYYY-MM-DD). Returns what the system held at some point in the window, including beliefs replaced or expired inside it. Use it for "what did we know during March"; use as_of for a single moment. Not combinable with as_of. On recall, past-tense wording such as "what did we know in March" or "as of March" fills this window from the query when it is omitted; "what happened in March" stays a valid-time window.
 {{end}}
 
 {{define "known_to_param"}}

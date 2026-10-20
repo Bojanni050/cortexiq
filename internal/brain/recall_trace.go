@@ -68,12 +68,15 @@ type RecallTrace struct {
 	Graph         bool     `json:"graph"`
 	GraphEntities []string `json:"graph_entities,omitempty"`
 	// Routed lists the extra types the query's wording added ("failure", "goal").
-	Routed        []string `json:"routed,omitempty"`
-	Limit         int      `json:"limit"`
-	Candidates    int      `json:"candidates"`
-	Namespaces    []string `json:"namespaces"`
-	NamespaceIDs  int      `json:"namespace_ids"`
-	AsOf          string   `json:"as_of,omitempty"`
+	Routed       []string `json:"routed,omitempty"`
+	Limit        int      `json:"limit"`
+	Candidates   int      `json:"candidates"`
+	Namespaces   []string `json:"namespaces"`
+	NamespaceIDs int      `json:"namespace_ids"`
+	AsOf         string   `json:"as_of,omitempty"`
+	// Inferred names the time arguments that came from the query's wording rather
+	// than from the caller ("known_from", "known_to", "from", "to").
+	Inferred      []string `json:"inferred,omitempty"`
 	KnownFrom     string   `json:"known_from,omitempty"`
 	KnownTo       string   `json:"known_to,omitempty"`
 	From          string   `json:"from,omitempty"`

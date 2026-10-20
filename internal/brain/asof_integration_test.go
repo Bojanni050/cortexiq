@@ -178,3 +178,56 @@ func TestIntegrationRecallKnownWindow(t *testing.T) {
 		t.Error("reversed knowledge window must be rejected")
 	}
 }
+
+// Wording decides the axis: "what did we know in March" is knowledge time,
+// "what happened in March" valid time, and the trace says what was inferred.
+func TestIntegrationRecallInfersKnowledgeWindow(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.TemporalRecall = true })
+	e.insertFact(t, "dashboard port is 8080", nil)
+
+	trace := func(query string, opts RecallOptions) *RecallTrace {
+		t.Helper()
+		_, tr, err := e.b.RecallDetailed(e.ctx, []string{e.ns}, query, 5, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tr
+	}
+
+	tr := trace("what did we know in March 2026 about the dashboard port", RecallOptions{})
+	if tr.KnownFrom != "2026-03-01T00:00:00Z" || tr.KnownTo != "2026-04-01T00:00:00Z" || tr.From != "" || tr.To != "" {
+		t.Errorf("knowledge cue: known=[%s,%s) valid=[%s,%s)", tr.KnownFrom, tr.KnownTo, tr.From, tr.To)
+	}
+	if len(tr.Inferred) != 2 {
+		t.Errorf("inferred = %v, want known_from and known_to", tr.Inferred)
+	}
+
+	tr = trace("dashboard port in March 2026", RecallOptions{})
+	if tr.From != "2026-03-01T00:00:00Z" || tr.KnownFrom != "" {
+		t.Errorf("no cue: valid=[%s,%s) known=[%s,%s)", tr.From, tr.To, tr.KnownFrom, tr.KnownTo)
+	}
+
+	// An explicit argument on the knowledge axis switches inference off.
+	asOf := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	tr = trace("what did we know in March 2026 about the dashboard port", RecallOptions{AsOf: &asOf})
+	if tr.KnownFrom != "" || tr.From != "" || len(tr.Inferred) != 0 {
+		t.Errorf("explicit as_of must disable inference: %+v", tr)
+	}
+
+	// Explicit valid-time bounds win over inferred ones, but the knowledge cue still applies.
+	from, to := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	tr = trace("what did we know in March 2026 about the dashboard port", RecallOptions{From: &from, To: &to})
+	if tr.From != "2026-01-01T00:00:00Z" || tr.KnownFrom != "2026-03-01T00:00:00Z" {
+		t.Errorf("explicit valid bounds: valid=[%s,%s) known=[%s,%s)", tr.From, tr.To, tr.KnownFrom, tr.KnownTo)
+	}
+
+	// CORTEXIQ_TEMPORAL_RECALL=false turns all inference off.
+	off := newEnv(t, func(c *Config) { c.TemporalRecall = false })
+	_, tr2, err := off.b.RecallDetailed(off.ctx, []string{off.ns}, "what did we know in March 2026 about the dashboard port", 5, RecallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr2.KnownFrom != "" || len(tr2.Inferred) != 0 {
+		t.Errorf("inference must be off: %+v", tr2)
+	}
+}

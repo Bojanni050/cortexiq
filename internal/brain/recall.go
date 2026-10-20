@@ -104,13 +104,23 @@ func (b *Brain) RecallAsOf(ctx context.Context, namespaces []string, query strin
 // trace records nothing.
 func (b *Brain) recall(ctx context.Context, namespaces []string, query string, limit int, opts RecallOptions, tr *RecallTrace) ([]RecallResult, error) {
 	explicitKnown := opts.AsOf != nil || opts.KnownFrom != nil || opts.KnownTo != nil
-	if !explicitKnown && b.config.TemporalRecall && (opts.From == nil || opts.To == nil) {
-		parsedFrom, parsedTo := temporalWindow(query, time.Now())
-		if opts.From == nil {
-			opts.From = parsedFrom
+	// Wording like "what did we know in March" is a knowledge-time window; plain
+	// "in March" stays valid time. Explicit bounds always win, and an explicit
+	// knowledge argument switches inference off, as as_of always did.
+	var inferred []string
+	if !explicitKnown && b.config.TemporalRecall {
+		axes := inferTimeAxes(query, time.Now())
+		if axes.KnownFrom != nil {
+			opts.KnownFrom, opts.KnownTo = axes.KnownFrom, axes.KnownTo
+			inferred = append(inferred, "known_from", "known_to")
 		}
-		if opts.To == nil {
-			opts.To = parsedTo
+		if opts.From == nil && axes.From != nil {
+			opts.From = axes.From
+			inferred = append(inferred, "from")
+		}
+		if opts.To == nil && axes.To != nil {
+			opts.To = axes.To
+			inferred = append(inferred, "to")
 		}
 	}
 	if opts.From != nil && opts.To != nil && !opts.From.Before(*opts.To) {
@@ -193,6 +203,13 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		tr.Namespaces, tr.NamespaceIDs, tr.Routed = namespaces, len(nsIDs), routed
 		if asOf != nil {
 			tr.AsOf = asOf.Format(time.RFC3339)
+		}
+		tr.Inferred = inferred
+		if opts.KnownFrom != nil {
+			tr.KnownFrom = opts.KnownFrom.Format(time.RFC3339)
+		}
+		if opts.KnownTo != nil {
+			tr.KnownTo = opts.KnownTo.Format(time.RFC3339)
 		}
 		if opts.From != nil {
 			tr.From = opts.From.Format(time.RFC3339)
