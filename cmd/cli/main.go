@@ -124,6 +124,23 @@ func main() {
 				},
 			},
 			{
+				Name:    "reflect",
+				Aliases: []string{"answer"},
+				Usage:   "Answer a question by synthesizing recalled memories",
+				Action:  reflectCmd,
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to search (each includes descendants)"},
+					&cli.IntFlag{Name: "limit", Value: 10, Usage: "Max memories to recall for grounding"},
+					&cli.StringFlag{Name: "context", Usage: "Additional context to include in the answer synthesis"},
+					&cli.StringFlag{Name: "types", Usage: "Comma-separated filter: fact, episode, failure, goal"},
+					&cli.StringFlag{Name: "as-of", Usage: "Answer from what the system knew at this time (RFC3339 or YYYY-MM-DD)"},
+					&cli.StringFlag{Name: "known-from", Usage: "Answer from what the system held in [known-from, known-to) (RFC3339 or YYYY-MM-DD); not with --as-of"},
+					&cli.StringFlag{Name: "known-to", Usage: "Exclusive end of the knowledge window (RFC3339 or YYYY-MM-DD)"},
+					&cli.StringFlag{Name: "from", Usage: "Include event/valid time on or after this bound (RFC3339 or YYYY-MM-DD)"},
+					&cli.StringFlag{Name: "to", Usage: "Exclude event/valid time at or after this bound (RFC3339 or YYYY-MM-DD)"},
+				},
+			},
+			{
 				Name:   "forget",
 				Usage:  "Soft-delete a matching episode",
 				Action: forgetCmd,

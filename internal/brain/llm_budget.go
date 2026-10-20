@@ -52,6 +52,13 @@ func llmBudgetExhausted(ctx context.Context) bool {
 // Calls outside a consolidation context remain unlimited.
 type budgetReasoner struct{ inner reasoner.Reasoner }
 
+func (r budgetReasoner) Chat(ctx context.Context, messages []reasoner.ChatMessage) (string, error) {
+	if err := consumeLLMCall(ctx); err != nil {
+		return "", err
+	}
+	return r.inner.Chat(ctx, messages)
+}
+
 func (r budgetReasoner) ReasonStructured(ctx context.Context, texts []string, subject string) ([]*reasoner.StructuredFact, error) {
 	if err := consumeLLMCall(ctx); err != nil {
 		return nil, err
