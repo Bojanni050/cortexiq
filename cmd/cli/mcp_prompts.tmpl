@@ -283,7 +283,7 @@ Bad: 'react thing' or 'see above' or 'user preference'.
 {{end}}
 
 {{define "as_of_param"}}
-Optional point in time (RFC3339, e.g. 2026-09-01T00:00:00Z, or a date like 2026-09-01). Answers "what did we know then": facts that were valid at that moment, including ones that have since been replaced or expired. Omit for the current state.
+Optional point in time (RFC3339, e.g. 2026-09-01T00:00:00Z, or a date like 2026-09-01). Answers "what did we know then" (knowledge time): what had been stored by that moment and not yet replaced or expired, including facts that have since been superseded, and excluding facts recorded afterwards even if they describe that moment. It does not ask whether a fact was true then; use from/to for that. Not combinable with known_from/known_to. Omit for the current state.
 {{end}}
 
 {{define "remember_importance"}}
@@ -295,7 +295,15 @@ Optional event time (RFC3339 or YYYY-MM-DD). Use it for when the observation hap
 {{end}}
 
 {{define "from_param"}}
-Optional inclusive start of a half-open [from,to) event/valid-time window (RFC3339 or YYYY-MM-DD). On recall, supported phrases such as yesterday, last week, or in March are inferred when explicit bounds are omitted; an explicit as_of disables phrase inference.
+Optional inclusive start of a half-open [from,to) event/valid-time window (RFC3339 or YYYY-MM-DD). On recall, supported phrases such as yesterday, last week, or in March are inferred when explicit bounds are omitted; an explicit as_of, known_from or known_to disables phrase inference. This is valid time (when something was true or happened) and combines with the knowledge-time arguments.
+{{end}}
+
+{{define "known_from_param"}}
+Optional start of a half-open [known_from,known_to) knowledge-time window (RFC3339 or YYYY-MM-DD). Returns what the system held at some point in the window, including beliefs replaced or expired inside it. Use it for "what did we know during March"; use as_of for a single moment. Not combinable with as_of.
+{{end}}
+
+{{define "known_to_param"}}
+Optional exclusive end of the knowledge-time window [known_from,known_to) (RFC3339 or YYYY-MM-DD). Anything stored at or after this moment is excluded. Omit to leave the window open.
 {{end}}
 
 {{define "to_param"}}

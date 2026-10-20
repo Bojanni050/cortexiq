@@ -39,12 +39,12 @@ func New() (*Queries, error) {
 // If namespaceIDs is nil, searches all namespaces. A non-nil asOf restricts the
 // search to what existed at that moment (the other Recall* queries do the same).
 func (q *Queries) RecallEpisodes(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf *time.Time) (string, []any, error) {
-	return q.RecallEpisodesWindow(namespaceIDs, vector, limit, asOf, nil, nil)
+	return q.RecallEpisodesWindow(namespaceIDs, vector, limit, asOf, nil, nil, Known{})
 }
 
 // RecallEpisodesWindow returns episode vector hits limited by stored-at asOf
 // and/or by the event-time window [from, to).
-func (q *Queries) RecallEpisodesWindow(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf, from, to *time.Time) (string, []any, error) {
+func (q *Queries) RecallEpisodesWindow(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf, from, to *time.Time, known Known) (string, []any, error) {
 	args := map[string]any{
 		"vector": vector,
 		"limit":  limit,
@@ -54,17 +54,18 @@ func (q *Queries) RecallEpisodesWindow(namespaceIDs []int64, vector pgvector.Vec
 	}
 	setAsOf(args, asOf)
 	setWindow(args, from, to)
+	setKnown(args, known)
 	return q.tpl.Execute("recall_episodes", args)
 }
 
 // RecallFacts returns SQL + args for fact vector search.
 // If namespaceIDs is nil, searches all namespaces.
 func (q *Queries) RecallFacts(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf *time.Time) (string, []any, error) {
-	return q.RecallFactsWindow(namespaceIDs, vector, limit, asOf, nil, nil)
+	return q.RecallFactsWindow(namespaceIDs, vector, limit, asOf, nil, nil, Known{})
 }
 
 // RecallFactsWindow returns fact vector hits constrained by valid-time overlap.
-func (q *Queries) RecallFactsWindow(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf, from, to *time.Time) (string, []any, error) {
+func (q *Queries) RecallFactsWindow(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf, from, to *time.Time, known Known) (string, []any, error) {
 	args := map[string]any{
 		"vector": vector,
 		"limit":  limit,
@@ -74,29 +75,32 @@ func (q *Queries) RecallFactsWindow(namespaceIDs []int64, vector pgvector.Vector
 	}
 	setAsOf(args, asOf)
 	setWindow(args, from, to)
+	setKnown(args, known)
 	return q.tpl.Execute("recall_facts", args)
 }
 
 // RecallEpisodesKeyword returns SQL + args for episode full-text search.
 // query is a websearch-syntax string (see brain.keywordQuery).
 func (q *Queries) RecallEpisodesKeyword(namespaceIDs []int64, query string, limit int, asOf *time.Time) (string, []any, error) {
-	return q.RecallEpisodesKeywordWindow(namespaceIDs, query, limit, asOf, nil, nil)
+	return q.RecallEpisodesKeywordWindow(namespaceIDs, query, limit, asOf, nil, nil, Known{})
 }
 
-func (q *Queries) RecallEpisodesKeywordWindow(namespaceIDs []int64, query string, limit int, asOf, from, to *time.Time) (string, []any, error) {
+func (q *Queries) RecallEpisodesKeywordWindow(namespaceIDs []int64, query string, limit int, asOf, from, to *time.Time, known Known) (string, []any, error) {
 	args := keywordArgs(namespaceIDs, query, limit, asOf)
 	setWindow(args, from, to)
+	setKnown(args, known)
 	return q.tpl.Execute("recall_episodes_keyword", args)
 }
 
 // RecallFactsKeyword returns SQL + args for fact full-text search.
 func (q *Queries) RecallFactsKeyword(namespaceIDs []int64, query string, limit int, asOf *time.Time) (string, []any, error) {
-	return q.RecallFactsKeywordWindow(namespaceIDs, query, limit, asOf, nil, nil)
+	return q.RecallFactsKeywordWindow(namespaceIDs, query, limit, asOf, nil, nil, Known{})
 }
 
-func (q *Queries) RecallFactsKeywordWindow(namespaceIDs []int64, query string, limit int, asOf, from, to *time.Time) (string, []any, error) {
+func (q *Queries) RecallFactsKeywordWindow(namespaceIDs []int64, query string, limit int, asOf, from, to *time.Time, known Known) (string, []any, error) {
 	args := keywordArgs(namespaceIDs, query, limit, asOf)
 	setWindow(args, from, to)
+	setKnown(args, known)
 	return q.tpl.Execute("recall_facts_keyword", args)
 }
 
@@ -120,35 +124,38 @@ func (q *Queries) RecallGoalsKeyword(namespaceIDs []int64, query string, limit i
 // ordered by cosine similarity of their embedding to vector (the query's), so
 // an entity with many facts puts the ones that answer the question first.
 func (q *Queries) RecallFactsGraph(namespaceIDs []int64, query string, vector pgvector.Vector, limit int, asOf *time.Time) (string, []any, error) {
-	return q.RecallFactsGraphWindow(namespaceIDs, query, vector, limit, asOf, nil, nil)
+	return q.RecallFactsGraphWindow(namespaceIDs, query, vector, limit, asOf, nil, nil, Known{})
 }
 
-func (q *Queries) RecallFactsGraphWindow(namespaceIDs []int64, query string, vector pgvector.Vector, limit int, asOf, from, to *time.Time) (string, []any, error) {
+func (q *Queries) RecallFactsGraphWindow(namespaceIDs []int64, query string, vector pgvector.Vector, limit int, asOf, from, to *time.Time, known Known) (string, []any, error) {
 	args := keywordArgs(namespaceIDs, query, limit, asOf)
 	args["vector"] = vector
 	setWindow(args, from, to)
+	setKnown(args, known)
 	return q.tpl.Execute("recall_facts_graph", args)
 }
 
 // Temporal methods return the same row shape as their vector/keyword peers,
 // ordered by event/valid-time proximity within the requested window.
-func (q *Queries) RecallEpisodesTemporal(namespaceIDs []int64, limit int, asOf, from, to *time.Time) (string, []any, error) {
+func (q *Queries) RecallEpisodesTemporal(namespaceIDs []int64, limit int, asOf, from, to *time.Time, known Known) (string, []any, error) {
 	args := map[string]any{"limit": limit}
 	if len(namespaceIDs) > 0 {
 		args["namespace_ids"] = namespaceIDs
 	}
 	setAsOf(args, asOf)
 	setWindow(args, from, to)
+	setKnown(args, known)
 	return q.tpl.Execute("recall_episodes_temporal", args)
 }
 
-func (q *Queries) RecallFactsTemporal(namespaceIDs []int64, limit int, asOf, from, to *time.Time) (string, []any, error) {
+func (q *Queries) RecallFactsTemporal(namespaceIDs []int64, limit int, asOf, from, to *time.Time, known Known) (string, []any, error) {
 	args := map[string]any{"limit": limit}
 	if len(namespaceIDs) > 0 {
 		args["namespace_ids"] = namespaceIDs
 	}
 	setAsOf(args, asOf)
 	setWindow(args, from, to)
+	setKnown(args, known)
 	return q.tpl.Execute("recall_facts_temporal", args)
 }
 
@@ -170,11 +177,27 @@ func keywordArgs(namespaceIDs []int64, query string, limit int, asOf *time.Time)
 	return args
 }
 
-// setAsOf switches a recall template to point-in-time mode: facts valid at that
-// moment (instead of "valid now") and episodes the system already knew then.
+// setAsOf switches a recall template to point-in-time mode: what the system
+// held at that moment (facts not yet superseded, episodes already stored),
+// instead of "valid now".
 func setAsOf(args map[string]any, asOf *time.Time) {
 	if asOf != nil {
 		args["as_of"] = asOf.UTC()
+	}
+}
+
+// Known is a half-open window [From, To) on the knowledge axis: it selects the
+// beliefs the system held at some point in it. as_of is the point form.
+type Known struct {
+	From, To *time.Time
+}
+
+func setKnown(args map[string]any, k Known) {
+	if k.From != nil {
+		args["known_from"] = k.From.UTC()
+	}
+	if k.To != nil {
+		args["known_to"] = k.To.UTC()
 	}
 }
 

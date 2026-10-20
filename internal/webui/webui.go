@@ -333,11 +333,21 @@ func (h *Handler) facts(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid as_of: %w", err))
 		return
 	}
-	items, err := h.Brain.QueryFactsWindow(r.Context(), namespacesParam(r), nil, nil, asOf, from, to, pagination(r))
+	knownFrom, err := parseTimeBound(query.Get("known_from"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid known_from: %w", err))
+		return
+	}
+	knownTo, err := parseTimeBound(query.Get("known_to"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid known_to: %w", err))
+		return
+	}
+	items, err := h.Brain.QueryFactsWindow(r.Context(), namespacesParam(r), nil, nil, asOf, from, to, knownFrom, knownTo, pagination(r))
 	if !hdl(w, err) {
 		return
 	}
-	count, err := h.Brain.CountFactsWindow(r.Context(), namespacesParam(r), nil, nil, asOf, from, to)
+	count, err := h.Brain.CountFactsWindow(r.Context(), namespacesParam(r), nil, nil, asOf, from, to, knownFrom, knownTo)
 	if !hdl(w, err) {
 		return
 	}
@@ -409,6 +419,10 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 		AsOf string `json:"as_of"`
 		From string `json:"from"`
 		To   string `json:"to"`
+		// KnownFrom and KnownTo are a half-open knowledge-time window; as_of is its
+		// point form and cannot be combined with them.
+		KnownFrom string `json:"known_from"`
+		KnownTo   string `json:"known_to"`
 		// Graph overrides the configured graph arm for this call: true forces it
 		// on, false forces it off, absent keeps the configuration.
 		Graph *bool `json:"graph"`
@@ -447,6 +461,18 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	opts.To = to
+	knownFrom, err := parseTimeBound(body.KnownFrom)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid known_from: %w", err))
+		return
+	}
+	opts.KnownFrom = knownFrom
+	knownTo, err := parseTimeBound(body.KnownTo)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid known_to: %w", err))
+		return
+	}
+	opts.KnownTo = knownTo
 	opts.Graph = body.Graph
 	if body.Trace {
 		results, trace, err := h.Brain.RecallDetailed(r.Context(), body.Namespaces, body.Query, body.Limit, opts)

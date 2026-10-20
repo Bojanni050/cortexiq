@@ -71,9 +71,17 @@ func recallCmd(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return fmt.Errorf("invalid to: %w", err)
 	}
+	knownFrom, err := parseAsOf(cmd.String("known-from"))
+	if err != nil {
+		return fmt.Errorf("invalid known-from: %w", err)
+	}
+	knownTo, err := parseAsOf(cmd.String("known-to"))
+	if err != nil {
+		return fmt.Errorf("invalid known-to: %w", err)
+	}
 
 	bc := getBootstrap(cmd)
-	results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to})
+	results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo})
 	if err != nil {
 		return err
 	}
@@ -164,6 +172,14 @@ func factsListCmd(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return fmt.Errorf("invalid to: %w", err)
 	}
+	knownFrom, err := parseAsOf(cmd.String("known-from"))
+	if err != nil {
+		return fmt.Errorf("invalid known-from: %w", err)
+	}
+	knownTo, err := parseAsOf(cmd.String("known-to"))
+	if err != nil {
+		return fmt.Errorf("invalid known-to: %w", err)
+	}
 
 	page := brain.Pagination{
 		Offset: cmd.Int("offset"),
@@ -171,7 +187,7 @@ func factsListCmd(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	bc := getBootstrap(cmd)
-	facts, err := bc.Brain.QueryFactsWindow(ctx, namespaces, since, until, asOf, from, to, page)
+	facts, err := bc.Brain.QueryFactsWindow(ctx, namespaces, since, until, asOf, from, to, knownFrom, knownTo, page)
 	if err != nil {
 		return err
 	}

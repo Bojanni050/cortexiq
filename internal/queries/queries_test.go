@@ -68,7 +68,7 @@ func TestRecallAsOfTemplatesRender(t *testing.T) {
 	if len(args) != 6 {
 		t.Errorf("facts as-of: got %d args, want 6\n%s", len(args), sql)
 	}
-	if strings.Contains(sql, "now()") || !strings.Contains(sql, "COALESCE(valid_from, created_at) <=") {
+	if strings.Contains(sql, "now()") || !strings.Contains(sql, "known_until >") {
 		t.Errorf("facts as-of must not use now():\n%s", sql)
 	}
 
@@ -120,7 +120,7 @@ func TestRecallGraphTemplatesRender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(withAsOf, "COALESCE(f.valid_from, f.created_at)") || strings.Contains(withAsOf, "namespace_id IN") {
+	if !strings.Contains(withAsOf, "f.known_until") || strings.Contains(withAsOf, "namespace_id IN") {
 		t.Errorf("as-of without namespaces rendered wrongly:\n%s", withAsOf)
 	}
 	if len(argsAsOf) == 0 {
@@ -145,19 +145,25 @@ func TestRecallWindowTemplatesRender(t *testing.T) {
 	to := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 	vec := pgvector.NewVector([]float32{1, 0})
 	checks := map[string]func() (string, []any, error){
-		"fact vector": func() (string, []any, error) { return q.RecallFactsWindow([]int64{7}, vec, 10, nil, &from, &to) },
+		"fact vector": func() (string, []any, error) {
+			return q.RecallFactsWindow([]int64{7}, vec, 10, nil, &from, &to, Known{})
+		},
 		"fact keyword": func() (string, []any, error) {
-			return q.RecallFactsKeywordWindow([]int64{7}, "project", 10, nil, &from, &to)
+			return q.RecallFactsKeywordWindow([]int64{7}, "project", 10, nil, &from, &to, Known{})
 		},
 		"fact graph": func() (string, []any, error) {
-			return q.RecallFactsGraphWindow([]int64{7}, "project", vec, 10, nil, &from, &to)
+			return q.RecallFactsGraphWindow([]int64{7}, "project", vec, 10, nil, &from, &to, Known{})
 		},
-		"episode vector": func() (string, []any, error) { return q.RecallEpisodesWindow([]int64{7}, vec, 10, nil, &from, &to) },
+		"episode vector": func() (string, []any, error) {
+			return q.RecallEpisodesWindow([]int64{7}, vec, 10, nil, &from, &to, Known{})
+		},
 		"episode keyword": func() (string, []any, error) {
-			return q.RecallEpisodesKeywordWindow([]int64{7}, "project", 10, nil, &from, &to)
+			return q.RecallEpisodesKeywordWindow([]int64{7}, "project", 10, nil, &from, &to, Known{})
 		},
-		"fact temporal":    func() (string, []any, error) { return q.RecallFactsTemporal([]int64{7}, 10, nil, &from, &to) },
-		"episode temporal": func() (string, []any, error) { return q.RecallEpisodesTemporal([]int64{7}, 10, nil, &from, &to) },
+		"fact temporal": func() (string, []any, error) { return q.RecallFactsTemporal([]int64{7}, 10, nil, &from, &to, Known{}) },
+		"episode temporal": func() (string, []any, error) {
+			return q.RecallEpisodesTemporal([]int64{7}, 10, nil, &from, &to, Known{})
+		},
 	}
 	for name, build := range checks {
 		t.Run(name, func(t *testing.T) {
@@ -184,7 +190,7 @@ func TestRecallWindowTemplatesRender(t *testing.T) {
 	}
 
 	// An upper-only fact window must still exclude facts that start after `to`.
-	sql, args, err := q.RecallFactsWindow(nil, vec, 10, nil, nil, &to)
+	sql, args, err := q.RecallFactsWindow(nil, vec, 10, nil, nil, &to, Known{})
 	if err != nil {
 		t.Fatal(err)
 	}

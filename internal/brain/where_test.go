@@ -33,11 +33,11 @@ func TestFactWhere(t *testing.T) {
 			3,
 		},
 		{
-			// as-of reuses one placeholder for both comparisons, so the
-			// argument appears once.
+			// as-of is knowledge time and reuses one placeholder for both
+			// comparisons, so the argument appears once.
 			"as of",
 			nil, nil, &at,
-			"namespace_id = ANY($1) AND deleted_at IS NULL AND COALESCE(valid_from, created_at) <= $2 AND (valid_until IS NULL OR valid_until > $2)",
+			"namespace_id = ANY($1) AND deleted_at IS NULL AND created_at <= $2 AND (known_until IS NULL OR known_until > $2)",
 			2,
 		},
 	}
@@ -63,25 +63,60 @@ func TestFactWhereWindow(t *testing.T) {
 	from := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 	asOf := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
+	kFrom := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	kTo := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	const base = "namespace_id = ANY($1) AND deleted_at IS NULL"
 	tests := []struct {
-		name           string
-		from, to, asOf *time.Time
-		want           string
-		wantArgs       []any
+		name                               string
+		from, to, asOf, knownFrom, knownTo *time.Time
+		want                               string
+		wantArgs                           []any
 	}{
-		{"from only", &from, nil, nil, "namespace_id = ANY($1) AND deleted_at IS NULL AND COALESCE(valid_from, created_at) < 'infinity'::timestamptz AND (valid_until IS NULL OR valid_until > $2)", []any{ns, from}},
-		{"to only", nil, &to, nil, "namespace_id = ANY($1) AND deleted_at IS NULL AND COALESCE(valid_from, created_at) < $2 AND (valid_until IS NULL OR valid_until > '-infinity'::timestamptz)", []any{ns, to}},
-		{"from and to", &from, &to, nil, "namespace_id = ANY($1) AND deleted_at IS NULL AND COALESCE(valid_from, created_at) < $3 AND (valid_until IS NULL OR valid_until > $2)", []any{ns, from, to}},
-		{"as of and window", &from, &to, &asOf, "namespace_id = ANY($1) AND deleted_at IS NULL AND COALESCE(valid_from, created_at) <= $2 AND (valid_until IS NULL OR valid_until > $2) AND COALESCE(valid_from, created_at) < $4 AND (valid_until IS NULL OR valid_until > $3)", []any{ns, asOf, from, to}},
+		{"from only", &from, nil, nil, nil, nil, base + " AND COALESCE(valid_from, created_at) < 'infinity'::timestamptz AND (valid_until IS NULL OR valid_until > $2)", []any{ns, from}},
+		{"to only", nil, &to, nil, nil, nil, base + " AND COALESCE(valid_from, created_at) < $2 AND (valid_until IS NULL OR valid_until > '-infinity'::timestamptz)", []any{ns, to}},
+		{"from and to", &from, &to, nil, nil, nil, base + " AND COALESCE(valid_from, created_at) < $3 AND (valid_until IS NULL OR valid_until > $2)", []any{ns, from, to}},
+		{"as of and window", &from, &to, &asOf, nil, nil, base + " AND created_at <= $2 AND (known_until IS NULL OR known_until > $2) AND COALESCE(valid_from, created_at) < $4 AND (valid_until IS NULL OR valid_until > $3)", []any{ns, asOf, from, to}},
+		// Knowledge time never looks at valid_from/valid_until.
+		{"known window", nil, nil, nil, &kFrom, &kTo, base + " AND created_at < $2 AND (known_until IS NULL OR known_until > $3)", []any{ns, kTo, kFrom}},
+		{"known to only", nil, nil, nil, nil, &kTo, base + " AND created_at < $2", []any{ns, kTo}},
+		{"known from only", nil, nil, nil, &kFrom, nil, base + " AND (known_until IS NULL OR known_until > $2)", []any{ns, kFrom}},
+		{"known window and valid window", &from, &to, nil, &kFrom, &kTo, base + " AND created_at < $2 AND (known_until IS NULL OR known_until > $3) AND COALESCE(valid_from, created_at) < $5 AND (valid_until IS NULL OR valid_until > $4)", []any{ns, kTo, kFrom, from, to}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			where, args := factWhereWindow(ns, nil, nil, tc.asOf, tc.from, tc.to)
+			where, args := factWhereWindow(ns, nil, nil, tc.asOf, tc.from, tc.to, tc.knownFrom, tc.knownTo)
 			if where != tc.want {
 				t.Errorf("where = %q, want %q", where, tc.want)
 			}
 			if !reflect.DeepEqual(args, tc.wantArgs) {
 				t.Errorf("args = %#v, want %#v", args, tc.wantArgs)
+			}
+		})
+	}
+}
+
+func TestCheckFactWindows(t *testing.T) {
+	a := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	b := a.AddDate(0, 1, 0)
+	tests := []struct {
+		name                       string
+		asOf, from, to, kFrom, kTo *time.Time
+		wantErr                    bool
+	}{
+		{"none", nil, nil, nil, nil, nil, false},
+		{"valid window", nil, &a, &b, nil, nil, false},
+		{"reversed valid window", nil, &b, &a, nil, nil, true},
+		{"known window", nil, nil, nil, &a, &b, false},
+		{"reversed known window", nil, nil, nil, &b, &a, true},
+		{"as of alone", &a, nil, nil, nil, nil, false},
+		{"as of with known_from", &a, nil, nil, &a, nil, true},
+		{"as of with known_to", &a, nil, nil, nil, &b, true},
+		{"as of with valid window", &a, &a, &b, nil, nil, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := checkFactWindows(tc.asOf, tc.from, tc.to, tc.kFrom, tc.kTo); (err != nil) != tc.wantErr {
+				t.Errorf("err = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}

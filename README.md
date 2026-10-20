@@ -50,7 +50,7 @@ rate_fact(fact_id: 42, correct: false, note: "user said Redis")
 
 A vote never edits the fact and never touches confidence, `valid_from`/`valid_until` or decay: those are evidence the fact earned, and a vote is not new evidence. It only scales the fact's recall rank by a bounded factor (0.5–1.25), so a downvoted fact slides to the back and can drop out of the answer, while removal still happens through a superseding fact, `forget`, or confidence decay.
 
-Every caller has one standing vote per fact — changing your mind replaces it (`replaced: true`), so nobody wins an argument by voting more often. Votes are kept append-only in `fact_feedback` for audit, but only each principal's latest vote counts. `as_of` recalls ignore feedback: today's opinion must not rewrite what was known then.
+Every caller has one standing vote per fact — changing your mind replaces it (`replaced: true`), so nobody wins an argument by voting more often. Votes are kept append-only in `fact_feedback` for audit, but only each principal's latest vote counts. Recalls with `as_of` or a `known_from`/`known_to` window ignore feedback: today's opinion must not rewrite what was known then.
 
 ## What is not worth storing
 
@@ -126,9 +126,17 @@ Recall results carry an `id` that is only unique **within its own table**: facts
 Recall accepts optional `from` and `to` bounds as an RFC3339 timestamp or
 `YYYY-MM-DD`. They form a half-open interval `[from, to)`: episodes are matched
 by `occurred_at`, while facts are matched when their validity interval overlaps
-it (falling back to `created_at` when `valid_from` is absent). `as_of` remains a
-separate point-in-time question — what was known/valid then — and can be combined
-with the window. CLI and MCP recall also recognize a small deterministic set of
+it (falling back to `created_at` when `valid_from` is absent). That is *valid
+time*: when something happened or was true. Separately, *knowledge time* asks
+what the system held: `as_of` answers "what did we know at that moment" for facts
+and episodes alike (a fact counts from `created_at` until it was superseded or
+expired, `known_until`), and `known_from`/`known_to` give the half-open window
+`[known_from, known_to)` of the same axis ("what did we hold during March",
+including beliefs replaced inside it). `as_of` is the point form, so it cannot be
+combined with `known_from`/`known_to`; either can be combined with `from`/`to`.
+A fact recorded in October about March is not returned by `as_of` in March, and
+a fact whose validity ended is still returned by an `as_of` after that, as long
+as it had not been replaced. CLI and MCP recall also recognize a small deterministic set of
 Dutch and English date phrases such as “yesterday”, “last month”, “gisteren”, or
 “maart 2025”; explicit bounds take precedence. This inference can be disabled
 with `CORTEXIQ_TEMPORAL_RECALL=false`; the time-ranked recall arm can be disabled
@@ -137,7 +145,7 @@ separately with `CORTEXIQ_TEMPORAL_ARM=false`.
 The REST API accepts the same explicit bounds on `POST /api/v1/recall`, for
 example `{"query":"project updates","from":"2025-03-01","to":"2025-04-01"}`.
 For `GET /api/v1/facts` and `cortexiq facts`, `from`/`to` filter validity
-overlap; the older `since`/`until` filters still mean `created_at`.
+overlap and `as_of`, `known_from`, `known_to` filter knowledge time; the older `since`/`until` filters still mean `created_at`.
 
 To protect CortexIQ, set `CORTEXIQ_API_TOKEN` in `.env`. It guards both the dashboard API (`/api/v1`) and the MCP server (`/sse`, `/message`): every request then needs `Authorization: Bearer <token>`. The dashboard asks for the token on first use and remembers it in the browser; MCP clients need to send the header (see below). Leave it empty to keep everything open. `/healthz`, `/readyz` and `/metrics` are not covered.
 

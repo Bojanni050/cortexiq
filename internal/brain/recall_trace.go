@@ -10,6 +10,13 @@ import (
 type RecallOptions struct {
 	// AsOf answers "what did we know at that moment"; see RecallAsOf.
 	AsOf *time.Time
+	// KnownFrom and KnownTo select what the system held at some point in the
+	// half-open window [KnownFrom, KnownTo): a fact counts when it was stored
+	// before KnownTo and not yet superseded or expired at KnownFrom. AsOf is the
+	// point form of this axis, so combining them is an error. From and To stay the
+	// valid-time axis and compose with either.
+	KnownFrom *time.Time
+	KnownTo   *time.Time
 	// From and To select memories whose event/validity interval overlaps this
 	// half-open time window. They are explicit bounds and override query parsing.
 	From *time.Time
@@ -67,6 +74,8 @@ type RecallTrace struct {
 	Namespaces    []string `json:"namespaces"`
 	NamespaceIDs  int      `json:"namespace_ids"`
 	AsOf          string   `json:"as_of,omitempty"`
+	KnownFrom     string   `json:"known_from,omitempty"`
+	KnownTo       string   `json:"known_to,omitempty"`
 	From          string   `json:"from,omitempty"`
 	To            string   `json:"to,omitempty"`
 	Temporal      bool     `json:"temporal"`

@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/Bojanni050/cortexiq/internal/queries"
 	"github.com/Bojanni050/cortexiq/internal/reranker"
 	"github.com/pgvector/pgvector-go"
 )
@@ -87,12 +88,14 @@ func (b *Brain) Recall(ctx context.Context, namespaces []string, query string, l
 }
 
 // RecallAsOf is Recall for a point in time: it answers "what did we know at asOf".
-// Facts count when they were valid then (valid_from <= asOf < valid_until, a
-// missing valid_from falling back to created_at), so a fact that was later
-// superseded or expired is still found for a moment before that. Episodes count
-// when they had been stored by then. Recency decay is measured from asOf, and the
-// recall is not counted as use of a fact (historical lookups must not keep facts
-// from decaying). A nil asOf is the normal "valid now" recall.
+// This is knowledge time, the same axis for facts and episodes: a fact counts
+// when it had been stored by then and had not yet been superseded or expired
+// (created_at <= asOf < known_until), so a fact that was later replaced is still
+// found, and one recorded afterwards about that moment is not. Whether the fact
+// was true then is a different question; ask it with From/To. Recency decay is
+// measured from asOf, and the recall is not counted as use of a fact
+// (historical lookups must not keep facts from decaying). A nil asOf is the
+// normal "valid now" recall.
 func (b *Brain) RecallAsOf(ctx context.Context, namespaces []string, query string, limit int, asOf *time.Time) ([]RecallResult, error) {
 	return b.recall(ctx, namespaces, query, limit, RecallOptions{AsOf: asOf}, nil)
 }
@@ -100,7 +103,8 @@ func (b *Brain) RecallAsOf(ctx context.Context, namespaces []string, query strin
 // recall is the shared implementation of RecallAsOf and RecallDetailed. A nil
 // trace records nothing.
 func (b *Brain) recall(ctx context.Context, namespaces []string, query string, limit int, opts RecallOptions, tr *RecallTrace) ([]RecallResult, error) {
-	if opts.AsOf == nil && b.config.TemporalRecall && (opts.From == nil || opts.To == nil) {
+	explicitKnown := opts.AsOf != nil || opts.KnownFrom != nil || opts.KnownTo != nil
+	if !explicitKnown && b.config.TemporalRecall && (opts.From == nil || opts.To == nil) {
 		parsedFrom, parsedTo := temporalWindow(query, time.Now())
 		if opts.From == nil {
 			opts.From = parsedFrom
@@ -112,7 +116,14 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 	if opts.From != nil && opts.To != nil && !opts.From.Before(*opts.To) {
 		return nil, fmt.Errorf("invalid time window: from must be before to")
 	}
+	if opts.KnownFrom != nil && opts.KnownTo != nil && !opts.KnownFrom.Before(*opts.KnownTo) {
+		return nil, fmt.Errorf("invalid knowledge window: known_from must be before known_to")
+	}
+	if opts.AsOf != nil && (opts.KnownFrom != nil || opts.KnownTo != nil) {
+		return nil, fmt.Errorf("as_of cannot be combined with known_from/known_to: as_of is the point form of the same axis")
+	}
 	asOf := opts.AsOf
+	known := queries.Known{From: opts.KnownFrom, To: opts.KnownTo}
 	temporal := b.config.TemporalArm && (opts.From != nil || opts.To != nil)
 	var routed []string
 	routeOn := b.config.RouteRecall
@@ -169,9 +180,13 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		}
 	}
 	now := time.Now()
-	if asOf != nil {
+	switch {
+	case asOf != nil:
 		now = *asOf
+	case known.To != nil:
+		now = *known.To
 	}
+	historical := asOf != nil || known.From != nil || known.To != nil
 
 	if tr != nil {
 		tr.Query, tr.KeywordQuery, tr.Hybrid, tr.Graph, tr.Limit, tr.Candidates = query, kwQuery, kwQuery != "", graph, limit, candidates
@@ -194,7 +209,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 
 	// Search facts first (higher quality, consolidated)
 	if facts {
-		factSQL, factArgs, err := b.queries.RecallFactsWindow(nsIDs, pgVec, candidates, asOf, opts.From, opts.To)
+		factSQL, factArgs, err := b.queries.RecallFactsWindow(nsIDs, pgVec, candidates, asOf, opts.From, opts.To, known)
 		if err != nil {
 			return nil, fmt.Errorf("build fact query: %w", err)
 		}
@@ -206,7 +221,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 
 		var factKw, factGraph, factTemporal []RecallResult
 		if kwQuery != "" {
-			kwSQL, kwArgs, err := b.queries.RecallFactsKeywordWindow(nsIDs, kwQuery, candidates, asOf, opts.From, opts.To)
+			kwSQL, kwArgs, err := b.queries.RecallFactsKeywordWindow(nsIDs, kwQuery, candidates, asOf, opts.From, opts.To, known)
 			if err != nil {
 				return nil, fmt.Errorf("build fact keyword query: %w", err)
 			}
@@ -216,7 +231,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			stage("facts_keyword", len(factKw))
 		}
 		if graph {
-			graphSQL, graphArgs, err := b.queries.RecallFactsGraphWindow(nsIDs, query, pgVec, candidates, asOf, opts.From, opts.To)
+			graphSQL, graphArgs, err := b.queries.RecallFactsGraphWindow(nsIDs, query, pgVec, candidates, asOf, opts.From, opts.To, known)
 			if err != nil {
 				return nil, fmt.Errorf("build fact graph query: %w", err)
 			}
@@ -229,7 +244,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			}
 		}
 		if temporal {
-			temporalSQL, temporalArgs, err := b.queries.RecallFactsTemporal(nsIDs, candidates, asOf, opts.From, opts.To)
+			temporalSQL, temporalArgs, err := b.queries.RecallFactsTemporal(nsIDs, candidates, asOf, opts.From, opts.To, known)
 			if err != nil {
 				return nil, fmt.Errorf("build fact temporal query: %w", err)
 			}
@@ -263,7 +278,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		}
 		// A historical lookup answers "what did we know then": today's opinion
 		// on a fact must not reorder the record of a past moment.
-		if asOf == nil {
+		if !historical {
 			b.applyFeedback(ctx, results)
 		}
 		results = b.applyBoosts(results, limit, now)
@@ -279,7 +294,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 				epCandidates = maxCandidates
 			}
 		}
-		epSQL, epArgs, err := b.queries.RecallEpisodesWindow(nsIDs, pgVec, epCandidates, asOf, opts.From, opts.To)
+		epSQL, epArgs, err := b.queries.RecallEpisodesWindow(nsIDs, pgVec, epCandidates, asOf, opts.From, opts.To, known)
 		if err != nil {
 			return nil, fmt.Errorf("build episode query: %w", err)
 		}
@@ -291,7 +306,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 
 		var epKw, epTemporal []RecallResult
 		if kwQuery != "" {
-			kwSQL, kwArgs, err := b.queries.RecallEpisodesKeywordWindow(nsIDs, kwQuery, epCandidates, asOf, opts.From, opts.To)
+			kwSQL, kwArgs, err := b.queries.RecallEpisodesKeywordWindow(nsIDs, kwQuery, epCandidates, asOf, opts.From, opts.To, known)
 			if err != nil {
 				return nil, fmt.Errorf("build episode keyword query: %w", err)
 			}
@@ -301,7 +316,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			stage("episodes_keyword", len(epKw))
 		}
 		if temporal {
-			temporalSQL, temporalArgs, err := b.queries.RecallEpisodesTemporal(nsIDs, epCandidates, asOf, opts.From, opts.To)
+			temporalSQL, temporalArgs, err := b.queries.RecallEpisodesTemporal(nsIDs, epCandidates, asOf, opts.From, opts.To, known)
 			if err != nil {
 				return nil, fmt.Errorf("build episode temporal query: %w", err)
 			}
@@ -356,7 +371,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 
 	// A traced recall is an inspection, not a use: like a historical lookup it
 	// must not keep facts from decaying.
-	if asOf == nil && tr == nil {
+	if !historical && tr == nil {
 		b.touchRecalledFacts(ctx, results)
 	}
 	if tr != nil {

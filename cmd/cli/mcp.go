@@ -125,6 +125,8 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("namespaces", mcp.Description(render("recall_namespaces"))),
 		mcp.WithNumber("limit", mcp.Description(render("limit_param")), mcp.DefaultNumber(10)),
 		mcp.WithString("as_of", mcp.Description(render("as_of_param"))),
+		mcp.WithString("known_from", mcp.Description(render("known_from_param"))),
+		mcp.WithString("known_to", mcp.Description(render("known_to_param"))),
 		mcp.WithString("from", mcp.Description(render("from_param"))),
 		mcp.WithString("to", mcp.Description(render("to_param"))),
 		mcp.WithString("types", mcp.Description(render("recall_types"))),
@@ -141,6 +143,14 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		to, err := parseAsOf(request.GetString("to", ""))
 		if err != nil {
 			return nil, fmt.Errorf("invalid to: %w", err)
+		}
+		knownFrom, err := parseAsOf(request.GetString("known_from", ""))
+		if err != nil {
+			return nil, fmt.Errorf("invalid known_from: %w", err)
+		}
+		knownTo, err := parseAsOf(request.GetString("known_to", ""))
+		if err != nil {
+			return nil, fmt.Errorf("invalid known_to: %w", err)
 		}
 		var types []string
 		for _, t := range strings.Split(request.GetString("types", ""), ",") {
@@ -164,7 +174,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			}
 		}
 
-		results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, Types: types})
+		results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo, Types: types})
 		if err != nil {
 			return nil, err
 		}
@@ -394,6 +404,8 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithNumber("limit", mcp.Description(render("pagination_limit")), mcp.DefaultNumber(100)),
 		mcp.WithNumber("offset", mcp.Description(render("pagination_offset")), mcp.DefaultNumber(0)),
 		mcp.WithString("as_of", mcp.Description(render("as_of_param"))),
+		mcp.WithString("known_from", mcp.Description(render("known_from_param"))),
+		mcp.WithString("known_to", mcp.Description(render("known_to_param"))),
 		mcp.WithString("from", mcp.Description(render("from_param"))),
 		mcp.WithString("to", mcp.Description(render("to_param"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -421,8 +433,16 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		if err != nil {
 			return nil, fmt.Errorf("invalid to: %w", err)
 		}
+		knownFrom, err := parseAsOf(request.GetString("known_from", ""))
+		if err != nil {
+			return nil, fmt.Errorf("invalid known_from: %w", err)
+		}
+		knownTo, err := parseAsOf(request.GetString("known_to", ""))
+		if err != nil {
+			return nil, fmt.Errorf("invalid known_to: %w", err)
+		}
 
-		facts, err := bc.Brain.QueryFactsWindow(ctx, namespaces, nil, nil, asOf, from, to, page)
+		facts, err := bc.Brain.QueryFactsWindow(ctx, namespaces, nil, nil, asOf, from, to, knownFrom, knownTo, page)
 		if err != nil {
 			return nil, err
 		}

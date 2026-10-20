@@ -36,12 +36,7 @@ WHERE deleted_at IS NULL
 {{if or .Args.to .Args.from}}
     AND (valid_until IS NULL OR valid_until > {{if .Args.from}}{{.Bind .Args.from}}{{else}}'-infinity'::timestamptz{{end}})
 {{end}}
-{{if .Args.as_of}}
-    AND COALESCE(valid_from, created_at) <= {{.Bind .Args.as_of}}
-    AND (valid_until IS NULL OR valid_until > {{.Bind .Args.as_of}})
-{{else if and (not .Args.from) (not .Args.to)}}
-    AND (valid_until IS NULL OR valid_until > now())
-{{end}}
+{{template "fact_known_filter" .}}
     AND embedding IS NOT NULL
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
@@ -87,12 +82,7 @@ WHERE deleted_at IS NULL
 {{if or .Args.to .Args.from}}
     AND (valid_until IS NULL OR valid_until > {{if .Args.from}}{{.Bind .Args.from}}{{else}}'-infinity'::timestamptz{{end}})
 {{end}}
-{{if .Args.as_of}}
-    AND COALESCE(valid_from, created_at) <= {{.Bind .Args.as_of}}
-    AND (valid_until IS NULL OR valid_until > {{.Bind .Args.as_of}})
-{{else if and (not .Args.from) (not .Args.to)}}
-    AND (valid_until IS NULL OR valid_until > now())
-{{end}}
+{{template "fact_known_filter" .}}
     AND content_tsv @@ websearch_to_tsquery('simple', {{.Bind .Args.query}})
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
@@ -169,9 +159,16 @@ WHERE f.deleted_at IS NULL
     AND (f.valid_until IS NULL OR f.valid_until > {{if .Args.from}}{{.Bind .Args.from}}{{else}}'-infinity'::timestamptz{{end}})
 {{end}}
 {{if .Args.as_of}}
-    AND COALESCE(f.valid_from, f.created_at) <= {{.Bind .Args.as_of}}
-    AND (f.valid_until IS NULL OR f.valid_until > {{.Bind .Args.as_of}})
-{{else if and (not .Args.from) (not .Args.to)}}
+    AND f.created_at <= {{.Bind .Args.as_of}}
+    AND (f.known_until IS NULL OR f.known_until > {{.Bind .Args.as_of}})
+{{end}}
+{{if .Args.known_to}}
+    AND f.created_at < {{.Bind .Args.known_to}}
+{{end}}
+{{if .Args.known_from}}
+    AND (f.known_until IS NULL OR f.known_until > {{.Bind .Args.known_from}})
+{{end}}
+{{if not (or .Args.as_of .Args.known_from .Args.known_to .Args.from .Args.to)}}
     AND (f.valid_until IS NULL OR f.valid_until > now())
 {{end}}
 
@@ -182,9 +179,36 @@ ORDER BY c.hop, COALESCE(1 - (f.embedding <=> {{.Bind .Args.vector}}), -1) DESC,
 LIMIT {{.Bind .Args.limit}}
 {{end}}
 
+{{/*
+  Knowledge time (what the system held) and valid time (what was true) are
+  separate axes. as_of is the point form of the knowledge axis; known_from and
+  known_to are its half-open window [known_from, known_to): a fact counts when
+  its interval [created_at, known_until) overlaps it. from and to are the valid
+  axis and compose with either. Without any time argument a fact must be valid now.
+*/}}
+{{define "fact_known_filter"}}
+{{if .Args.as_of}}
+    AND created_at <= {{.Bind .Args.as_of}}
+    AND (known_until IS NULL OR known_until > {{.Bind .Args.as_of}})
+{{end}}
+{{if .Args.known_to}}
+    AND created_at < {{.Bind .Args.known_to}}
+{{end}}
+{{if .Args.known_from}}
+    AND (known_until IS NULL OR known_until > {{.Bind .Args.known_from}})
+{{end}}
+{{if not (or .Args.as_of .Args.known_from .Args.known_to .Args.from .Args.to)}}
+    AND (valid_until IS NULL OR valid_until > now())
+{{end}}
+{{end}}
+
+{{/* Episodes are never withdrawn, so only the end of the knowledge window matters. */}}
 {{define "episode_time_filter"}}
 {{if .Args.as_of}}
     AND created_at <= {{.Bind .Args.as_of}}
+{{end}}
+{{if .Args.known_to}}
+    AND created_at < {{.Bind .Args.known_to}}
 {{end}}
 {{if .Args.from}}
     AND occurred_at >= {{.Bind .Args.from}}
@@ -216,12 +240,7 @@ WHERE deleted_at IS NULL
 {{if or .Args.to .Args.from}}
     AND (valid_until IS NULL OR valid_until > {{if .Args.from}}{{.Bind .Args.from}}{{else}}'-infinity'::timestamptz{{end}})
 {{end}}
-{{if .Args.as_of}}
-    AND COALESCE(valid_from, created_at) <= {{.Bind .Args.as_of}}
-    AND (valid_until IS NULL OR valid_until > {{.Bind .Args.as_of}})
-{{else if and (not .Args.from) (not .Args.to)}}
-    AND (valid_until IS NULL OR valid_until > now())
-{{end}}
+{{template "fact_known_filter" .}}
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
 {{end}}

@@ -18,12 +18,12 @@ func (b *Brain) QueryFacts(ctx context.Context, namespaceSlugs []string, since, 
 
 // factWhere builds the historical filter used by existing as-of queries.
 func factWhere(nsIDs []int64, since, until, asOf *time.Time) (string, []any) {
-	return factWhereWindow(nsIDs, since, until, asOf, nil, nil)
+	return factWhereWindow(nsIDs, since, until, asOf, nil, nil, nil, nil)
 }
 
 // factWhereWindow builds the filter QueryFactsWindow and CountFactsWindow share, so the total
 // can never describe a different set than the page.
-func factWhereWindow(nsIDs []int64, since, until, asOf, from, to *time.Time) (string, []any) {
+func factWhereWindow(nsIDs []int64, since, until, asOf, from, to, knownFrom, knownTo *time.Time) (string, []any) {
 	where := "namespace_id = ANY($1) AND deleted_at IS NULL"
 	args := []any{nsIDs}
 	if since != nil {
@@ -36,8 +36,16 @@ func factWhereWindow(nsIDs []int64, since, until, asOf, from, to *time.Time) (st
 	}
 	if asOf != nil {
 		n := len(args) + 1
-		where += fmt.Sprintf(" AND COALESCE(valid_from, created_at) <= $%d AND (valid_until IS NULL OR valid_until > $%d)", n, n)
+		where += fmt.Sprintf(" AND created_at <= $%d AND (known_until IS NULL OR known_until > $%d)", n, n)
 		args = append(args, *asOf)
+	}
+	if knownTo != nil {
+		args = append(args, *knownTo)
+		where += fmt.Sprintf(" AND created_at < $%d", len(args))
+	}
+	if knownFrom != nil {
+		args = append(args, *knownFrom)
+		where += fmt.Sprintf(" AND (known_until IS NULL OR known_until > $%d)", len(args))
 	}
 	fromParam, toParam := "'-infinity'::timestamptz", "'infinity'::timestamptz"
 	if from != nil {
@@ -54,20 +62,34 @@ func factWhereWindow(nsIDs []int64, since, until, asOf, from, to *time.Time) (st
 	return where, args
 }
 
-// QueryFactsAsOf is QueryFacts restricted to the facts that were valid at asOf
-// (valid_from <= asOf < valid_until; a missing valid_from falls back to
-// created_at), which includes facts that were valid then but are superseded or
-// expired now. A nil asOf lists every fact, like QueryFacts.
-func (b *Brain) QueryFactsAsOf(ctx context.Context, namespaceSlugs []string, since, until, asOf *time.Time, page Pagination) ([]models.Fact, error) {
-	return b.QueryFactsWindow(ctx, namespaceSlugs, since, until, asOf, nil, nil, page)
+// checkFactWindows rejects empty or contradictory time arguments.
+func checkFactWindows(asOf, from, to, knownFrom, knownTo *time.Time) error {
+	if from != nil && to != nil && !from.Before(*to) {
+		return fmt.Errorf("invalid time window: from must be before to")
+	}
+	if knownFrom != nil && knownTo != nil && !knownFrom.Before(*knownTo) {
+		return fmt.Errorf("invalid knowledge window: known_from must be before known_to")
+	}
+	if asOf != nil && (knownFrom != nil || knownTo != nil) {
+		return fmt.Errorf("as_of cannot be combined with known_from/known_to: as_of is the point form of the same axis")
+	}
+	return nil
 }
 
-// QueryFactsWindow filters facts whose validity intervals overlap [from,to),
-// while retaining since/until as created_at filters and asOf as a point-in-time
-// validity filter.
-func (b *Brain) QueryFactsWindow(ctx context.Context, namespaceSlugs []string, since, until, asOf, from, to *time.Time, page Pagination) ([]models.Fact, error) {
-	if from != nil && to != nil && !from.Before(*to) {
-		return nil, fmt.Errorf("invalid time window: from must be before to")
+// QueryFactsAsOf is QueryFacts restricted to the facts the system held at asOf
+// (created_at <= asOf < known_until), which includes facts that were replaced or
+// expired since. A nil asOf lists every fact, like QueryFacts.
+func (b *Brain) QueryFactsAsOf(ctx context.Context, namespaceSlugs []string, since, until, asOf *time.Time, page Pagination) ([]models.Fact, error) {
+	return b.QueryFactsWindow(ctx, namespaceSlugs, since, until, asOf, nil, nil, nil, nil, page)
+}
+
+// QueryFactsWindow filters facts whose validity intervals overlap [from,to) (valid
+// time) and whose knowledge intervals overlap [knownFrom,knownTo) (knowledge
+// time), while retaining since/until as created_at filters and asOf as the point
+// form of the knowledge axis. asOf cannot be combined with knownFrom/knownTo.
+func (b *Brain) QueryFactsWindow(ctx context.Context, namespaceSlugs []string, since, until, asOf, from, to, knownFrom, knownTo *time.Time, page Pagination) ([]models.Fact, error) {
+	if err := checkFactWindows(asOf, from, to, knownFrom, knownTo); err != nil {
+		return nil, err
 	}
 	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
 	if err != nil {
@@ -76,7 +98,7 @@ func (b *Brain) QueryFactsWindow(ctx context.Context, namespaceSlugs []string, s
 
 	page = page.Sanitize()
 
-	where, args := factWhereWindow(nsIDs, since, until, asOf, from, to)
+	where, args := factWhereWindow(nsIDs, since, until, asOf, from, to, knownFrom, knownTo)
 	query := `SELECT id, namespace_id, content, embedding, embedding_model, confidence,
 	          entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at
 	          FROM facts WHERE ` + where +
@@ -108,18 +130,18 @@ func (b *Brain) QueryFactsWindow(ctx context.Context, namespaceSlugs []string, s
 // CountFacts counts the facts QueryFactsAsOf would return for the same filters,
 // ignoring paging, so a caller can tell a full page from a truncated one.
 func (b *Brain) CountFacts(ctx context.Context, namespaceSlugs []string, since, until, asOf *time.Time) (int, error) {
-	return b.CountFactsWindow(ctx, namespaceSlugs, since, until, asOf, nil, nil)
+	return b.CountFactsWindow(ctx, namespaceSlugs, since, until, asOf, nil, nil, nil, nil)
 }
 
-func (b *Brain) CountFactsWindow(ctx context.Context, namespaceSlugs []string, since, until, asOf, from, to *time.Time) (int, error) {
-	if from != nil && to != nil && !from.Before(*to) {
-		return 0, fmt.Errorf("invalid time window: from must be before to")
+func (b *Brain) CountFactsWindow(ctx context.Context, namespaceSlugs []string, since, until, asOf, from, to, knownFrom, knownTo *time.Time) (int, error) {
+	if err := checkFactWindows(asOf, from, to, knownFrom, knownTo); err != nil {
+		return 0, err
 	}
 	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
 	if err != nil {
 		return 0, err
 	}
-	where, args := factWhereWindow(nsIDs, since, until, asOf, from, to)
+	where, args := factWhereWindow(nsIDs, since, until, asOf, from, to, knownFrom, knownTo)
 	return b.countWhere(ctx, "facts", where, args...)
 }
 
