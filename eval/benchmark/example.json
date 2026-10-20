@@ -1,0 +1,154 @@
+{
+  "name": "example",
+  "items": [
+    {
+      "question_id": "example-001",
+      "haystack_sessions": [
+        {
+          "id": "s1",
+          "date": "2025-01-15",
+          "turns": [
+            {"role": "user", "content": "I just moved to Amsterdam last week. It's a beautiful city."},
+            {"role": "assistant", "content": "That's great! Amsterdam is wonderful. What do you do for work?"},
+            {"role": "user", "content": "I'm a software engineer at a fintech startup called PayFlow. We're building a new payment platform."}
+          ]
+        },
+        {
+          "id": "s2",
+          "date": "2025-02-03",
+          "turns": [
+            {"role": "user", "content": "Quick update: I got promoted to senior engineer at PayFlow!"},
+            {"role": "assistant", "content": "Congratulations! That's fantastic news. When did that happen?"},
+            {"role": "user", "content": "It was announced yesterday, so February 2nd. I'm really excited about the new role."}
+          ]
+        }
+      ],
+      "qa_pairs": [
+        {
+          "id": "q1",
+          "category": "single-session",
+          "question": "Where does the user live?",
+          "answer": "Amsterdam"
+        },
+        {
+          "id": "q2",
+          "category": "single-session",
+          "question": "What company does the user work for?",
+          "answer": "PayFlow"
+        },
+        {
+          "id": "q3",
+          "category": "multi-session",
+          "question": "What is the user's current job title?",
+          "answer": "Senior software engineer at PayFlow"
+        },
+        {
+          "id": "q4",
+          "category": "temporal",
+          "question": "When did the user get promoted?",
+          "answer": "February 2nd, 2025",
+          "question_date": "2025-03-01"
+        }
+      ]
+    },
+    {
+      "question_id": "example-002",
+      "haystack_sessions": [
+        {
+          "id": "s1",
+          "date": "2025-03-10",
+          "turns": [
+            {"role": "user", "content": "I'm planning a trip to Japan in April. I want to visit Tokyo, Kyoto, and Osaka."},
+            {"role": "assistant", "content": "That sounds amazing! Japan in April is cherry blossom season. How long are you staying?"},
+            {"role": "user", "content": "Two weeks. I booked flights with KLM, departing from Amsterdam Schiphol on April 5th."}
+          ]
+        },
+        {
+          "id": "s2",
+          "date": "2025-03-15",
+          "turns": [
+            {"role": "user", "content": "I just booked my hotel in Tokyo. It's the Shibuya Excel Hotel, near the station."},
+            {"role": "assistant", "content": "Nice choice! Shibuya is a great area. Are you planning to get a JR Pass for the trains?"},
+            {"role": "user", "content": "Yes, I ordered a 7-day JR Pass. It should arrive next week."}
+          ]
+        }
+      ],
+      "qa_pairs": [
+        {
+          "id": "q5",
+          "category": "single-session",
+          "question": "Which cities does the user want to visit in Japan?",
+          "answer": "Tokyo, Kyoto, and Osaka"
+        },
+        {
+          "id": "q6",
+          "category": "single-session",
+          "question": "When does the user depart for Japan?",
+          "answer": "April 5th"
+        },
+        {
+          "id": "q7",
+          "category": "multi-session",
+          "question": "What hotel is the user staying at in Tokyo?",
+          "answer": "Shibuya Excel Hotel"
+        },
+        {
+          "id": "q8",
+          "category": "multi-session",
+          "question": "What kind of train pass did the user buy for Japan?",
+          "answer": "A 7-day JR Pass"
+        }
+      ]
+    },
+    {
+      "question_id": "example-003",
+      "haystack_sessions": [
+        {
+          "id": "s1",
+          "date": "2025-04-01",
+          "turns": [
+            {"role": "user", "content": "I adopted a dog! Her name is Luna and she's a 2-year-old Golden Retriever."},
+            {"role": "assistant", "content": "That's wonderful! How is she settling in?"},
+            {"role": "user", "content": "She's a bit shy but very sweet. We take her to the Vondelpark every morning."}
+          ]
+        },
+        {
+          "id": "s2",
+          "date": "2025-04-20",
+          "turns": [
+            {"role": "user", "content": "Luna had her first vet appointment today. The vet said she's healthy and weighs 28 kilos."},
+            {"role": "assistant", "content": "Great to hear she's healthy! What did the vet recommend for her diet?"},
+            {"role": "user", "content": "The vet recommended a high-quality kibble and regular exercise. She also needs a dental cleaning in 6 months."}
+          ]
+        }
+      ],
+      "qa_pairs": [
+        {
+          "id": "q9",
+          "category": "single-session",
+          "question": "What is the name of the user's dog?",
+          "answer": "Luna"
+        },
+        {
+          "id": "q10",
+          "category": "single-session",
+          "question": "What breed is the user's dog?",
+          "answer": "Golden Retriever"
+        },
+        {
+          "id": "q11",
+          "category": "multi-session",
+          "question": "How much does the user's dog weigh?",
+          "answer": "28 kilos"
+        },
+        {
+          "id": "q12",
+          "category": "temporal",
+          "question": "When does the dog need a dental cleaning?",
+          "answer": "In 6 months (around October 2025)",
+          "question_date": "2025-05-01"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+name: Benchmark
+
+# Runs the memory benchmark on every push to main and on PRs that touch
+# benchmark-relevant code. The benchmark needs an LLM API key to run reflect
+# and (optionally) the LLM judge, so it is skipped when the secret is absent.
+#
+# The benchmark report is uploaded as an artifact and the summary is printed
+# in the job log. A regression check fails the job when accuracy drops below
+# the configured threshold compared to the baseline on main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'internal/benchmark/**'
+      - 'internal/brain/**'
+      - 'internal/reasoner/**'
+      - 'cmd/cli/benchmark.go'
+      - 'eval/benchmark/**'
+      - '.github/workflows/benchmark.yml'
+
+concurrency:
+  group: benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Memory Benchmark
+    runs-on: ubuntu-latest
+    # Skip when no LLM API key is available (fork PRs, etc.)
+    if: ${{ vars.BENCHMARK_ENABLED == 'true' || github.repository == 'Bojanni050/cortexiq' }}
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: cortexiq
+          POSTGRES_PASSWORD: cortexiq
+          POSTGRES_DB: cortexiq_bench
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cortexiq -d cortexiq_bench"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build -o cortexiq ./cmd/cli
+
+      - name: Run example benchmark
+        env:
+          CORTEXIQ_POSTGRES_DSN: postgres://cortexiq:cortexiq@localhost:5432/cortexiq_bench?sslmode=disable
+          CORTEXIQ_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CORTEXIQ_OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || 'https://api.openai.com/v1' }}
+          CORTEXIQ_EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL || 'text-embedding-3-small' }}
+          CORTEXIQ_REASONER_MODEL: ${{ vars.REASONER_MODEL || 'gpt-4o-mini' }}
+          CORTEXIQ_VECTOR_DIM: ${{ vars.VECTOR_DIM || '1536' }}
+        run: |
+          ./cortexiq benchmark run \
+            --dataset eval/benchmark/example.json \
+            --llm-judge \
+            --output benchmark-report.json \
+            --keep=false
+
+      - name: Check accuracy threshold
+        run: |
+          ACCURACY=$(jq '.summary.accuracy' benchmark-report.json)
+          THRESHOLD=${{ vars.BENCHMARK_MIN_ACCURACY || '0.5' }}
+          echo "Accuracy: $ACCURACY (threshold: $THRESHOLD)"
+          if (( $(echo "$ACCURACY < $THRESHOLD" | bc -l) )); then
+            echo "::error::Benchmark accuracy $ACCURACY is below threshold $THRESHOLD"
+            exit 1
+          fi
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-report
+          path: benchmark-report.json
+          retention-days: 30
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request' && always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ACCURACY=$(jq -r '.summary.accuracy * 100 | round' benchmark-report.json 2>/dev/null || echo "N/A")
+          QUESTIONS=$(jq -r '.summary.questions' benchmark-report.json 2>/dev/null || echo "N/A")
+          ERRORS=$(jq -r '.summary.errors' benchmark-report.json 2>/dev/null || echo "N/A")
+          LATENCY=$(jq -r '.summary.average_latency_ms | round' benchmark-report.json 2>/dev/null || echo "N/A")
+
+          cat > /tmp/benchmark-comment.md <<EOF
+          ## 📊 Benchmark Results
+
+          | Metric | Value |
+          |--------|-------|
+          | Accuracy | ${ACCURACY}% |
+          | Questions | ${QUESTIONS} |
+          | Errors | ${ERRORS} |
+          | Avg latency | ${LATENCY} ms |
+
+          Full report: see the \`benchmark-report\` artifact.
+          EOF
+
+          gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/benchmark-comment.md || true

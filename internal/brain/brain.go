@@ -388,3 +388,9 @@ func (b *Brain) Ready(ctx context.Context) error {
 	}
 	return b.pool.Ping(ctx)
 }
+
+// Reasoner returns the brain's reasoner. It is exposed so callers outside the
+// brain package (benchmark judge, reflect helpers) can use the same LLM.
+func (b *Brain) Reasoner() reasoner.Reasoner {
+	return b.reasoner
+}
