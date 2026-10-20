@@ -13,10 +13,10 @@ import (
 // ReflectResult is the output of a reflect operation: an answer synthesized
 // from recalled memories, plus the memories that supported it.
 type ReflectResult struct {
-	Answer     string         `json:"answer"`
-	Sources    []ReflectSource `json:"sources"`
-	RecallCount int           `json:"recall_count"`
-	DurationMs int64          `json:"duration_ms"`
+	Answer      string          `json:"answer"`
+	Sources     []ReflectSource `json:"sources"`
+	RecallCount int             `json:"recall_count"`
+	DurationMs  int64           `json:"duration_ms"`
 }
 
 // ReflectSource is one memory that contributed to the answer.
