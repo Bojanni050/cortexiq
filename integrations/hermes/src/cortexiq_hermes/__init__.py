@@ -35,6 +35,7 @@ schrijven: capture gaat naar <base>/<profiel>, en recall bepaalt de scope.
   CORTEXIQ_MIN_SCORE     default 0.6    (gemeten: ruis plafonneert ~0.43,
                                          relevante treffers beginnen ~0.70)
   CORTEXIQ_MAX_CHARS     default 1400   (cap op wat er per turn in de prompt gaat)
+  CORTEXIQ_GROUND_TRUTH  default true   autoriteitsregel in de system prompt
   CORTEXIQ_INGEST_PATH   default /api/v1/remember
   CORTEXIQ_CAPTURE_ASSISTANT  default false  ook het antwoord opslaan (rijkere episodes)
   CORTEXIQ_ASSISTANT_MAX_CHARS default 0     afkapgrens voor dat antwoord (0 = geen)
@@ -114,6 +115,7 @@ _JSON_KEYS: dict[str, str] = {
     "recall_limit": "CORTEXIQ_RECALL_LIMIT",
     "min_score": "CORTEXIQ_MIN_SCORE",
     "max_chars": "CORTEXIQ_MAX_CHARS",
+    "ground_truth": "CORTEXIQ_GROUND_TRUTH",
     "turn_importance": "CORTEXIQ_TURN_IMPORTANCE",
     "capture_assistant": "CORTEXIQ_CAPTURE_ASSISTANT",
     "assistant_max_chars": "CORTEXIQ_ASSISTANT_MAX_CHARS",
@@ -393,7 +395,24 @@ class CortexIQProvider(MemoryProvider):
     # -- prompt & recall ----------------------------------------------------
 
     def system_prompt_block(self) -> str:
-        return ""
+        """Zeg één keer per prompt dát de injectie autoritatief is.
+
+        Injecteren alleen is niet genoeg: zonder deze regel behandelt de agent het
+        "Uit mijn geheugen"-blok als optionele suggestie en gaat hij alsnog zoeken
+        naar wat al in zijn prompt staat. Dat is de duurste faalmodus die er is —
+        tokens betalen om je eigen context te negeren. Uitzetbaar met
+        CORTEXIQ_GROUND_TRUTH=false (kost ~80 tokens per turn).
+        """
+        if not _truthy(_setting("ground_truth", "true", home=self._home)):
+            return ""
+        return (
+            "Geheugen (CortexIQ): het blok \"Uit mijn geheugen\" in je context is "
+            "autoritatief voor wat eerder is besloten, afgesproken of vastgesteld. "
+            "Behandel een vraag niet als nieuw wanneer het antwoord daar al staat, "
+            "en verifieer niet opnieuw wat er al in je prompt staat. Bij "
+            "tegenstrijdigheid met je eigen aannames wint het geheugen; bij "
+            "versie- of API-specifieke details winnen de officiële docs."
+        )
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
         """MOET snel zijn: alleen de cache teruggeven die queue_prefetch() vulde."""

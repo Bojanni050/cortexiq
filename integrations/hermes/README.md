@@ -49,6 +49,7 @@ Alles via omgevingsvariabelen (in `$HERMES_HOME/.env`):
 | `CORTEXIQ_RECALL_LIMIT` | `5` | hoeveel treffers per turn worden opgehaald |
 | `CORTEXIQ_MIN_SCORE` | `0.6` | drempel op de RRF-rangscore (zie hieronder) |
 | `CORTEXIQ_MAX_CHARS` | `1400` | maximum aan geïnjecteerde context per turn |
+| `CORTEXIQ_GROUND_TRUTH` | `true` | zet de autoriteitsregel in de system prompt (zie hieronder) |
 | `CORTEXIQ_INGEST_PATH` | `/api/v1/remember` | pas aan als je route anders heet |
 | `CORTEXIQ_TURN_IMPORTANCE` | `0.5` | importance bij capture |
 | `CORTEXIQ_CAPTURE_ASSISTANT` | `false` | ook het antwoord opslaan (rijkere episodes) |
@@ -153,6 +154,21 @@ hetzelfde getal bestaat in beide tabellen — `DELETE /api/v1/facts/{id}` met ee
 episode-id verwijdert een willekeurige andere fact. Gebruik altijd het getypeerde
 veld en de route die daarbij hoort. Een ontbrekende rij geeft 404, een fout
 verzoek 400, een echte fout 500.
+
+## Waarom er een autoriteitsregel in de prompt staat
+
+`system_prompt_block()` levert één kort blok dat zegt dat het geïnjecteerde
+geheugen autoritatief is. Dat lijkt overbodig — het staat er toch — maar zonder
+die regel behandelt een agent de injectie als optionele suggestie en gaat hij
+alsnog `search_files`, `read_file` of `recall` doen naar kennis die al in zijn
+prompt staat. Je betaalt dan tokens om je eigen context te negeren, en elke
+herontdekking is een kans om iets anders te vinden dan wat er al vastlag.
+
+De volgorde die het blok aanhoudt: terminal- of tool-output wint over geheugen
+voor de *huidige* systeemstatus; geheugen wint voor eerdere besluiten en
+projectcontext; officiële docs winnen bij versie- en API-specifieke details;
+trainingskennis verliest altijd. Zet `CORTEXIQ_GROUND_TRUTH=false` als je die
+~80 tokens per turn niet wilt betalen — de rest van de plugin werkt ongewijzigd.
 
 ## Verifiëren
 
