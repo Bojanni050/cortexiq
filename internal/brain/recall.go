@@ -43,10 +43,15 @@ type RecallResult struct {
 	// Importance (0..1, 0.5 neutral) is what the caller said this memory is worth;
 	// it only influences Score when importance weighting is enabled.
 	Importance float32 `json:"importance"`
-	Type       string  `json:"type"`
-	OccurredAt string  `json:"occurred_at,omitempty"`
-	ValidFrom  string  `json:"valid_from,omitempty"`
-	CreatedAt  string  `json:"created_at"`
+	// Feedback is the net of the callers' verdicts on this fact (+1 helpful,
+	// -1 wrong), counting only each principal's latest vote. It is absent when
+	// nobody voted or the votes cancel out, and it scales Score by a bounded
+	// factor — it never changes Confidence.
+	Feedback   int    `json:"feedback,omitempty"`
+	Type       string `json:"type"`
+	OccurredAt string `json:"occurred_at,omitempty"`
+	ValidFrom  string `json:"valid_from,omitempty"`
+	CreatedAt  string `json:"created_at"`
 	// Trace says how the result got its rank. It is only set by RecallDetailed.
 	Trace *ResultTrace `json:"trace,omitempty"`
 	// refTime is the moment recency decay counts from: occurred_at for episodes,
@@ -210,6 +215,11 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			results = b.rerank(ctx, query, results)
 			stage("facts_reranked", len(results))
 		}
+		// A historical lookup answers "what did we know then": today's opinion
+		// on a fact must not reorder the record of a past moment.
+		if asOf == nil {
+			b.applyFeedback(ctx, results)
+		}
 		results = b.applyBoosts(results, limit, now)
 		stage("facts_fused", len(results))
 	}
@@ -368,13 +378,14 @@ func (b *Brain) reranks() bool {
 	return (b.config.RecencyWeight > 0 && b.config.RecencyHalfLife > 0) || b.config.ImportanceWeight > 0
 }
 
-// applyBoosts rescales scores by recencyFactor and importanceFactor, re-sorts and
-// keeps the best limit. With both switched off it only truncates.
+// applyBoosts rescales scores by recencyFactor, importanceFactor and a fact's
+// feedback factor, re-sorts and keeps the best limit. With all three off it only
+// truncates.
 func (b *Brain) applyBoosts(rs []RecallResult, limit int, now time.Time) []RecallResult {
 	for i := range rs {
 		rs[i].fusedScore, rs[i].recencyF, rs[i].importanceF = rs[i].Score, 1, 1
 	}
-	if !b.reranks() {
+	if !b.reranks() && !anyFeedback(rs) {
 		return truncate(rs, limit)
 	}
 	w, hl, iw := b.config.RecencyWeight, b.config.RecencyHalfLife, b.config.ImportanceWeight
@@ -386,6 +397,7 @@ func (b *Brain) applyBoosts(rs []RecallResult, limit int, now time.Time) []Recal
 			f *= rec
 		}
 		rs[i].recencyF, rs[i].importanceF = rec, imp
+		f *= feedbackFactor(rs[i].Feedback)
 		rs[i].Score *= float32(f)
 	}
 	sort.SliceStable(rs, func(i, j int) bool { return rs[i].Score > rs[j].Score })

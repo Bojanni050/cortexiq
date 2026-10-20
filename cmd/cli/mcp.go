@@ -166,6 +166,24 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: `{"ok": true}`}}}, nil
 	})
 
+	mcpServer.AddTool(mcp.NewTool("rate_fact",
+		mcp.WithDescription(render("rate_fact_description")),
+		mcp.WithNumber("fact_id", mcp.Description(render("rate_fact_id")), mcp.Required()),
+		mcp.WithBoolean("correct", mcp.Description(render("rate_fact_correct")), mcp.Required()),
+		mcp.WithString("note", mcp.Description(render("rate_fact_note"))),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		verdict := -1
+		if request.GetBool("correct", false) {
+			verdict = 1
+		}
+		out, err := bc.Brain.RateFact(ctx, int64(request.GetInt("fact_id", 0)), verdict, request.GetString("note", ""))
+		if err != nil {
+			return nil, err
+		}
+		b, _ := json.Marshal(out)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
 	mcpServer.AddTool(mcp.NewTool("consolidate",
 		mcp.WithDescription(render("consolidate_description")),
 		mcp.WithString("namespaces", mcp.Description(render("namespaces_param"))),

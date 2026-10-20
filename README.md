@@ -39,6 +39,19 @@ cortexiq dedupe --review              # also let the LLM judge borderline pairs
 cortexiq dedupe --apply               # merge: the best-supported fact survives, the rest are soft-deleted
 ```
 
+## Telling memory it was wrong
+
+A fact that keeps being observed keeps its confidence, even when it is wrong. `rate_fact` supplies the one signal the evidence model cannot produce on its own — whether the fact actually helped:
+
+```
+recall("which queue do we use?")                      → fact 42: "the queue is kafka"
+rate_fact(fact_id: 42, correct: false, note: "user said Redis")
+```
+
+A vote never edits the fact and never touches confidence, `valid_from`/`valid_until` or decay: those are evidence the fact earned, and a vote is not new evidence. It only scales the fact's recall rank by a bounded factor (0.5–1.25), so a downvoted fact slides to the back and can drop out of the answer, while removal still happens through a superseding fact, `forget`, or confidence decay.
+
+Every caller has one standing vote per fact — changing your mind replaces it (`replaced: true`), so nobody wins an argument by voting more often. Votes are kept append-only in `fact_feedback` for audit, but only each principal's latest vote counts. `as_of` recalls ignore feedback: today's opinion must not rewrite what was known then.
+
 ## Backup, export and import
 
 ```bash

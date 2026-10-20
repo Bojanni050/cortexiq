@@ -396,6 +396,43 @@ Bad: 'grpc stuff' or 'the database thing'.
 {{end}}
 
 
+{{define "rate_fact_description"}}
+Records whether a fact you recalled was actually right. It never rewrites the fact: it moves it up or down in future recall results, within bounds.
+
+BEFORE CALLING:
+1. Take the `fact_id` from a fact you just saw in recall — never guess one
+2. Vote when the fact MISLED or HELPED you, not when you merely dislike its wording
+
+CALL THIS WHEN:
+- You acted on a recalled fact and the user corrected it
+- A recalled fact contradicts what the terminal, the repo or another tool actually shows
+- A recalled fact proved useful and should rank higher next time
+
+NEVER CALL THIS WHEN:
+- The fact was true but is now outdated — that is a superseding fact, or forget
+- You have not recalled that fact in this conversation
+- You want to change what is stored — a vote changes rank, not content
+
+WHAT GOOD INPUT LOOKS LIKE:
+fact_id: 42, correct: false, note: "user said the queue is Redis, not Kafka"
+fact_id: 17, correct: true, note: ""
+
+COST OF NOT CALLING: A wrong fact keeps ranking first and you keep repeating the same mistake every session.
+{{end}}
+
+{{define "rate_fact_id"}}
+The id of a fact returned by recall. Facts only — episodes, goals and failures carry no feedback.
+{{end}}
+
+{{define "rate_fact_correct"}}
+true if the fact was accurate and useful, false if it was wrong or misleading.
+{{end}}
+
+{{define "rate_fact_note"}}
+One line on why, so a later reader can judge the vote. Good: 'user corrected the port to 8080'. Empty is fine for a plain confirmation.
+{{end}}
+
+
 {{define "consolidate_description"}}
 Synthesizes raw episodes into structured facts, entities, and relationships. Transforms noise into signal.
 
