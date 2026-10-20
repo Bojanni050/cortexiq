@@ -471,6 +471,16 @@ func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	id, err := h.Brain.RememberWithImportance(r.Context(), rememberNamespace(body.Namespace, body.Namespaces), body.Content, occurredAt, importance)
+	if errors.Is(err, brain.ErrSocialCloser) {
+		// Nothing is wrong with the request; the content just is not a memory.
+		// 200 (not 201) keeps clients from reporting a row that was never created,
+		// and "skipped" tells an automatic capture loop to move on quietly.
+		writeJSON(w, http.StatusOK, map[string]any{
+			"skipped": true,
+			"reason":  brain.ErrSocialCloser.Error(),
+		})
+		return
+	}
 	if !hdl(w, err) {
 		return
 	}

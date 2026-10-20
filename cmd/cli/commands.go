@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -35,6 +36,9 @@ func rememberCmd(ctx context.Context, cmd *cli.Command) error {
 
 	bc := getBootstrap(cmd)
 	id, err := bc.Brain.RememberWithImportance(ctx, namespace, content, occurredAt, float32(cmd.Float("importance")))
+	if errors.Is(err, brain.ErrSocialCloser) {
+		return printJSON(map[string]any{"skipped": true, "reason": err.Error()})
+	}
 	if err != nil {
 		return err
 	}

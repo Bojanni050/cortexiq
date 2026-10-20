@@ -32,6 +32,12 @@ func (b *Brain) RememberWithImportance(ctx context.Context, namespaceSlug, conte
 	if err := validateContent(content); err != nil {
 		return 0, err
 	}
+	// Refuse phatic noise before it costs an embedding. This is the one gate in
+	// front of every write path (MCP, HTTP, CLI), so the store never fills with
+	// "dank je wel" in the first place; see socialCloser.
+	if b.config.SocialFilter && socialCloser(content) {
+		return 0, ErrSocialCloser
+	}
 	if importance < 0 || importance > 1 || importance != importance {
 		return 0, fmt.Errorf("importance must be between 0 and 1, got %v", importance)
 	}

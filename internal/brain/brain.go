@@ -23,6 +23,11 @@ var (
 	ErrEmptyContent      = fmt.Errorf("brain: content cannot be empty")
 	ErrContentTooLong    = fmt.Errorf("brain: content exceeds maximum length")
 	ErrInvalidPath       = fmt.Errorf("brain: namespace path must start with / and contain valid segments (lowercase alphanumeric, hyphens, underscores)")
+	// ErrSocialCloser means the write was refused because it says nothing worth
+	// remembering (a greeting, thanks, an acknowledgement). Callers report it as
+	// skipped, not as a failure: nothing is wrong with the request, the content
+	// just is not a memory.
+	ErrSocialCloser = fmt.Errorf("brain: content is only a greeting, thanks or acknowledgement — nothing to remember")
 
 	pathSegmentRe         = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 	ErrNamespacesRequired = fmt.Errorf("brain: at least one namespace is required")
@@ -132,6 +137,11 @@ type Config struct {
 	// — one token, a greeting, a clipped acknowledgement — and the extractor
 	// reads a claim into it that nobody made. 0 disables the filter.
 	MinEpisodeLength int
+	// SocialFilter refuses a Remember whose content is nothing but a greeting,
+	// thanks or acknowledgement (see socialCloser). Such a write is not a memory:
+	// it would cost an embedding, give the extractor a claim nobody made and show
+	// up in recall as noise. It returns ErrSocialCloser and stores nothing.
+	SocialFilter bool
 }
 
 const defaultRelationshipBatchSize = 5
@@ -155,6 +165,7 @@ func DefaultConfig() Config {
 		HypothesisAutoRejectThreshold:  0.9,
 		RelationshipBatchSize:          defaultRelationshipBatchSize,
 		MinEpisodeLength:               defaultMinEpisodeLength,
+		SocialFilter:                   true,
 		HybridRecall:                   true,
 	}
 }

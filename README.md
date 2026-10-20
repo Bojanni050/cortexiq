@@ -52,6 +52,17 @@ A vote never edits the fact and never touches confidence, `valid_from`/`valid_un
 
 Every caller has one standing vote per fact — changing your mind replaces it (`replaced: true`), so nobody wins an argument by voting more often. Votes are kept append-only in `fact_feedback` for audit, but only each principal's latest vote counts. `as_of` recalls ignore feedback: today's opinion must not rewrite what was known then.
 
+## What is not worth storing
+
+A memory server that stores "dank je wel, tot morgen" is one whose recall fills with noise. Every write goes through the same gate (`Remember`), and content that says nothing — greetings, thanks, acknowledgements and the function words around them — is refused with `skipped: true` instead of becoming an episode:
+
+```bash
+cortexiq remember "prima, dank je wel, tot morgen"   # {"skipped": true, "reason": "..."}
+cortexiq remember "push naar main"                   # stored
+```
+
+The test is not length (`CORTEXIQ_EXTRACTION_MIN_CHARS` already keeps fragments away from the extractor) and not politeness: `ja doe maar` and `nee, dat werkt niet` are decisions and instructions, and they survive because `doe` and `werkt` say something. Only a closed vocabulary of phatic words matches, in Dutch and English, so a closer that slips through costs one episode while nothing with a subject is ever swallowed. `CORTEXIQ_SOCIAL_FILTER=false` stores everything again.
+
 ## Backup, export and import
 
 ```bash

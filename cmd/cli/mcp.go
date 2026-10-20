@@ -6,6 +6,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -47,6 +48,14 @@ func render(name string) string {
 		return ""
 	}
 	return buf.String()
+}
+
+// skippedResult answers a write that was refused as phatic noise with a normal
+// tool result instead of an error: the caller did nothing wrong, and an MCP error
+// would invite a retry or an apology instead of the next step.
+func skippedResult(err error) (*mcp.CallToolResult, error) {
+	payload, _ := json.Marshal(map[string]any{"skipped": true, "reason": err.Error()})
+	return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(payload)}}}, nil
 }
 
 func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
@@ -94,6 +103,9 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		importance := float32(request.GetFloat("importance", float64(brain.DefaultImportance)))
 
 		id, err := bc.Brain.RememberWithImportance(ctx, namespace, content, nil, importance)
+		if errors.Is(err, brain.ErrSocialCloser) {
+			return skippedResult(err)
+		}
 		if err != nil {
 			return nil, err
 		}

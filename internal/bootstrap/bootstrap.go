@@ -131,6 +131,7 @@ func New(ctx context.Context) (*Context, error) {
 		Reranker:                       rerank,
 		RerankCandidates:               cfg.RerankCandidates,
 		MinEpisodeLength:               cfg.ExtractionMinChars,
+		SocialFilter:                   cfg.SocialFilter,
 	})
 	if err != nil {
 		pool.Close()

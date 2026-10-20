@@ -89,6 +89,11 @@ type Config struct {
 	// acknowledgement — and the extractor reads a claim into it that nobody made.
 	// 0 disables the filter.
 	ExtractionMinChars int `env:"CORTEXIQ_EXTRACTION_MIN_CHARS" envDefault:"24"`
+	// SocialFilter refuses writes that say nothing — a greeting, thanks, an
+	// acknowledgement — instead of storing them as episodes. Length is not the
+	// test (ExtractionMinChars covers that): "prima, dank je wel, tot morgen" is
+	// long enough to look like content. Off stores every write again.
+	SocialFilter bool `env:"CORTEXIQ_SOCIAL_FILTER" envDefault:"true"`
 	// HybridRecall adds full-text search to recall (fused with the vector ranking).
 	HybridRecall bool `env:"CORTEXIQ_HYBRID_RECALL" envDefault:"true"`
 	// GraphRecall adds a graph arm to fact recall: facts about an entity the query
