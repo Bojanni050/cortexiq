@@ -31,8 +31,10 @@ jobs:
   benchmark:
     name: Memory Benchmark
     runs-on: ubuntu-latest
-    # Skip when no LLM API key is available (fork PRs, etc.)
-    if: ${{ vars.BENCHMARK_ENABLED == 'true' || github.repository == 'Bojanni050/cortexiq' }}
+    # Skip when no LLM API key is available (fork PRs, missing secret).
+    # The benchmark needs an LLM for reflect and the judge, so without a key
+    # it cannot run. The CI job (build/vet/test) still validates the code.
+    if: ${{ secrets.OPENAI_API_KEY != '' }}
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -68,6 +70,11 @@ jobs:
           CORTEXIQ_EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL || 'text-embedding-3-small' }}
           CORTEXIQ_REASONER_MODEL: ${{ vars.REASONER_MODEL || 'gpt-4o-mini' }}
           CORTEXIQ_VECTOR_DIM: ${{ vars.VECTOR_DIM || '1536' }}
+          CORTEXIQ_MAX_RESULT_SIZE: "10000"
+          CORTEXIQ_CONTEXT_TTL: "1h"
+          CORTEXIQ_HTTP_ADDR: ":8080"
+          CORTEXIQ_LOG_LEVEL: "info"
+          CORTEXIQ_LOG_FORMAT: "text"
         run: |
           ./cortexiq benchmark run \
             --dataset eval/benchmark/example.json \
