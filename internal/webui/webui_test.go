@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Bojanni050/cortexiq/internal/brain"
 	"github.com/Bojanni050/cortexiq/internal/scope"
@@ -235,5 +236,27 @@ func TestRecallRejectsBadTypeAndAsOf(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("%s = %d, want 400 (%s)", name, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+func TestParseTimeBound(t *testing.T) {
+	got, err := parseTimeBound("2026-10-20")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
+	if got == nil || !got.Equal(want) {
+		t.Fatalf("parseTimeBound(date) = %v, want %v", got, want)
+	}
+	got, err = parseTimeBound("2026-10-20T12:30:00+02:00")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = time.Date(2026, 10, 20, 10, 30, 0, 0, time.UTC)
+	if got == nil || !got.Equal(want) {
+		t.Fatalf("parseTimeBound(RFC3339) = %v, want %v", got, want)
+	}
+	if _, err := parseTimeBound("yesterday"); err == nil {
+		t.Fatal("parseTimeBound accepted a natural-language phrase")
 	}
 }

@@ -104,7 +104,7 @@ func main() {
 				Action:  rememberCmd,
 				Flags: []cli.Flag{
 					&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "Namespace path"},
-					&cli.StringFlag{Name: "occurred-at", Usage: "When it occurred (RFC3339)"},
+					&cli.StringFlag{Name: "occurred-at", Usage: "When it occurred (RFC3339 or YYYY-MM-DD)"},
 					&cli.FloatFlag{Name: "importance", Value: 0.5, Usage: "How much it matters, 0..1 (0.5 = neutral)"},
 				},
 			},
@@ -117,6 +117,8 @@ func main() {
 					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to search (each includes descendants)"},
 					&cli.IntFlag{Name: "limit", Value: 10, Usage: "Max results"},
 					&cli.StringFlag{Name: "as-of", Usage: "Recall what was known at this time (RFC3339 or YYYY-MM-DD)"},
+					&cli.StringFlag{Name: "from", Usage: "Include event/valid time on or after this bound (RFC3339 or YYYY-MM-DD)"},
+					&cli.StringFlag{Name: "to", Usage: "Exclude event/valid time at or after this bound (RFC3339 or YYYY-MM-DD)"},
 				},
 			},
 			{
@@ -149,9 +151,11 @@ func main() {
 				Action: factsListCmd,
 				Flags: []cli.Flag{
 					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to query (each includes descendants)"},
-					&cli.StringFlag{Name: "since", Usage: "Since timestamp (RFC3339)"},
-					&cli.StringFlag{Name: "until", Usage: "Until timestamp (RFC3339)"},
+					&cli.StringFlag{Name: "since", Usage: "Created since (RFC3339)"},
+					&cli.StringFlag{Name: "until", Usage: "Created until (RFC3339)"},
 					&cli.StringFlag{Name: "as-of", Usage: "Only facts valid at this time (RFC3339 or YYYY-MM-DD)"},
+					&cli.StringFlag{Name: "from", Usage: "Only facts valid during/after this bound (RFC3339 or YYYY-MM-DD)"},
+					&cli.StringFlag{Name: "to", Usage: "Only facts valid before this bound (RFC3339 or YYYY-MM-DD)"},
 					&cli.IntFlag{Name: "limit", Value: 100, Usage: "Max results"},
 					&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
 				},

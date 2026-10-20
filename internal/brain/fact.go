@@ -16,9 +16,14 @@ func (b *Brain) QueryFacts(ctx context.Context, namespaceSlugs []string, since, 
 	return b.QueryFactsAsOf(ctx, namespaceSlugs, since, until, nil, page)
 }
 
-// factWhere builds the filter QueryFactsAsOf and CountFacts share, so the total
-// can never describe a different set than the page.
+// factWhere builds the historical filter used by existing as-of queries.
 func factWhere(nsIDs []int64, since, until, asOf *time.Time) (string, []any) {
+	return factWhereWindow(nsIDs, since, until, asOf, nil, nil)
+}
+
+// factWhereWindow builds the filter QueryFactsWindow and CountFactsWindow share, so the total
+// can never describe a different set than the page.
+func factWhereWindow(nsIDs []int64, since, until, asOf, from, to *time.Time) (string, []any) {
 	where := "namespace_id = ANY($1) AND deleted_at IS NULL"
 	args := []any{nsIDs}
 	if since != nil {
@@ -34,6 +39,18 @@ func factWhere(nsIDs []int64, since, until, asOf *time.Time) (string, []any) {
 		where += fmt.Sprintf(" AND COALESCE(valid_from, created_at) <= $%d AND (valid_until IS NULL OR valid_until > $%d)", n, n)
 		args = append(args, *asOf)
 	}
+	fromParam, toParam := "'-infinity'::timestamptz", "'infinity'::timestamptz"
+	if from != nil {
+		args = append(args, *from)
+		fromParam = fmt.Sprintf("$%d", len(args))
+	}
+	if to != nil {
+		args = append(args, *to)
+		toParam = fmt.Sprintf("$%d", len(args))
+	}
+	if from != nil || to != nil {
+		where += fmt.Sprintf(" AND COALESCE(valid_from, created_at) < %s AND (valid_until IS NULL OR valid_until > %s)", toParam, fromParam)
+	}
 	return where, args
 }
 
@@ -42,6 +59,16 @@ func factWhere(nsIDs []int64, since, until, asOf *time.Time) (string, []any) {
 // created_at), which includes facts that were valid then but are superseded or
 // expired now. A nil asOf lists every fact, like QueryFacts.
 func (b *Brain) QueryFactsAsOf(ctx context.Context, namespaceSlugs []string, since, until, asOf *time.Time, page Pagination) ([]models.Fact, error) {
+	return b.QueryFactsWindow(ctx, namespaceSlugs, since, until, asOf, nil, nil, page)
+}
+
+// QueryFactsWindow filters facts whose validity intervals overlap [from,to),
+// while retaining since/until as created_at filters and asOf as a point-in-time
+// validity filter.
+func (b *Brain) QueryFactsWindow(ctx context.Context, namespaceSlugs []string, since, until, asOf, from, to *time.Time, page Pagination) ([]models.Fact, error) {
+	if from != nil && to != nil && !from.Before(*to) {
+		return nil, fmt.Errorf("invalid time window: from must be before to")
+	}
 	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
 	if err != nil {
 		return nil, err
@@ -49,7 +76,7 @@ func (b *Brain) QueryFactsAsOf(ctx context.Context, namespaceSlugs []string, sin
 
 	page = page.Sanitize()
 
-	where, args := factWhere(nsIDs, since, until, asOf)
+	where, args := factWhereWindow(nsIDs, since, until, asOf, from, to)
 	query := `SELECT id, namespace_id, content, embedding, embedding_model, confidence,
 	          entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at
 	          FROM facts WHERE ` + where +
@@ -81,11 +108,18 @@ func (b *Brain) QueryFactsAsOf(ctx context.Context, namespaceSlugs []string, sin
 // CountFacts counts the facts QueryFactsAsOf would return for the same filters,
 // ignoring paging, so a caller can tell a full page from a truncated one.
 func (b *Brain) CountFacts(ctx context.Context, namespaceSlugs []string, since, until, asOf *time.Time) (int, error) {
+	return b.CountFactsWindow(ctx, namespaceSlugs, since, until, asOf, nil, nil)
+}
+
+func (b *Brain) CountFactsWindow(ctx context.Context, namespaceSlugs []string, since, until, asOf, from, to *time.Time) (int, error) {
+	if from != nil && to != nil && !from.Before(*to) {
+		return 0, fmt.Errorf("invalid time window: from must be before to")
+	}
 	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
 	if err != nil {
 		return 0, err
 	}
-	where, args := factWhere(nsIDs, since, until, asOf)
+	where, args := factWhereWindow(nsIDs, since, until, asOf, from, to)
 	return b.countWhere(ctx, "facts", where, args...)
 }
 

@@ -290,6 +290,18 @@ Optional point in time (RFC3339, e.g. 2026-09-01T00:00:00Z, or a date like 2026-
 How much this memory matters, 0 to 1. Default 0.5 (neutral). Use ~0.8-1.0 for decisions, standing preferences and corrections; ~0.1-0.3 for passing detail. Only affects ranking when the server has importance weighting enabled.
 {{end}}
 
+{{define "occurred_at_param"}}
+Optional event time (RFC3339 or YYYY-MM-DD). Use it for when the observation happened, not when you stored it. Omit to use the current time.
+{{end}}
+
+{{define "from_param"}}
+Optional inclusive start of a half-open [from,to) event/valid-time window (RFC3339 or YYYY-MM-DD). On recall, supported phrases such as yesterday, last week, or in March are inferred when explicit bounds are omitted; an explicit as_of disables phrase inference.
+{{end}}
+
+{{define "to_param"}}
+Optional exclusive end of a half-open [from,to) event/valid-time window (RFC3339 or YYYY-MM-DD). Omit to leave the range open.
+{{end}}
+
 {{define "remember_namespace"}}
 Where to store this. Must be an existing namespace path verified via list_namespaces.
 If not found, call create_namespace first. Default: / (root — only for truly uncategorized memories).
@@ -343,7 +355,7 @@ COST OF NOT CALLING: Generic or wrong answer. User repeats themselves. You erode
 {{end}}
 
 {{define "recall_query"}}
-What to search for. Natural language, 2-6 words describing the topic.
+What to search for. Natural language, 2-6 words describing the topic. Supported Dutch/English time phrases (yesterday/today, this/last week/month/year, a named month/year, or N days ago) also restrict by event/valid time; explicit from/to bounds override the inferred bound(s).
 Good: 'user authentication preference'. Bad: 'auth' or 'stuff'.
 {{end}}
 
@@ -563,6 +575,8 @@ COST OF MISUSE: Clearing the wrong namespace loses useful handoff state. Clearin
 
 {{define "query_facts_description"}}
 Lists consolidated facts for a namespace. Higher quality than raw recall — these are distilled truths extracted from episodes.
+
+Optional as_of selects facts valid at that instant. Optional from/to selects facts whose validity interval overlaps [from,to); bounds are RFC3339 timestamps or YYYY-MM-DD. Unlike recall, query_facts does not infer dates from natural-language text.
 
 BEFORE CALLING: Consolidation must have run on this namespace. If you have never called consolidate for this namespace, query_facts will return empty results.
 

@@ -96,13 +96,18 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithDescription(render("remember_description")),
 		mcp.WithString("content", mcp.Description(render("remember_content")), mcp.Required()),
 		mcp.WithString("namespace", mcp.Description(render("remember_namespace"))),
+		mcp.WithString("occurred_at", mcp.Description(render("occurred_at_param"))),
 		mcp.WithNumber("importance", mcp.Description(render("remember_importance")), mcp.DefaultNumber(0.5)),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		content := request.GetString("content", "")
 		namespace := request.GetString("namespace", "/")
 		importance := float32(request.GetFloat("importance", float64(brain.DefaultImportance)))
+		occurredAt, err := parseAsOf(request.GetString("occurred_at", ""))
+		if err != nil {
+			return nil, fmt.Errorf("invalid occurred_at: %w", err)
+		}
 
-		id, err := bc.Brain.RememberWithImportance(ctx, namespace, content, nil, importance)
+		id, err := bc.Brain.RememberWithImportance(ctx, namespace, content, occurredAt, importance)
 		if errors.Is(err, brain.ErrSocialCloser) {
 			return skippedResult(err)
 		}
@@ -120,12 +125,22 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("namespaces", mcp.Description(render("recall_namespaces"))),
 		mcp.WithNumber("limit", mcp.Description(render("limit_param")), mcp.DefaultNumber(10)),
 		mcp.WithString("as_of", mcp.Description(render("as_of_param"))),
+		mcp.WithString("from", mcp.Description(render("from_param"))),
+		mcp.WithString("to", mcp.Description(render("to_param"))),
 		mcp.WithString("types", mcp.Description(render("recall_types"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query := request.GetString("query", "")
 		asOf, err := parseAsOf(request.GetString("as_of", ""))
 		if err != nil {
 			return nil, err
+		}
+		from, err := parseAsOf(request.GetString("from", ""))
+		if err != nil {
+			return nil, fmt.Errorf("invalid from: %w", err)
+		}
+		to, err := parseAsOf(request.GetString("to", ""))
+		if err != nil {
+			return nil, fmt.Errorf("invalid to: %w", err)
 		}
 		var types []string
 		for _, t := range strings.Split(request.GetString("types", ""), ",") {
@@ -149,7 +164,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			}
 		}
 
-		results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, Types: types})
+		results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, Types: types})
 		if err != nil {
 			return nil, err
 		}
@@ -379,6 +394,8 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithNumber("limit", mcp.Description(render("pagination_limit")), mcp.DefaultNumber(100)),
 		mcp.WithNumber("offset", mcp.Description(render("pagination_offset")), mcp.DefaultNumber(0)),
 		mcp.WithString("as_of", mcp.Description(render("as_of_param"))),
+		mcp.WithString("from", mcp.Description(render("from_param"))),
+		mcp.WithString("to", mcp.Description(render("to_param"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		nsRaw := request.GetString("namespaces", "/")
 		var namespaces []string
@@ -396,8 +413,16 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		if err != nil {
 			return nil, err
 		}
+		from, err := parseAsOf(request.GetString("from", ""))
+		if err != nil {
+			return nil, fmt.Errorf("invalid from: %w", err)
+		}
+		to, err := parseAsOf(request.GetString("to", ""))
+		if err != nil {
+			return nil, fmt.Errorf("invalid to: %w", err)
+		}
 
-		facts, err := bc.Brain.QueryFactsAsOf(ctx, namespaces, nil, nil, asOf, page)
+		facts, err := bc.Brain.QueryFactsWindow(ctx, namespaces, nil, nil, asOf, from, to, page)
 		if err != nil {
 			return nil, err
 		}

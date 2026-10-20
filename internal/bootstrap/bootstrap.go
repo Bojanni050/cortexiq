@@ -124,6 +124,8 @@ func New(ctx context.Context) (*Context, error) {
 		HybridRecall:                   cfg.HybridRecall,
 		GraphRecall:                    cfg.GraphRecall,
 		RouteRecall:                    cfg.RouteRecall,
+		TemporalRecall:                 cfg.TemporalRecall,
+		TemporalArm:                    cfg.TemporalArm,
 		MinRecallSimilarity:            cfg.RecallMinSimilarity,
 		RecencyWeight:                  cfg.RecallRecencyWeight,
 		RecencyHalfLife:                cfg.RecallRecencyHalfLife,

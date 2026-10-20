@@ -136,4 +136,61 @@ func TestRecallGraphTemplatesRender(t *testing.T) {
 	}
 }
 
+func TestRecallWindowTemplatesRender(t *testing.T) {
+	q, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	from := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	vec := pgvector.NewVector([]float32{1, 0})
+	checks := map[string]func() (string, []any, error){
+		"fact vector": func() (string, []any, error) { return q.RecallFactsWindow([]int64{7}, vec, 10, nil, &from, &to) },
+		"fact keyword": func() (string, []any, error) {
+			return q.RecallFactsKeywordWindow([]int64{7}, "project", 10, nil, &from, &to)
+		},
+		"fact graph": func() (string, []any, error) {
+			return q.RecallFactsGraphWindow([]int64{7}, "project", vec, 10, nil, &from, &to)
+		},
+		"episode vector": func() (string, []any, error) { return q.RecallEpisodesWindow([]int64{7}, vec, 10, nil, &from, &to) },
+		"episode keyword": func() (string, []any, error) {
+			return q.RecallEpisodesKeywordWindow([]int64{7}, "project", 10, nil, &from, &to)
+		},
+		"fact temporal":    func() (string, []any, error) { return q.RecallFactsTemporal([]int64{7}, 10, nil, &from, &to) },
+		"episode temporal": func() (string, []any, error) { return q.RecallEpisodesTemporal([]int64{7}, 10, nil, &from, &to) },
+	}
+	for name, build := range checks {
+		t.Run(name, func(t *testing.T) {
+			sql, args, err := build()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := range args {
+				if !strings.Contains(sql, "$"+itoa(i+1)) {
+					t.Errorf("argument %d is not referenced:\n%s", i+1, sql)
+				}
+			}
+			if strings.Contains(sql, "$"+itoa(len(args)+1)) {
+				t.Errorf("placeholder beyond %d arguments:\n%s", len(args), sql)
+			}
+			if name == "episode vector" || name == "episode keyword" || name == "episode temporal" {
+				if !strings.Contains(sql, "occurred_at >=") || !strings.Contains(sql, "occurred_at <") {
+					t.Errorf("episode window missing event-time filters:\n%s", sql)
+				}
+			} else if (!strings.Contains(sql, "valid_until IS NULL OR valid_until >") && !strings.Contains(sql, "f.valid_until IS NULL OR f.valid_until >")) || (!strings.Contains(sql, "COALESCE(valid_from, created_at) <") && !strings.Contains(sql, "COALESCE(f.valid_from, f.created_at) <")) {
+				t.Errorf("fact window missing interval-overlap filters:\n%s", sql)
+			}
+		})
+	}
+
+	// An upper-only fact window must still exclude facts that start after `to`.
+	sql, args, err := q.RecallFactsWindow(nil, vec, 10, nil, nil, &to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sql, "COALESCE(valid_from, created_at) < $2") || !strings.Contains(sql, "valid_until IS NULL OR valid_until > '-infinity'::timestamptz") || len(args) != 4 {
+		t.Errorf("upper-only fact window rendered wrongly: args=%v\n%s", args, sql)
+	}
+}
+
 func itoa(i int) string { return strconv.Itoa(i) }

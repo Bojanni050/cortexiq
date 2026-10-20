@@ -58,6 +58,35 @@ func TestFactWhere(t *testing.T) {
 	}
 }
 
+func TestFactWhereWindow(t *testing.T) {
+	ns := []int64{7, 8}
+	from := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	asOf := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name           string
+		from, to, asOf *time.Time
+		want           string
+		wantArgs       []any
+	}{
+		{"from only", &from, nil, nil, "namespace_id = ANY($1) AND deleted_at IS NULL AND COALESCE(valid_from, created_at) < 'infinity'::timestamptz AND (valid_until IS NULL OR valid_until > $2)", []any{ns, from}},
+		{"to only", nil, &to, nil, "namespace_id = ANY($1) AND deleted_at IS NULL AND COALESCE(valid_from, created_at) < $2 AND (valid_until IS NULL OR valid_until > '-infinity'::timestamptz)", []any{ns, to}},
+		{"from and to", &from, &to, nil, "namespace_id = ANY($1) AND deleted_at IS NULL AND COALESCE(valid_from, created_at) < $3 AND (valid_until IS NULL OR valid_until > $2)", []any{ns, from, to}},
+		{"as of and window", &from, &to, &asOf, "namespace_id = ANY($1) AND deleted_at IS NULL AND COALESCE(valid_from, created_at) <= $2 AND (valid_until IS NULL OR valid_until > $2) AND COALESCE(valid_from, created_at) < $4 AND (valid_until IS NULL OR valid_until > $3)", []any{ns, asOf, from, to}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			where, args := factWhereWindow(ns, nil, nil, tc.asOf, tc.from, tc.to)
+			if where != tc.want {
+				t.Errorf("where = %q, want %q", where, tc.want)
+			}
+			if !reflect.DeepEqual(args, tc.wantArgs) {
+				t.Errorf("args = %#v, want %#v", args, tc.wantArgs)
+			}
+		})
+	}
+}
+
 func TestGoalWhere(t *testing.T) {
 	ns := []int64{1}
 	id := int64(42)

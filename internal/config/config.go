@@ -104,6 +104,10 @@ type Config struct {
 	// given and the query's wording points to them ("what did we try that failed",
 	// "what is the goal"). It only ever widens a recall. Off until measured.
 	RouteRecall bool `env:"CORTEXIQ_ROUTE_RECALL" envDefault:"false"`
+	// TemporalRecall parses supported NL/EN calendar phrases in recall queries.
+	TemporalRecall bool `env:"CORTEXIQ_TEMPORAL_RECALL" envDefault:"true"`
+	// TemporalArm adds a time-ordered arm when recall has an explicit time window.
+	TemporalArm bool `env:"CORTEXIQ_TEMPORAL_ARM" envDefault:"true"`
 	// RecallMinSimilarity drops vector-only recall results below this cosine
 	// similarity (results confirmed by keyword search always stay). 0 = off. The
 	// right value depends on the embedding model: measure relevant vs irrelevant

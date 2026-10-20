@@ -317,11 +317,27 @@ func (h *Handler) facts(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
 		return
 	}
-	items, err := h.Brain.QueryFacts(r.Context(), namespacesParam(r), nil, nil, pagination(r))
+	query := r.URL.Query()
+	from, err := parseTimeBound(query.Get("from"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid from: %w", err))
+		return
+	}
+	to, err := parseTimeBound(query.Get("to"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid to: %w", err))
+		return
+	}
+	asOf, err := parseTimeBound(query.Get("as_of"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid as_of: %w", err))
+		return
+	}
+	items, err := h.Brain.QueryFactsWindow(r.Context(), namespacesParam(r), nil, nil, asOf, from, to, pagination(r))
 	if !hdl(w, err) {
 		return
 	}
-	count, err := h.Brain.CountFacts(r.Context(), namespacesParam(r), nil, nil, nil)
+	count, err := h.Brain.CountFactsWindow(r.Context(), namespacesParam(r), nil, nil, asOf, from, to)
 	if !hdl(w, err) {
 		return
 	}
@@ -391,6 +407,8 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 		Types []string `json:"types"`
 		// AsOf is an RFC 3339 moment: recall what was known then.
 		AsOf string `json:"as_of"`
+		From string `json:"from"`
+		To   string `json:"to"`
 		// Graph overrides the configured graph arm for this call: true forces it
 		// on, false forces it off, absent keeps the configuration.
 		Graph *bool `json:"graph"`
@@ -417,6 +435,18 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 		}
 		opts.AsOf = &t
 	}
+	from, err := parseTimeBound(body.From)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid from: %w", err))
+		return
+	}
+	opts.From = from
+	to, err := parseTimeBound(body.To)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid to: %w", err))
+		return
+	}
+	opts.To = to
 	opts.Graph = body.Graph
 	if body.Trace {
 		results, trace, err := h.Brain.RecallDetailed(r.Context(), body.Namespaces, body.Query, body.Limit, opts)
@@ -431,6 +461,19 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+func parseTimeBound(value string) (*time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return &parsed, nil
+		}
+	}
+	return nil, fmt.Errorf("use RFC3339 or YYYY-MM-DD")
 }
 
 // remember stores a new episode (a memory). It mirrors the MCP "remember" tool:

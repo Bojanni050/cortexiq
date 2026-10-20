@@ -121,6 +121,24 @@ A web dashboard is also served at `http://localhost:9090/ui` — browse and mana
 
 Recall results carry an `id` that is only unique **within its own table**: facts and episodes have separate id sequences, and the same number exists in both. Every result therefore also carries a typed field — `fact_id` for a fact, `episode_id` for an episode — and a `type` (`"fact"` or `"episode"`). Act on the typed field, not on `id`: `DELETE /api/v1/facts/<an episode id>` deletes an unrelated fact, and the server cannot tell that you meant a different row.
 
+### Time-aware recall
+
+Recall accepts optional `from` and `to` bounds as an RFC3339 timestamp or
+`YYYY-MM-DD`. They form a half-open interval `[from, to)`: episodes are matched
+by `occurred_at`, while facts are matched when their validity interval overlaps
+it (falling back to `created_at` when `valid_from` is absent). `as_of` remains a
+separate point-in-time question — what was known/valid then — and can be combined
+with the window. CLI and MCP recall also recognize a small deterministic set of
+Dutch and English date phrases such as “yesterday”, “last month”, “gisteren”, or
+“maart 2025”; explicit bounds take precedence. This inference can be disabled
+with `CORTEXIQ_TEMPORAL_RECALL=false`; the time-ranked recall arm can be disabled
+separately with `CORTEXIQ_TEMPORAL_ARM=false`.
+
+The REST API accepts the same explicit bounds on `POST /api/v1/recall`, for
+example `{"query":"project updates","from":"2025-03-01","to":"2025-04-01"}`.
+For `GET /api/v1/facts` and `cortexiq facts`, `from`/`to` filter validity
+overlap; the older `since`/`until` filters still mean `created_at`.
+
 To protect CortexIQ, set `CORTEXIQ_API_TOKEN` in `.env`. It guards both the dashboard API (`/api/v1`) and the MCP server (`/sse`, `/message`): every request then needs `Authorization: Bearer <token>`. The dashboard asks for the token on first use and remembers it in the browser; MCP clients need to send the header (see below). Leave it empty to keep everything open. `/healthz`, `/readyz` and `/metrics` are not covered.
 
 ### Scoped tokens

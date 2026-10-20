@@ -10,6 +10,10 @@ import (
 type RecallOptions struct {
 	// AsOf answers "what did we know at that moment"; see RecallAsOf.
 	AsOf *time.Time
+	// From and To select memories whose event/validity interval overlaps this
+	// half-open time window. They are explicit bounds and override query parsing.
+	From *time.Time
+	To   *time.Time
 	// Types limits the search to "fact", "episode", "failure" and/or "goal". Empty
 	// means facts and episodes; failures and goals are only searched when named.
 	Types []string
@@ -63,6 +67,9 @@ type RecallTrace struct {
 	Namespaces    []string `json:"namespaces"`
 	NamespaceIDs  int      `json:"namespace_ids"`
 	AsOf          string   `json:"as_of,omitempty"`
+	From          string   `json:"from,omitempty"`
+	To            string   `json:"to,omitempty"`
+	Temporal      bool     `json:"temporal"`
 	MinSimilarity float32  `json:"min_similarity"`
 	RRFK          int      `json:"rrf_k"`
 	// Recency and importance weighting reorder the fused list; zero means off.
@@ -84,8 +91,9 @@ type ResultTrace struct {
 	KeywordScore     float32 `json:"keyword_score,omitempty"`
 	// GraphScore is 1 for a fact about an entity the query named and at most 0.5
 	// for a fact about a neighbour of such an entity.
-	GraphRank  int     `json:"graph_rank,omitempty"`
-	GraphScore float32 `json:"graph_score,omitempty"`
+	GraphRank    int     `json:"graph_rank,omitempty"`
+	GraphScore   float32 `json:"graph_score,omitempty"`
+	TemporalRank int     `json:"temporal_rank,omitempty"`
 	// FusedScore is the score after fusion and before recency and importance.
 	FusedScore       float32 `json:"fused_score"`
 	RecencyFactor    float32 `json:"recency_factor"`
@@ -97,6 +105,7 @@ func (r RecallResult) trace() *ResultTrace {
 		VectorRank: r.vecRank, VectorSimilarity: r.Similarity,
 		KeywordRank: r.kwRank, KeywordScore: r.kwScore,
 		GraphRank: r.graphRank, GraphScore: r.graphScore,
+		TemporalRank:  r.temporalRank,
 		FusedScore:    r.fusedScore,
 		RecencyFactor: float32(r.recencyF), ImportanceFactor: float32(r.importanceF),
 	}

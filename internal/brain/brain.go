@@ -113,6 +113,10 @@ type Config struct {
 	// when the query's wording points to them (see routeTypes). Off by default
 	// until it has been measured.
 	RouteRecall bool
+	// TemporalRecall enables deterministic date-phrase parsing in recall queries.
+	TemporalRecall bool
+	// TemporalArm adds a time-ordered recall arm when a time window is active.
+	TemporalArm bool
 	// MinRecallSimilarity is the minimum cosine similarity for a result that was only
 	// found by the vector search. 0 disables the cutoff. Model dependent.
 	MinRecallSimilarity float32

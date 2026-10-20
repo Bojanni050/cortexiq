@@ -38,7 +38,8 @@ type RecallResult struct {
 	// filter on Score: identifiers matching a fact exactly have measured 0.51-0.74
 	// here while their Score was 0.81-0.89.
 	Similarity float32 `json:"similarity,omitempty"`
-	// Match says how the result was found: "vector", "keyword" or "hybrid" (both).
+	// Match says which recall arm(s) found the result: vector, keyword, graph,
+	// temporal, or hybrid when multiple arms contributed.
 	Match string `json:"match,omitempty"`
 	// Importance (0..1, 0.5 neutral) is what the caller said this memory is worth;
 	// it only influences Score when importance weighting is enabled.
@@ -60,6 +61,7 @@ type RecallResult struct {
 	// Rank bookkeeping for Trace, filled in by fuse and applyBoosts.
 	vecRank, kwRank       int
 	graphRank             int
+	temporalRank          int
 	kwScore, graphScore   float32
 	fusedScore            float32
 	recencyF, importanceF float64
@@ -98,7 +100,20 @@ func (b *Brain) RecallAsOf(ctx context.Context, namespaces []string, query strin
 // recall is the shared implementation of RecallAsOf and RecallDetailed. A nil
 // trace records nothing.
 func (b *Brain) recall(ctx context.Context, namespaces []string, query string, limit int, opts RecallOptions, tr *RecallTrace) ([]RecallResult, error) {
+	if opts.AsOf == nil && b.config.TemporalRecall && (opts.From == nil || opts.To == nil) {
+		parsedFrom, parsedTo := temporalWindow(query, time.Now())
+		if opts.From == nil {
+			opts.From = parsedFrom
+		}
+		if opts.To == nil {
+			opts.To = parsedTo
+		}
+	}
+	if opts.From != nil && opts.To != nil && !opts.From.Before(*opts.To) {
+		return nil, fmt.Errorf("invalid time window: from must be before to")
+	}
 	asOf := opts.AsOf
+	temporal := b.config.TemporalArm && (opts.From != nil || opts.To != nil)
 	var routed []string
 	routeOn := b.config.RouteRecall
 	if opts.Route != nil {
@@ -147,7 +162,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 	// Recency and importance reorder the fused list, so the pool must be wider than limit.
 	recency := b.reranks()
 	candidates := limit
-	if kwQuery != "" || recency {
+	if kwQuery != "" || recency || temporal {
 		candidates = limit * 3
 		if candidates > maxCandidates {
 			candidates = maxCandidates
@@ -164,6 +179,13 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		if asOf != nil {
 			tr.AsOf = asOf.Format(time.RFC3339)
 		}
+		if opts.From != nil {
+			tr.From = opts.From.Format(time.RFC3339)
+		}
+		if opts.To != nil {
+			tr.To = opts.To.Format(time.RFC3339)
+		}
+		tr.Temporal = temporal
 		tr.MinSimilarity, tr.RRFK = b.config.MinRecallSimilarity, rrfK
 		tr.RecencyWeight, tr.RecencyHalfLife, tr.ImportanceWeight = b.config.RecencyWeight, b.config.RecencyHalfLife.String(), b.config.ImportanceWeight
 	}
@@ -172,7 +194,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 
 	// Search facts first (higher quality, consolidated)
 	if facts {
-		factSQL, factArgs, err := b.queries.RecallFacts(nsIDs, pgVec, candidates, asOf)
+		factSQL, factArgs, err := b.queries.RecallFactsWindow(nsIDs, pgVec, candidates, asOf, opts.From, opts.To)
 		if err != nil {
 			return nil, fmt.Errorf("build fact query: %w", err)
 		}
@@ -182,9 +204,9 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		}
 		stage("facts_vector", len(factVec))
 
-		var factKw, factGraph []RecallResult
+		var factKw, factGraph, factTemporal []RecallResult
 		if kwQuery != "" {
-			kwSQL, kwArgs, err := b.queries.RecallFactsKeyword(nsIDs, kwQuery, candidates, asOf)
+			kwSQL, kwArgs, err := b.queries.RecallFactsKeywordWindow(nsIDs, kwQuery, candidates, asOf, opts.From, opts.To)
 			if err != nil {
 				return nil, fmt.Errorf("build fact keyword query: %w", err)
 			}
@@ -194,7 +216,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			stage("facts_keyword", len(factKw))
 		}
 		if graph {
-			graphSQL, graphArgs, err := b.queries.RecallFactsGraph(nsIDs, query, pgVec, candidates, asOf)
+			graphSQL, graphArgs, err := b.queries.RecallFactsGraphWindow(nsIDs, query, pgVec, candidates, asOf, opts.From, opts.To)
 			if err != nil {
 				return nil, fmt.Errorf("build fact graph query: %w", err)
 			}
@@ -206,8 +228,32 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 				tr.GraphEntities = b.matchedEntities(ctx, nsIDs, query)
 			}
 		}
-		if graph {
-			results = fuseArms([]rankedArm{{"vector", factVec}, {"keyword", factKw}, {"graph", factGraph}}, 3, candidates, b.config.MinRecallSimilarity)
+		if temporal {
+			temporalSQL, temporalArgs, err := b.queries.RecallFactsTemporal(nsIDs, candidates, asOf, opts.From, opts.To)
+			if err != nil {
+				return nil, fmt.Errorf("build fact temporal query: %w", err)
+			}
+			if factTemporal, err = b.runRecall(ctx, temporalSQL, temporalArgs, "fact"); err != nil {
+				return nil, fmt.Errorf("temporal query facts: %w", err)
+			}
+			stage("facts_temporal", len(factTemporal))
+		}
+		if graph || temporal {
+			arms := []rankedArm{{"vector", factVec}, {"keyword", factKw}}
+			if graph {
+				arms = append(arms, rankedArm{"graph", factGraph})
+			}
+			if temporal {
+				arms = append(arms, rankedArm{"temporal", factTemporal})
+			}
+			scaleArms := 2
+			if graph {
+				scaleArms++
+			}
+			if temporal {
+				scaleArms++
+			}
+			results = fuseArms(arms, scaleArms, candidates, b.config.MinRecallSimilarity)
 		} else {
 			results = fuse(factVec, factKw, candidates, kwQuery != "", b.config.MinRecallSimilarity)
 		}
@@ -227,13 +273,13 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 	// Search episodes for remaining slots
 	if episodeLimit := limit - len(results); episodes && episodeLimit > 0 {
 		epCandidates := episodeLimit
-		if kwQuery != "" || recency {
+		if kwQuery != "" || recency || temporal {
 			epCandidates = episodeLimit * 3
 			if epCandidates > maxCandidates {
 				epCandidates = maxCandidates
 			}
 		}
-		epSQL, epArgs, err := b.queries.RecallEpisodes(nsIDs, pgVec, epCandidates, asOf)
+		epSQL, epArgs, err := b.queries.RecallEpisodesWindow(nsIDs, pgVec, epCandidates, asOf, opts.From, opts.To)
 		if err != nil {
 			return nil, fmt.Errorf("build episode query: %w", err)
 		}
@@ -243,9 +289,9 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		}
 		stage("episodes_vector", len(epVec))
 
-		var epKw []RecallResult
+		var epKw, epTemporal []RecallResult
 		if kwQuery != "" {
-			kwSQL, kwArgs, err := b.queries.RecallEpisodesKeyword(nsIDs, kwQuery, epCandidates, asOf)
+			kwSQL, kwArgs, err := b.queries.RecallEpisodesKeywordWindow(nsIDs, kwQuery, epCandidates, asOf, opts.From, opts.To)
 			if err != nil {
 				return nil, fmt.Errorf("build episode keyword query: %w", err)
 			}
@@ -254,11 +300,32 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			}
 			stage("episodes_keyword", len(epKw))
 		}
+		if temporal {
+			temporalSQL, temporalArgs, err := b.queries.RecallEpisodesTemporal(nsIDs, epCandidates, asOf, opts.From, opts.To)
+			if err != nil {
+				return nil, fmt.Errorf("build episode temporal query: %w", err)
+			}
+			if epTemporal, err = b.runRecall(ctx, temporalSQL, temporalArgs, "episode"); err != nil {
+				return nil, fmt.Errorf("temporal query episodes: %w", err)
+			}
+			stage("episodes_temporal", len(epTemporal))
+		}
 		var eps []RecallResult
-		if graph {
+		if graph || temporal {
 			// Episodes carry no entity, so the graph arm never ranks them; they are
 			// scored on the same scale as facts so the two stay comparable.
-			eps = fuseArms([]rankedArm{{"vector", epVec}, {"keyword", epKw}}, 3, epCandidates, b.config.MinRecallSimilarity)
+			arms := []rankedArm{{"vector", epVec}, {"keyword", epKw}}
+			if temporal {
+				arms = append(arms, rankedArm{"temporal", epTemporal})
+			}
+			scaleArms := 2
+			if graph {
+				scaleArms++
+			}
+			if temporal {
+				scaleArms++
+			}
+			eps = fuseArms(arms, scaleArms, epCandidates, b.config.MinRecallSimilarity)
 		} else {
 			eps = fuse(epVec, epKw, epCandidates, kwQuery != "", b.config.MinRecallSimilarity)
 		}
@@ -541,6 +608,8 @@ func fuseArms(arms []rankedArm, scaleArms, limit int, minSimilarity float32) []R
 				e.res.kwRank, e.res.kwScore = rank+1, r.Score
 			case "graph":
 				e.res.graphRank, e.res.graphScore = rank+1, r.Score
+			case "temporal":
+				e.res.temporalRank = rank + 1
 			}
 		}
 	}
