@@ -1156,6 +1156,11 @@ func readOnlyMCP(next http.Handler) http.Handler {
 	})
 }
 
+// sseKeepAliveInterval is how often the SSE stream gets a JSON-RPC ping while
+// idle. The MCP javascript client (mcp-remote/undici) aborts a silent response
+// body after 300s, and reverse proxies in front of us are often stricter.
+const sseKeepAliveInterval = 15 * time.Second
+
 func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 	bc := getBootstrap(cmd)
 	// Fetch the embedding model now, so the first recall after a restart is warm.
@@ -1169,7 +1174,14 @@ func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 	// The SSE server is mounted behind the same Bearer-token check as the
 	// dashboard API. An empty token set leaves MCP open (as before).
 	httpSrv := &http.Server{Addr: addr}
-	sseServer := server.NewSSEServer(mcpServer, server.WithHTTPServer(httpSrv))
+	// The SSE stream carries no traffic while the agent is thinking, and clients
+	// sit behind proxies (tailscale serve/funnel) that drop idle connections.
+	// undici/mcp-remote gives up after 300s without bytes, so we ping well
+	// inside that window to keep the stream alive.
+	sseServer := server.NewSSEServer(mcpServer,
+		server.WithHTTPServer(httpSrv),
+		server.WithKeepAliveInterval(sseKeepAliveInterval),
+	)
 	httpSrv.Handler = auth.Require(bc.Auth, readOnlyMCP(sseServer))
 	if !bc.Auth.Enabled() {
 		log.Println("WARNING: no API token configured; the MCP server is unauthenticated")
