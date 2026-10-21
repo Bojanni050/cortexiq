@@ -59,6 +59,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/failures/", h.failureItem)
 	api.HandleFunc("/api/v1/causal-links", h.causalLinks)
 	api.HandleFunc("/api/v1/causal-links/", h.causalLinkItem)
+	api.HandleFunc("/api/v1/mental-models", h.mentalModels)
+	api.HandleFunc("/api/v1/mental-models/", h.mentalModelItem)
 	api.HandleFunc("/api/v1/runs", h.runs)
 	api.HandleFunc("/api/v1/consolidation", h.consolidation)
 	api.HandleFunc("/api/v1/graph", h.graph)
@@ -86,9 +88,9 @@ func isReadRequest(r *http.Request) bool {
 		return true
 	case http.MethodPost:
 		// Recall and reflect are reads: they retrieve memories and synthesize
-		// an answer, but store nothing.
+		// an answer, but store nothing. Mental model search is also a read.
 		path := strings.TrimSuffix(r.URL.Path, "/")
-		return path == "/api/v1/recall" || path == "/api/v1/reflect"
+		return path == "/api/v1/recall" || path == "/api/v1/reflect" || path == "/api/v1/mental-models/search"
 	default:
 		return false
 	}
@@ -1172,4 +1174,128 @@ func (h *Handler) stats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
+}
+
+func (h *Handler) mentalModels(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		var tags []string
+		for _, v := range r.URL.Query()["tags"] {
+			for _, t := range strings.Split(v, ",") {
+				if t = strings.TrimSpace(t); t != "" {
+					tags = append(tags, t)
+				}
+			}
+		}
+		items, err := h.Brain.ListMentalModels(r.Context(), namespacesParam(r), tags, pagination(r))
+		if !hdl(w, err) {
+			return
+		}
+		n, err := h.Brain.CountMentalModels(r.Context(), namespacesParam(r), tags)
+		if !hdl(w, err) {
+			return
+		}
+		total(w, n)
+		writeJSON(w, http.StatusOK, nonNil(items))
+	case http.MethodPost:
+		var body struct {
+			Name        string   `json:"name"`
+			SourceQuery string   `json:"source_query"`
+			Namespaces  []string `json:"namespaces"`
+			Tags        []string `json:"tags"`
+			MaxTokens   int      `json:"max_tokens"`
+		}
+		if err := readBody(r, &body); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if strings.TrimSpace(body.Name) == "" || strings.TrimSpace(body.SourceQuery) == "" {
+			writeErr(w, http.StatusBadRequest, errors.New("name and source_query are required"))
+			return
+		}
+		if len(body.Namespaces) == 0 {
+			body.Namespaces = []string{"/"}
+		}
+		nsIDs, err := h.Brain.ResolveNamespaceIDs(r.Context(), body.Namespaces)
+		if !hdl(w, err) {
+			return
+		}
+		mm, err := h.Brain.CreateMentalModel(r.Context(), nsIDs[0], brain.CreateMentalModelOptions{
+			Name:        body.Name,
+			SourceQuery: body.SourceQuery,
+			Tags:        body.Tags,
+			MaxTokens:   body.MaxTokens,
+		})
+		if !hdl(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusCreated, mm)
+	default:
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+	}
+}
+
+func (h *Handler) mentalModelItem(w http.ResponseWriter, r *http.Request) {
+	id, action, err := pathID(r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	switch action {
+	case "":
+		switch r.Method {
+		case http.MethodGet:
+			mm, err := h.Brain.GetMentalModel(r.Context(), id)
+			if !hdl(w, err) {
+				return
+			}
+			writeJSON(w, http.StatusOK, mm)
+		case http.MethodDelete:
+			if !hdl(w, h.Brain.DeleteMentalModel(r.Context(), id)) {
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+		default:
+			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		}
+	case "refresh":
+		if r.Method != http.MethodPost {
+			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+			return
+		}
+		mm, err := h.Brain.RefreshMentalModel(r.Context(), id)
+		if !hdl(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, mm)
+	case "search":
+		if r.Method != http.MethodPost {
+			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+			return
+		}
+		var body struct {
+			Query      string   `json:"query"`
+			Namespaces []string `json:"namespaces"`
+			Tags       []string `json:"tags"`
+			Limit      int      `json:"limit"`
+		}
+		if err := readBody(r, &body); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if strings.TrimSpace(body.Query) == "" {
+			writeErr(w, http.StatusBadRequest, errors.New("query is required"))
+			return
+		}
+		if len(body.Namespaces) == 0 {
+			body.Namespaces = []string{"/"}
+		}
+		results, err := h.Brain.SearchMentalModels(r.Context(), body.Namespaces, body.Query, body.Limit, body.Tags)
+		if !hdl(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"results": nonNil(results), "count": len(results)})
+	default:
+		writeErr(w, http.StatusNotFound, errors.New("not found"))
+	}
 }

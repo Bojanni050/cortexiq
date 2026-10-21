@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -292,4 +293,106 @@ func printJSON(v any) error {
 	}
 	fmt.Println(string(b))
 	return nil
+}
+
+func mentalModelCreateCmd(ctx context.Context, cmd *cli.Command) error {
+	args := cmd.Args()
+	if args.Len() < 2 {
+		return fmt.Errorf("usage: cortexiq mental-model create <name> <source-query> [--namespace /] [--tags a,b] [--max-tokens 2048]")
+	}
+	name := args.Get(0)
+	query := args.Get(1)
+	namespace := cmd.String("namespace")
+	tags := cmd.StringSlice("tags")
+	maxTokens := cmd.Int("max-tokens")
+
+	bc := getBootstrap(cmd)
+	nsIDs, err := bc.Brain.ResolveNamespaceIDs(ctx, []string{namespace})
+	if err != nil || len(nsIDs) == 0 {
+		return fmt.Errorf("namespace %q not found", namespace)
+	}
+	mm, err := bc.Brain.CreateMentalModel(ctx, nsIDs[0], brain.CreateMentalModelOptions{
+		Name:        name,
+		SourceQuery: query,
+		Tags:        tags,
+		MaxTokens:   maxTokens,
+	})
+	if err != nil {
+		return err
+	}
+	return printJSON(mm)
+}
+
+func mentalModelListCmd(ctx context.Context, cmd *cli.Command) error {
+	bc := getBootstrap(cmd)
+	namespaces := cmd.StringSlice("namespaces")
+	if len(namespaces) == 0 {
+		namespaces = []string{"/"}
+	}
+	tags := cmd.StringSlice("tags")
+	items, err := bc.Brain.ListMentalModels(ctx, namespaces, tags, brain.Pagination{
+		Limit:  cmd.Int("limit"),
+		Offset: cmd.Int("offset"),
+	})
+	if err != nil {
+		return err
+	}
+	return printJSON(map[string]any{"mental_models": items, "count": len(items)})
+}
+
+func mentalModelShowCmd(ctx context.Context, cmd *cli.Command) error {
+	id, err := strconv.ParseInt(cmd.Args().First(), 10, 64)
+	if err != nil || id <= 0 {
+		return fmt.Errorf("usage: cortexiq mental-model show <id>")
+	}
+	bc := getBootstrap(cmd)
+	mm, err := bc.Brain.GetMentalModel(ctx, id)
+	if err != nil {
+		return err
+	}
+	return printJSON(mm)
+}
+
+func mentalModelRefreshCmd(ctx context.Context, cmd *cli.Command) error {
+	id, err := strconv.ParseInt(cmd.Args().First(), 10, 64)
+	if err != nil || id <= 0 {
+		return fmt.Errorf("usage: cortexiq mental-model refresh <id>")
+	}
+	bc := getBootstrap(cmd)
+	mm, err := bc.Brain.RefreshMentalModel(ctx, id)
+	if err != nil {
+		return err
+	}
+	return printJSON(mm)
+}
+
+func mentalModelDeleteCmd(ctx context.Context, cmd *cli.Command) error {
+	id, err := strconv.ParseInt(cmd.Args().First(), 10, 64)
+	if err != nil || id <= 0 {
+		return fmt.Errorf("usage: cortexiq mental-model delete <id>")
+	}
+	bc := getBootstrap(cmd)
+	if err := bc.Brain.DeleteMentalModel(ctx, id); err != nil {
+		return err
+	}
+	return printJSON(map[string]any{"ok": true, "id": id})
+}
+
+func mentalModelSearchCmd(ctx context.Context, cmd *cli.Command) error {
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("usage: cortexiq mental-model search <query> [--namespaces /,...] [--tags a,b] [--limit 5]")
+	}
+	query := args.First()
+	namespaces := cmd.StringSlice("namespaces")
+	if len(namespaces) == 0 {
+		namespaces = []string{"/"}
+	}
+	tags := cmd.StringSlice("tags")
+	bc := getBootstrap(cmd)
+	results, err := bc.Brain.SearchMentalModels(ctx, namespaces, query, cmd.Int("limit"), tags)
+	if err != nil {
+		return err
+	}
+	return printJSON(map[string]any{"results": results, "count": len(results)})
 }

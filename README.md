@@ -84,6 +84,47 @@ The same operation is available as the MCP `reflect` tool and as `POST /api/v1/r
 
 Use `recall` when you need the raw memories (exact wording, IDs to act on). Use `reflect` when you need an answer — summaries, explanations, "what do we know about...".
 
+## Mental models: curated summaries
+
+A **mental model** is a curated, high-quality summary about a specific topic — generated once by `reflect`, stored, and searched first on every future `reflect` call. Think of it as a "saved answer" that skips the recall+synthesis work when the question repeats.
+
+Mental models are the highest-quality knowledge in the system: facts are extracted from episodes, reflect answers are generated on demand, but a mental model is a *persistent artifact* you control. Use them for topics that come up repeatedly — deployment processes, architecture decisions, "how we handle X".
+
+```bash
+# Create a mental model from a source query
+cortexiq mental-model create "Kafka Migration" "What do we know about the Kafka migration?" \
+  --namespace /projects/myapp --tags infrastructure,messaging
+
+# List mental models
+cortexiq mental-model list --tags infrastructure
+
+# Search mental models by semantic similarity
+cortexiq mental-model search "message queue migration"
+
+# Refresh a stale mental model (regenerates content from its source query)
+cortexiq mental-model refresh 42
+
+# Show a mental model
+cortexiq mental-model show 42
+
+# Delete a mental model
+cortexiq mental-model delete 42
+```
+
+The same operations are available as MCP tools (`mental_model_create`, `mental_model_list`, `mental_model_get`, `mental_model_refresh`, `mental_model_delete`, `mental_model_search`) and as REST endpoints (`GET/POST /api/v1/mental-models`, `GET/DELETE /api/v1/mental-models/<id>`, `POST /api/v1/mental-models/<id>/refresh`, `POST /api/v1/mental-models/search`).
+
+**How reflect uses mental models:** every `reflect` call first searches mental models semantically. Matching models appear in the synthesis prompt *before* raw memories, labelled as "curated summaries". The LLM is instructed to prefer them. Results are marked `is_stale: true` when they haven't been refreshed in 24 hours.
+
+**Mental models vs facts vs reflect:**
+
+| | Facts | Reflect | Mental model |
+|---|---|---|---|
+| **What** | Extracted truths | On-demand answer | Curated summary |
+| **When** | Written by consolidation | Every call | Created once, refreshed on demand |
+| **Quality** | Automatic, may be noisy | Good, varies per call | Highest — you curate it |
+| **Cost** | Embedding + storage | Recall + LLM per call | One-time LLM, then just a search |
+| **Use for** | Grounding, recall | Ad-hoc questions | Recurring topics, "saved answers" |
+
 ## Benchmarking
 
 CortexIQ ships with a benchmark runner for standardized memory evaluation, inspired by Hindsight's LongMemEval integration. It ingests conversation sessions, answers questions with `reflect`, and scores the answers — either by exact match or with an LLM judge.
