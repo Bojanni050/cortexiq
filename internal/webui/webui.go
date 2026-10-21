@@ -430,6 +430,9 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 		// Graph overrides the configured graph arm for this call: true forces it
 		// on, false forces it off, absent keeps the configuration.
 		Graph *bool `json:"graph"`
+		// MMR overrides the configured MMR lambda for this call: 0 disables MMR,
+		// 1 maximises diversity, 0.5 balances. Absent keeps the configuration.
+		MMR *float64 `json:"mmr"`
 	}
 	if err := readBody(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -478,6 +481,7 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 	}
 	opts.KnownTo = knownTo
 	opts.Graph = body.Graph
+	opts.MMR = body.MMR
 	if body.Trace {
 		results, trace, err := h.Brain.RecallDetailed(r.Context(), body.Namespaces, body.Query, body.Limit, opts)
 		if !hdl(w, err) {

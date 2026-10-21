@@ -129,6 +129,11 @@ type Config struct {
 	// away: importance 0 keeps 1-ImportanceWeight of it, importance 1 keeps all.
 	// 0 disables importance weighting.
 	ImportanceWeight float64
+	// MMRLambda (0..1) controls Maximal Marginal Relevance diversification of
+	// recall results. 0 disables MMR (default): results stay in pure relevance
+	// order. 1 maximises diversity. 0.5 balances relevance and diversity. MMR
+	// runs after RRF fusion and reranking, before recency/importance boosts.
+	MMRLambda float64
 	// Reranker re-scores fused candidates against the query with a cross-
 	// encoder, after fusion and before recency and importance. nil = off, so a
 	// deployment without a reranker keeps the previous ranking exactly.

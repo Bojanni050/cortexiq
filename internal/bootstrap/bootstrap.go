@@ -130,6 +130,7 @@ func New(ctx context.Context) (*Context, error) {
 		RecencyWeight:                  cfg.RecallRecencyWeight,
 		RecencyHalfLife:                cfg.RecallRecencyHalfLife,
 		ImportanceWeight:               cfg.RecallImportanceWeight,
+		MMRLambda:                      cfg.RecallMMRLambda,
 		Reranker:                       rerank,
 		RerankCandidates:               cfg.RerankCandidates,
 		MinEpisodeLength:               cfg.ExtractionMinChars,

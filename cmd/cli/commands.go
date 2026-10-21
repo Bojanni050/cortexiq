@@ -80,8 +80,14 @@ func recallCmd(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("invalid known-to: %w", err)
 	}
 
+	var mmr *float64
+	if cmd.IsSet("mmr") {
+		v := cmd.Float("mmr")
+		mmr = &v
+	}
+
 	bc := getBootstrap(cmd)
-	results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo})
+	results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo, MMR: mmr})
 	if err != nil {
 		return err
 	}

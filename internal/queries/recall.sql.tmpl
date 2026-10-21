@@ -8,6 +8,8 @@ SELECT
     created_at,
     importance,
     1 - (embedding <=> {{.Bind .Args.vector}}) AS score
+{{if .Args.include_embedding}},
+    embedding{{end}}
 FROM episodes
 WHERE deleted_at IS NULL
 {{template "episode_time_filter" .}}
@@ -28,6 +30,8 @@ SELECT
     created_at,
     importance,
     1 - (embedding <=> {{.Bind .Args.vector}}) AS score
+{{if .Args.include_embedding}},
+    embedding{{end}}
 FROM facts
 WHERE deleted_at IS NULL
 {{if or .Args.from .Args.to}}

@@ -121,6 +121,7 @@ func main() {
 					&cli.StringFlag{Name: "known-to", Usage: "Exclusive end of the knowledge window (RFC3339 or YYYY-MM-DD)"},
 					&cli.StringFlag{Name: "from", Usage: "Include event/valid time on or after this bound (RFC3339 or YYYY-MM-DD)"},
 					&cli.StringFlag{Name: "to", Usage: "Exclude event/valid time at or after this bound (RFC3339 or YYYY-MM-DD)"},
+					&cli.FloatFlag{Name: "mmr", Usage: "MMR diversity 0..1 (0=relevance, 1=diversity, 0.5=balanced); default: server config"},
 				},
 			},
 			{
