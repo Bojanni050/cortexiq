@@ -122,6 +122,13 @@ type Config struct {
 	// when they were remembered: importance 0 keeps 1-weight of the score,
 	// importance 1 keeps all of it. 0 = off (default, ranking unchanged).
 	RecallImportanceWeight float64 `env:"CORTEXIQ_RECALL_IMPORTANCE_WEIGHT" envDefault:"0"`
+	// RecallMMRLambda (0..1) controls Maximal Marginal Relevance diversification
+	// of recall results. 0 disables MMR (default, ranking unchanged): results
+	// stay in pure relevance order. 1 maximises diversity: each new result is
+	// picked for being different from what is already selected. 0.5 balances
+	// relevance and diversity. MMR runs after RRF fusion and reranking, before
+	// recency/importance boosts, so those still reorder the diversified list.
+	RecallMMRLambda float64 `env:"CORTEXIQ_RECALL_MMR_LAMBDA" envDefault:"0"`
 	// RerankerBaseURL is a Cohere-compatible /rerank endpoint (Jina, SiliconFlow,
 	// Llama.cpp, Ollama). Used only when RerankerModel is set.
 	RerankerBaseURL string `env:"CORTEXIQ_RERANKER_BASE_URL" envDefault:""`

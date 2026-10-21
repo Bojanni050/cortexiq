@@ -32,6 +32,9 @@ type RecallOptions struct {
 	// forces it on, false forces it off, nil keeps the configuration. Routing only
 	// applies when Types is empty.
 	Route *bool
+	// MMR overrides the configured MMR lambda for this call: 0 disables MMR,
+	// 1 maximises diversity, 0.5 balances. nil keeps the configuration.
+	MMR *float64
 }
 
 // includes reports which of the two stores the options ask for.
@@ -85,11 +88,13 @@ type RecallTrace struct {
 	MinSimilarity float32  `json:"min_similarity"`
 	RRFK          int      `json:"rrf_k"`
 	// Recency and importance weighting reorder the fused list; zero means off.
-	RecencyWeight    float64       `json:"recency_weight"`
-	RecencyHalfLife  string        `json:"recency_half_life"`
-	ImportanceWeight float64       `json:"importance_weight"`
-	Stages           []RecallStage `json:"stages"`
-	TotalMillis      float64       `json:"total_ms"`
+	RecencyWeight    float64 `json:"recency_weight"`
+	RecencyHalfLife  string  `json:"recency_half_life"`
+	ImportanceWeight float64 `json:"importance_weight"`
+	// MMRLambda is the MMR diversification parameter that ran; 0 means MMR was off.
+	MMRLambda   float64       `json:"mmr_lambda"`
+	Stages      []RecallStage `json:"stages"`
+	TotalMillis float64       `json:"total_ms"`
 }
 
 // ResultTrace says how one result got its rank: where each arm placed it, what

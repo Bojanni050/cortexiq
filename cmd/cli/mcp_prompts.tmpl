@@ -381,6 +381,14 @@ Optional comma-separated filter: 'fact' (consolidated knowledge), 'episode' (raw
 Use 'fact' for durable decisions and preferences; 'episode' for what was said or happened; 'failure' before retrying an approach ("what did we already try?"); 'goal' for what is planned or done. Failures and goals match on keywords only, so use the words they would contain.
 {{end}}
 
+{{define "recall_mmr"}}
+Optional MMR (Maximal Marginal Relevance) diversity parameter, 0..1. Omit to use the server default (CORTEXIQ_RECALL_MMR_LAMBDA, 0 = off).
+0 = pure relevance (top results by score, may contain near-duplicates).
+1 = pure diversity (spread results across topics, may drop the best match).
+0.5 = balanced (recommended when results feel repetitive).
+Use when recall returns several paraphrases of the same fact and you want variety.
+{{end}}
+
 {{define "reflect_description"}}
 Answers a question by recalling relevant memories and synthesizing a grounded answer. Use this when the user asks a question that needs an answer, not a list of memories.
 

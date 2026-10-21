@@ -230,6 +230,41 @@ example `{"query":"project updates","from":"2025-03-01","to":"2025-04-01"}`.
 For `GET /api/v1/facts` and `cortexiq facts`, `from`/`to` filter validity
 overlap and `as_of`, `known_from`, `known_to` filter knowledge time; the older `since`/`until` filters still mean `created_at`.
 
+### MMR diversity
+
+Recall fuses vector, keyword, graph, and temporal arms into one ranked list.
+That list can cluster: five near-identical facts about the same topic push a
+different, relevant fact out of the top results. MMR (Maximal Marginal
+Relevance) re-orders the fused results to balance relevance against redundancy,
+after reranking and before the recency/importance boosts.
+
+The λ (lambda) parameter trades the two off:
+
+| λ | Behaviour |
+|---|-----------|
+| `0` | Off — pure relevance ranking (default) |
+| `0.5` | Balanced — relevant *and* diverse (Hindsight's default) |
+| `1` | Pure diversity — spread across topics, ignore relevance |
+
+Set it server-wide with `CORTEXIQ_RECALL_MMR_LAMBDA=0.5`, or override per call:
+
+```bash
+# CLI
+cortexiq recall "kafka migration" --mmr 0.5
+
+# REST
+curl -X POST localhost:9090/api/v1/recall \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"kafka migration","mmr":0.5}'
+
+# MCP — pass mmr as a number on the recall tool
+```
+
+Use MMR when the caller benefits from breadth — an agent exploring a topic,
+a `reflect` call that should ground its answer in varied sources, a dashboard
+showing "what do we know". Leave it off (λ=0) when the caller wants the single
+best match — exact lookups, dedup checks, or when result order is contractual.
+
 To protect CortexIQ, set `CORTEXIQ_API_TOKEN` in `.env`. It guards both the dashboard API (`/api/v1`) and the MCP server (`/sse`, `/message`): every request then needs `Authorization: Bearer <token>`. The dashboard asks for the token on first use and remembers it in the browser; MCP clients need to send the header (see below). Leave it empty to keep everything open. `/healthz`, `/readyz` and `/metrics` are not covered.
 
 ### Scoped tokens

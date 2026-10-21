@@ -59,6 +59,10 @@ type RecallResult struct {
 	// refTime is the moment recency decay counts from: occurred_at for episodes,
 	// created_at for facts.
 	refTime time.Time
+	// embedding is the result's vector, used by MMR diversification. It is nil
+	// for keyword-only, graph-only and temporal-only hits that never came
+	// through the vector arm.
+	embedding []float32
 	// Rank bookkeeping for Trace, filled in by fuse and applyBoosts.
 	vecRank, kwRank       int
 	graphRank             int
@@ -66,6 +70,8 @@ type RecallResult struct {
 	kwScore, graphScore   float32
 	fusedScore            float32
 	recencyF, importanceF float64
+	// mmrScore is the MMR-adjusted score, set only when MMR ran.
+	mmrScore float32
 }
 
 const (
@@ -198,6 +204,13 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 	}
 	historical := asOf != nil || known.From != nil || known.To != nil
 
+	// MMR lambda: per-call override wins, then configuration. >0 enables MMR.
+	mmrLambda := b.config.MMRLambda
+	if opts.MMR != nil {
+		mmrLambda = *opts.MMR
+	}
+	mmrOn := mmrLambda > 0
+
 	if tr != nil {
 		tr.Query, tr.KeywordQuery, tr.Hybrid, tr.Graph, tr.Limit, tr.Candidates = query, kwQuery, kwQuery != "", graph, limit, candidates
 		tr.Namespaces, tr.NamespaceIDs, tr.Routed = namespaces, len(nsIDs), routed
@@ -220,17 +233,18 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		tr.Temporal = temporal
 		tr.MinSimilarity, tr.RRFK = b.config.MinRecallSimilarity, rrfK
 		tr.RecencyWeight, tr.RecencyHalfLife, tr.ImportanceWeight = b.config.RecencyWeight, b.config.RecencyHalfLife.String(), b.config.ImportanceWeight
+		tr.MMRLambda = mmrLambda
 	}
 
 	var results []RecallResult
 
 	// Search facts first (higher quality, consolidated)
 	if facts {
-		factSQL, factArgs, err := b.queries.RecallFactsWindow(nsIDs, pgVec, candidates, asOf, opts.From, opts.To, known)
+		factSQL, factArgs, err := b.queries.RecallFactsWindowWithEmbedding(nsIDs, pgVec, candidates, asOf, opts.From, opts.To, known, mmrOn)
 		if err != nil {
 			return nil, fmt.Errorf("build fact query: %w", err)
 		}
-		factVec, err := b.runRecall(ctx, factSQL, factArgs, "fact")
+		factVec, err := b.runRecallWithEmbedding(ctx, factSQL, factArgs, "fact", mmrOn)
 		if err != nil {
 			return nil, fmt.Errorf("query facts: %w", err)
 		}
@@ -293,6 +307,10 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			results = b.rerank(ctx, query, results)
 			stage("facts_reranked", len(results))
 		}
+		if mmrOn {
+			results = applyMMR(results, vec, mmrLambda, candidates)
+			stage("facts_mmr", len(results))
+		}
 		// A historical lookup answers "what did we know then": today's opinion
 		// on a fact must not reorder the record of a past moment.
 		if !historical {
@@ -311,11 +329,11 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 				epCandidates = maxCandidates
 			}
 		}
-		epSQL, epArgs, err := b.queries.RecallEpisodesWindow(nsIDs, pgVec, epCandidates, asOf, opts.From, opts.To, known)
+		epSQL, epArgs, err := b.queries.RecallEpisodesWindowWithEmbedding(nsIDs, pgVec, epCandidates, asOf, opts.From, opts.To, known, mmrOn)
 		if err != nil {
 			return nil, fmt.Errorf("build episode query: %w", err)
 		}
-		epVec, err := b.runRecall(ctx, epSQL, epArgs, "episode")
+		epVec, err := b.runRecallWithEmbedding(ctx, epSQL, epArgs, "episode", mmrOn)
 		if err != nil {
 			return nil, fmt.Errorf("query episodes: %w", err)
 		}
@@ -362,6 +380,10 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			eps = fuse(epVec, epKw, epCandidates, kwQuery != "", b.config.MinRecallSimilarity)
 		}
 		eps = b.rerank(ctx, query, eps)
+		if mmrOn {
+			eps = applyMMR(eps, vec, mmrLambda, epCandidates)
+			stage("episodes_mmr", len(eps))
+		}
 		results = append(results, b.applyBoosts(eps, episodeLimit, now)...)
 		stage("episodes_fused", len(eps))
 	}
@@ -543,7 +565,15 @@ func (r *RecallResult) typedID(kind string) {
 
 // runRecall executes one recall query and scans its rows. kind is "fact" or
 // "episode"; both vector and keyword templates return the same columns per kind.
+// When includeEmbedding is true the query is expected to also select the
+// embedding column, which is scanned into RecallResult.embedding for MMR.
 func (b *Brain) runRecall(ctx context.Context, sql string, args []any, kind string) ([]RecallResult, error) {
+	return b.runRecallWithEmbedding(ctx, sql, args, kind, false)
+}
+
+// runRecallWithEmbedding is runRecall with an option to also scan the embedding
+// column (selected by the query when include_embedding is set in its args).
+func (b *Brain) runRecallWithEmbedding(ctx context.Context, sql string, args []any, kind string, includeEmbedding bool) ([]RecallResult, error) {
 	rows, err := b.pool.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
@@ -554,14 +584,29 @@ func (b *Brain) runRecall(ctx context.Context, sql string, args []any, kind stri
 	for rows.Next() {
 		r := RecallResult{Type: kind}
 		var createdAt time.Time
+		var emb pgvector.Vector
 		if kind == "fact" {
-			if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &r.Confidence, &createdAt, &r.Importance, &r.Score); err != nil {
-				return nil, fmt.Errorf("scan fact: %w", err)
+			if includeEmbedding {
+				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &r.Confidence, &createdAt, &r.Importance, &r.Score, &emb); err != nil {
+					return nil, fmt.Errorf("scan fact: %w", err)
+				}
+				r.embedding = emb.Slice()
+			} else {
+				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &r.Confidence, &createdAt, &r.Importance, &r.Score); err != nil {
+					return nil, fmt.Errorf("scan fact: %w", err)
+				}
 			}
 		} else {
 			var occurredAt time.Time
-			if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &occurredAt, &createdAt, &r.Importance, &r.Score); err != nil {
-				return nil, fmt.Errorf("scan episode: %w", err)
+			if includeEmbedding {
+				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &occurredAt, &createdAt, &r.Importance, &r.Score, &emb); err != nil {
+					return nil, fmt.Errorf("scan episode: %w", err)
+				}
+				r.embedding = emb.Slice()
+			} else {
+				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &occurredAt, &createdAt, &r.Importance, &r.Score); err != nil {
+					return nil, fmt.Errorf("scan episode: %w", err)
+				}
 			}
 			r.OccurredAt = occurredAt.Format(time.RFC3339)
 		}

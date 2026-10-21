@@ -43,11 +43,19 @@ func (q *Queries) RecallEpisodes(namespaceIDs []int64, vector pgvector.Vector, l
 }
 
 // RecallEpisodesWindow returns episode vector hits limited by stored-at asOf
-// and/or by the event-time window [from, to).
+// and/or by the event-time window [from, to). When includeEmbedding is true the
+// embedding column is also selected (for MMR diversification).
 func (q *Queries) RecallEpisodesWindow(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf, from, to *time.Time, known Known) (string, []any, error) {
+	return q.RecallEpisodesWindowWithEmbedding(namespaceIDs, vector, limit, asOf, from, to, known, false)
+}
+
+// RecallEpisodesWindowWithEmbedding is RecallEpisodesWindow with an option to
+// include the embedding column in the result (needed for MMR).
+func (q *Queries) RecallEpisodesWindowWithEmbedding(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf, from, to *time.Time, known Known, includeEmbedding bool) (string, []any, error) {
 	args := map[string]any{
-		"vector": vector,
-		"limit":  limit,
+		"vector":            vector,
+		"limit":             limit,
+		"include_embedding": includeEmbedding,
 	}
 	if len(namespaceIDs) > 0 {
 		args["namespace_ids"] = namespaceIDs
@@ -66,9 +74,16 @@ func (q *Queries) RecallFacts(namespaceIDs []int64, vector pgvector.Vector, limi
 
 // RecallFactsWindow returns fact vector hits constrained by valid-time overlap.
 func (q *Queries) RecallFactsWindow(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf, from, to *time.Time, known Known) (string, []any, error) {
+	return q.RecallFactsWindowWithEmbedding(namespaceIDs, vector, limit, asOf, from, to, known, false)
+}
+
+// RecallFactsWindowWithEmbedding is RecallFactsWindow with an option to include
+// the embedding column in the result (needed for MMR).
+func (q *Queries) RecallFactsWindowWithEmbedding(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf, from, to *time.Time, known Known, includeEmbedding bool) (string, []any, error) {
 	args := map[string]any{
-		"vector": vector,
-		"limit":  limit,
+		"vector":            vector,
+		"limit":             limit,
+		"include_embedding": includeEmbedding,
 	}
 	if len(namespaceIDs) > 0 {
 		args["namespace_ids"] = namespaceIDs

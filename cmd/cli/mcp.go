@@ -130,6 +130,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("from", mcp.Description(render("from_param"))),
 		mcp.WithString("to", mcp.Description(render("to_param"))),
 		mcp.WithString("types", mcp.Description(render("recall_types"))),
+		mcp.WithNumber("mmr", mcp.Description(render("recall_mmr"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query := request.GetString("query", "")
 		asOf, err := parseAsOf(request.GetString("as_of", ""))
@@ -174,7 +175,13 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			}
 		}
 
-		results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo, Types: types})
+		var mmr *float64
+		if request.GetFloat("mmr", -1) >= 0 {
+			v := request.GetFloat("mmr", 0)
+			mmr = &v
+		}
+
+		results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo, Types: types, MMR: mmr})
 		if err != nil {
 			return nil, err
 		}
