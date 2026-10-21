@@ -300,3 +300,22 @@ func (b *Brain) SaveConsolidationProgress(ctx context.Context, cp models.Consoli
 	}
 	return nil
 }
+
+// DeleteNamespace removes a namespace and all its data (episodes, facts, etc.
+// cascade). It refuses to delete the root namespace "/".
+func (b *Brain) DeleteNamespace(ctx context.Context, slug string) error {
+	if err := requireWrite(ctx); err != nil {
+		return err
+	}
+	if err := validatePath(slug); err != nil {
+		return err
+	}
+	if slug == "/" {
+		return fmt.Errorf("brain: cannot delete the root namespace")
+	}
+	_, err := b.pool.Exec(ctx, "DELETE FROM namespaces WHERE slug = $1", slug)
+	if err != nil {
+		return fmt.Errorf("delete namespace: %w", err)
+	}
+	return nil
+}

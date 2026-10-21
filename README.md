@@ -84,6 +84,61 @@ The same operation is available as the MCP `reflect` tool and as `POST /api/v1/r
 
 Use `recall` when you need the raw memories (exact wording, IDs to act on). Use `reflect` when you need an answer — summaries, explanations, "what do we know about...".
 
+## Benchmarking
+
+CortexIQ ships with a benchmark runner for standardized memory evaluation, inspired by Hindsight's LongMemEval integration. It ingests conversation sessions, answers questions with `reflect`, and scores the answers — either by exact match or with an LLM judge.
+
+```bash
+# List available benchmark datasets
+cortexiq benchmark list
+
+# Run the example benchmark (exact-match judging)
+cortexiq benchmark run --dataset eval/benchmark/example.json
+
+# Run with an LLM judge (slower, more nuanced scoring)
+cortexiq benchmark run --dataset eval/benchmark/example.json --llm-judge
+
+# Run a subset of items
+cortexiq benchmark run --dataset eval/benchmark/example.json --max-items 5
+
+# Save the JSON report
+cortexiq benchmark run --dataset eval/benchmark/example.json --output report.json
+```
+
+The report includes accuracy, average judge score, exact match rate, latency, and per-category breakdowns:
+
+```
+=== Benchmark: example ===
+
+Items:       3
+Questions:   12
+Episodes:    6
+Duration:    15420 ms
+Errors:      0
+
+--- Scores ---
+
+Accuracy:           83.3%
+Avg judge score:    0.792
+Exact match rate:   25.0%
+Avg latency:        1285 ms/question
+
+--- By Category ---
+
+category                       n  accuracy  avg score
+single-session                 6     100.0%     0.917
+multi-session                  4      75.0%     0.688
+temporal                       2      50.0%     0.500
+```
+
+### Dataset format
+
+Datasets are JSON files compatible with LongMemEval — an array of items, each with `haystack_sessions` (conversations to ingest) and `qa_pairs` (questions with gold answers). See [`eval/benchmark/README.md`](eval/benchmark/README.md) for the full format spec and [`eval/benchmark/example.json`](eval/benchmark/example.json) for a working example.
+
+### CI integration
+
+A GitHub Actions workflow (`.github/workflows/benchmark.yml`) runs the benchmark on every push to `main` and on PRs that touch benchmark code. It fails when accuracy drops below the configured threshold (`BENCHMARK_MIN_ACCURACY`, default 0.5), enabling regression detection. The report is uploaded as an artifact and PRs get a results comment.
+
 ## Backup, export and import
 
 ```bash

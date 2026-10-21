@@ -274,6 +274,36 @@ func main() {
 				},
 			},
 			{
+				Name:  "benchmark",
+				Usage: "Run standardized memory benchmarks (LongMemEval-style)",
+				Commands: []*cli.Command{
+					{
+						Name:      "run",
+						Usage:     "Run a benchmark dataset and report scores",
+						ArgsUsage: "<dataset.json>",
+						Action:    benchmarkRunCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "dataset", Aliases: []string{"d"}, Usage: "Path to the benchmark dataset JSON file"},
+							&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/benchmark", Usage: "Namespace prefix for benchmark data (cleaned up after unless --keep)"},
+							&cli.IntFlag{Name: "limit", Value: 10, Usage: "Max memories to recall per question (reflect limit)"},
+							&cli.IntFlag{Name: "max-items", Usage: "Process at most this many items (0 = all)"},
+							&cli.BoolFlag{Name: "llm-judge", Usage: "Use the LLM to judge answers (slower, more accurate than exact match)"},
+							&cli.StringFlag{Name: "judge-model", Usage: "Model for the LLM judge (default: the configured reasoner model)"},
+							&cli.StringFlag{Name: "output", Aliases: []string{"o"}, Usage: "Write the JSON report to this file (default: stdout)"},
+							&cli.BoolFlag{Name: "keep", Usage: "Keep the benchmark namespace after the run"},
+						},
+					},
+					{
+						Name:   "list",
+						Usage:  "List available benchmark datasets",
+						Action: benchmarkListCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "dir", Value: "eval/benchmark", Usage: "Directory to scan for datasets"},
+						},
+					},
+				},
+			},
+			{
 				Name:  "consolidate",
 				Usage: "Consolidate memories",
 				Commands: []*cli.Command{
