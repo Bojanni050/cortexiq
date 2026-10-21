@@ -13,10 +13,11 @@ import (
 // ReflectResult is the output of a reflect operation: an answer synthesized
 // from recalled memories, plus the memories that supported it.
 type ReflectResult struct {
-	Answer      string          `json:"answer"`
-	Sources     []ReflectSource `json:"sources"`
-	RecallCount int             `json:"recall_count"`
-	DurationMs  int64           `json:"duration_ms"`
+	Answer           string          `json:"answer"`
+	Sources          []ReflectSource `json:"sources"`
+	RecallCount      int             `json:"recall_count"`
+	MentalModelCount int             `json:"mental_model_count"`
+	DurationMs       int64           `json:"duration_ms"`
 }
 
 // ReflectSource is one memory that contributed to the answer.
@@ -49,6 +50,15 @@ type ReflectOptions struct {
 	KnownTo   *time.Time
 	// Types limits which memory types are recalled. Empty means facts and episodes.
 	Types []string
+	// MMR overrides the server MMR lambda for the grounding recall. nil keeps
+	// the server config; 0 disables MMR; 0..1 balances relevance vs diversity.
+	MMR *float64
+	// SkipMentalModels disables the mental model lookup in reflect. By default
+	// reflect searches mental models first (they are curated summaries) and
+	// includes them in the synthesis prompt.
+	SkipMentalModels bool
+	// MentalModelTags filters mental model search to models with any of these tags.
+	MentalModelTags []string
 }
 
 // reflectSystemPrompt is the system prompt for the reflect synthesis. It tells
@@ -56,9 +66,13 @@ type ReflectOptions struct {
 // say so when the memories do not answer the question.
 const reflectSystemPrompt = `You are a reflection agent that answers questions by reasoning over retrieved memories.
 
+You may receive two kinds of input:
+- MENTAL MODELS: curated, high-quality summaries about specific topics. These are the most reliable knowledge — prefer them over raw memories when they cover the question.
+- MEMORIES: raw facts and episodes. Use these to fill gaps the mental models leave.
+
 Rules:
-- Answer ONLY from the memories provided below. Never use outside knowledge.
-- If the memories do not contain the answer, say so clearly. Do not guess.
+- Answer ONLY from the input provided below. Never use outside knowledge.
+- If the input does not contain the answer, say so clearly. Do not guess.
 - Be concise and direct. Use the same language as the question.
 - When memories conflict, note the conflict and say which is more recent or better supported.
 - Do not mention that you are an AI or that you used a memory system.
@@ -88,6 +102,18 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 		namespaces = []string{"/"}
 	}
 
+	var mentalModels []MentalModelSearchResult
+	if !opts.SkipMentalModels {
+		mmLimit := limit / 2
+		if mmLimit < 1 {
+			mmLimit = 1
+		}
+		if mmLimit > 5 {
+			mmLimit = 5
+		}
+		mentalModels, _ = b.SearchMentalModels(ctx, namespaces, query, mmLimit, opts.MentalModelTags)
+	}
+
 	recallOpts := RecallOptions{
 		AsOf:      opts.AsOf,
 		From:      opts.From,
@@ -95,13 +121,22 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 		KnownFrom: opts.KnownFrom,
 		KnownTo:   opts.KnownTo,
 		Types:     opts.Types,
+		MMR:       opts.MMR,
 	}
 	results, err := b.RecallWith(ctx, namespaces, query, limit, recallOpts)
 	if err != nil {
 		return nil, fmt.Errorf("reflect recall: %w", err)
 	}
 
-	sources := make([]ReflectSource, 0, len(results))
+	sources := make([]ReflectSource, 0, len(results)+len(mentalModels))
+	for _, mm := range mentalModels {
+		sources = append(sources, ReflectSource{
+			Type:    "mental_model",
+			ID:      mm.ID,
+			Content: mm.Content,
+			Score:   mm.Relevance,
+		})
+	}
 	for _, r := range results {
 		sources = append(sources, ReflectSource{
 			Type:    r.Type,
@@ -112,8 +147,14 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 	}
 
 	memoriesText := formatMemoriesForReflect(results)
+	mmText := formatMentalModelsForReflect(mentalModels)
 
 	var sb strings.Builder
+	if mmText != "" {
+		sb.WriteString("## Mental Models (curated summaries)\n\n")
+		sb.WriteString(mmText)
+		sb.WriteString("\n")
+	}
 	sb.WriteString("## Memories\n\n")
 	if memoriesText == "" {
 		sb.WriteString("(no relevant memories found)\n")
@@ -143,11 +184,29 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 	}
 
 	return &ReflectResult{
-		Answer:      answer,
-		Sources:     sources,
-		RecallCount: len(results),
-		DurationMs:  time.Since(start).Milliseconds(),
+		Answer:           answer,
+		Sources:          sources,
+		RecallCount:      len(results),
+		MentalModelCount: len(mentalModels),
+		DurationMs:       time.Since(start).Milliseconds(),
 	}, nil
+}
+
+// formatMentalModelsForReflect renders curated mental models for the synthesis
+// prompt. They appear before raw memories because they are higher quality.
+func formatMentalModelsForReflect(models []MentalModelSearchResult) string {
+	if len(models) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for i, mm := range models {
+		stale := ""
+		if mm.IsStale {
+			stale = " [STALE - may need refresh]"
+		}
+		fmt.Fprintf(&sb, "%d. [%s]%s\n%s\n", i+1, mm.Name, stale, mm.Content)
+	}
+	return sb.String()
 }
 
 // formatMemoriesForReflect renders recalled memories as a numbered list for

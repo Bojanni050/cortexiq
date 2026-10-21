@@ -547,6 +547,64 @@ func main() {
 				},
 			},
 			{
+				Name:    "mental-model",
+				Aliases: []string{"mm"},
+				Usage:   "Manage mental models (curated summaries)",
+				Commands: []*cli.Command{
+					{
+						Name:      "create",
+						Usage:     "Create a mental model from a source query",
+						ArgsUsage: "<name> <source-query>",
+						Action:    mentalModelCreateCmd,
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "Namespace path"},
+							&cli.StringSliceFlag{Name: "tags", Usage: "Tags for scoped visibility"},
+							&cli.IntFlag{Name: "max-tokens", Value: 2048, Usage: "Maximum tokens for generated content"},
+						},
+					},
+					{
+						Name:   "list",
+						Usage:  "List mental models",
+						Action: mentalModelListCmd,
+						Flags: []cli.Flag{
+							&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to query (each includes descendants)"},
+							&cli.StringSliceFlag{Name: "tags", Usage: "Filter by tags (any match)"},
+							&cli.IntFlag{Name: "limit", Value: 100, Usage: "Max results"},
+							&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
+						},
+					},
+					{
+						Name:      "show",
+						Usage:     "Show a mental model by ID",
+						ArgsUsage: "<id>",
+						Action:    mentalModelShowCmd,
+					},
+					{
+						Name:      "refresh",
+						Usage:     "Refresh a mental model (regenerate content from its source query)",
+						ArgsUsage: "<id>",
+						Action:    mentalModelRefreshCmd,
+					},
+					{
+						Name:      "delete",
+						Usage:     "Delete a mental model",
+						ArgsUsage: "<id>",
+						Action:    mentalModelDeleteCmd,
+					},
+					{
+						Name:      "search",
+						Usage:     "Search mental models by semantic similarity",
+						ArgsUsage: "<query>",
+						Action:    mentalModelSearchCmd,
+						Flags: []cli.Flag{
+							&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to search (each includes descendants)"},
+							&cli.StringSliceFlag{Name: "tags", Usage: "Filter by tags (any match)"},
+							&cli.IntFlag{Name: "limit", Value: 5, Usage: "Max results"},
+						},
+					},
+				},
+			},
+			{
 				Name:  "failure",
 				Usage: "Manage failure records",
 				Commands: []*cli.Command{
