@@ -31,10 +31,9 @@ jobs:
   benchmark:
     name: Memory Benchmark
     runs-on: ubuntu-latest
-    # Skip when no LLM API key is available (fork PRs, missing secret).
-    # The benchmark needs an LLM for reflect and the judge, so without a key
-    # it cannot run. The CI job (build/vet/test) still validates the code.
-    if: ${{ secrets.OPENAI_API_KEY != '' }}
+    # The benchmark needs an LLM API key to run reflect and the judge.
+    # The secrets context is not allowed in a job-level if, so a guard step
+    # below checks for the key and gates the remaining steps on its output.
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -50,19 +49,29 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
+      - name: Check for LLM API key
+        id: guard
+        env:
+          HAS_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
+        run: echo "has-key=${HAS_KEY}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
+        if: steps.guard.outputs.has-key == 'true'
         uses: actions/checkout@v7
 
       - name: Set up Go
+        if: steps.guard.outputs.has-key == 'true'
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Build
+        if: steps.guard.outputs.has-key == 'true'
         run: go build -o cortexiq ./cmd/cli
 
       - name: Run example benchmark
+        if: steps.guard.outputs.has-key == 'true'
         env:
           CORTEXIQ_POSTGRES_DSN: postgres://cortexiq:cortexiq@localhost:5432/cortexiq_bench?sslmode=disable
           CORTEXIQ_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -83,6 +92,7 @@ jobs:
             --keep=false
 
       - name: Check accuracy threshold
+        if: steps.guard.outputs.has-key == 'true'
         run: |
           ACCURACY=$(jq '.summary.accuracy' benchmark-report.json)
           THRESHOLD=${{ vars.BENCHMARK_MIN_ACCURACY || '0.5' }}
@@ -94,14 +104,14 @@ jobs:
 
       - name: Upload report
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.guard.outputs.has-key == 'true'
         with:
           name: benchmark-report
           path: benchmark-report.json
           retention-days: 30
 
       - name: Comment PR with results
-        if: github.event_name == 'pull_request' && always()
+        if: github.event_name == 'pull_request' && always() && steps.guard.outputs.has-key == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
