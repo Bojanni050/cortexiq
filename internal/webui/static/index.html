@@ -134,6 +134,7 @@ dialog label { display: block; font-size: 12px; color: var(--muted); margin: 14p
 dialog input, dialog textarea, dialog select { width: 100%; }
 dialog textarea { min-height: 76px; resize: vertical; }
 dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+dialog .err { color: var(--red); }
 #toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 18px; border-radius: var(--radius-sm); background: var(--panel-2); border: 1px solid var(--border-2); border-left: 3px solid var(--green); box-shadow: 0 12px 32px rgba(0,0,0,.4); display: none; z-index: 100; max-width: 380px; }
 #toast.err { border-left-color: var(--red); }
 
@@ -251,6 +252,12 @@ tabs.forEach(([id, label]) => {
 
 function toast(msg, err) {
   const t = document.getElementById('toast');
+  // A modal <dialog> lives in the browser's top layer, above every z-index, so a
+  // toast left in the body is painted under the dialog's blurred backdrop and
+  // cannot be read. Park it inside the open dialog: it is position: fixed, so it
+  // still sits in the viewport corner, but now above the backdrop.
+  const dlg = document.getElementById('dlg');
+  (dlg && dlg.open ? dlg : document.body).appendChild(t);
   t.textContent = msg; t.className = err ? 'err' : ''; t.style.display = 'block';
   clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500);
 }
@@ -676,10 +683,9 @@ function mmTags(tags) {
   return tags.map(t => `<span class="badge">${esc(t)}</span>`).join(' ');
 }
 function mmStale(m) {
-  if (!m.last_refreshed_at) return '<span class="badge pending">never refreshed</span>';
-  const age = Date.now() - new Date(m.last_refreshed_at).getTime();
-  if (age > 24 * 3600 * 1000) return '<span class="badge abandoned">stale</span>';
-  return '<span class="badge active">fresh</span>';
+  if (!m.is_stale) return '<span class="badge active">fresh</span>';
+  const why = m.stale_reason ? ` title="${esc(m.stale_reason)}"` : '';
+  return `<span class="badge abandoned"${why}>stale</span>`;
 }
 function mmContent(m) {
   const c = m.content || '';
@@ -717,23 +723,44 @@ function mmDialog() {
     <label>Source query (the question reflect answers to generate content)</label><textarea id="mm-query" placeholder="What do we know about the Kafka migration?"></textarea>
     <label>Tags (comma-separated, optional)</label><input id="mm-tags" placeholder="infrastructure, messaging">
     <label>Max tokens</label><input id="mm-tokens" type="number" value="2048" min="256" max="8192">
-    <div class="actions"><button onclick="dlgClose()">Cancel</button><button class="primary" onclick="mmCreate()">Create</button></div>`;
+    <p class="muted" style="margin:14px 0 0">Builds from the memories in <b>${esc(state.ns)}</b>. A namespace without memories cannot produce a summary.</p>
+    <div id="mm-status" class="muted" role="status" aria-live="polite" style="margin-top:10px;min-height:18px"></div>
+    <div class="actions"><button onclick="dlgClose()">Cancel</button><button id="mm-create-btn" class="primary" onclick="mmCreate()">Create</button></div>`;
   d.showModal();
 }
 async function mmCreate() {
   const name = document.getElementById('mm-name').value.trim();
   const query = document.getElementById('mm-query').value.trim();
-  if (!name || !query) { toast('Name and source query are required', true); return; }
+  const status = document.getElementById('mm-status');
+  const btn = document.getElementById('mm-create-btn');
+  const stop = msg => { status.className = 'err'; status.textContent = msg; btn.disabled = false; btn.textContent = 'Create'; };
+  if (!name || !query) { stop('Name and source query are required'); return; }
+
   const tags = document.getElementById('mm-tags').value.split(',').map(t => t.trim()).filter(Boolean);
   const maxTokens = parseInt(document.getElementById('mm-tokens').value || '2048', 10);
-  toast('Generating mental model content (this calls reflect)…');
-  await api('/mental-models', { method: 'POST', body: JSON.stringify({
-    name, source_query: query, namespaces: [state.ns], tags, max_tokens: maxTokens }) });
+  // The progress and the error belong in the dialog: a toast fired while a modal
+  // is open used to render under its backdrop, which is exactly how a refused
+  // create looked like "nothing happened".
+  status.className = 'muted';
+  status.textContent = `Generating from ${state.ns} — this calls reflect and can take a while…`;
+  btn.disabled = true; btn.textContent = 'Generating…';
+  try {
+    await api('/mental-models', { method: 'POST', body: JSON.stringify({
+      name, source_query: query, namespaces: [state.ns], tags, max_tokens: maxTokens }) });
+  } catch (e) {
+    stop(e.message);
+    return;
+  }
   dlgClose(); refresh(); toast('Mental model created');
 }
 async function mmRefresh(id) {
   toast('Refreshing (this calls reflect)…');
-  await api(`/mental-models/${id}/refresh`, { method: 'POST', body: '{}' });
+  try {
+    await api(`/mental-models/${id}/refresh`, { method: 'POST', body: '{}' });
+  } catch (e) {
+    toast(e.message, true);
+    return;
+  }
   refresh(); toast('Mental model refreshed');
 }
 async function mmView(id) {
@@ -743,6 +770,7 @@ async function mmView(id) {
     <label>Source query</label><div class="muted" style="margin-bottom:12px">${esc(m.source_query)}</div>
     <label>Tags</label><div style="margin-bottom:12px">${mmTags(m.tags)}</div>
     <label>Content</label><div class="wrap" style="white-space:pre-wrap;background:var(--panel-2);padding:12px;border-radius:6px;margin-bottom:12px">${esc(m.content)}</div>
+    ${m.last_refresh_failed_at ? `<div class="err" style="margin-bottom:12px">Last refresh failed ${ts(m.last_refresh_failed_at)}: ${esc(m.last_refresh_error || 'unknown error')}</div>` : ''}
     <div class="muted" style="margin-bottom:12px">Last refreshed: ${m.last_refreshed_at ? ts(m.last_refreshed_at) : 'never'} · Created: ${ts(m.created_at)}</div>
     <div class="actions"><button onclick="dlgClose()">Close</button><button onclick="mmRefresh(${m.id});dlgClose()">Refresh</button><button class="danger" onclick="del('mental-models', ${m.id});dlgClose()">Delete</button></div>`;
   d.showModal();
@@ -1033,7 +1061,13 @@ async function del(kind, id) {
   if (!confirm(`Delete ${kind.slice(0, -1)} #${id}?`)) return;
   await api(`/${kind}/${id}`, { method: 'DELETE' }); refresh(); toast('Deleted');
 }
-function dlgClose() { document.getElementById('dlg').close(); }
+function dlgClose() {
+  const d = document.getElementById('dlg');
+  d.close();
+  // The toast may have been parked inside the dialog to stay above its
+  // backdrop; put it back so later messages are visible again.
+  document.body.appendChild(document.getElementById('toast'));
+}
 
 async function renderRuns() {
   const dur = ms => ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : (ms || 0) + 'ms';
