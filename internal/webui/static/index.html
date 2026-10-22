@@ -207,6 +207,7 @@ const icons = {
   overview: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
   episodes: '<path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/>',
   recall: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+  reflect: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/>',
   facts: '<path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
   goals: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
   mental: '<path d="M12 3a8 8 0 0 0-8 8c0 2.5 1.2 4.7 3 6.2V21h10v-3.8c1.8-1.5 3-3.7 3-6.2a8 8 0 0 0-8-8z"/><path d="M9 12h.01M15 12h.01M9.5 15.5c.7.5 1.6.8 2.5.8s1.8-.3 2.5-.8"/>',
@@ -227,6 +228,7 @@ const tabs = [
   ['overview', 'Overview', 'A snapshot of what this memory knows'],
   ['episodes', 'Episodes', 'Raw memories, before they are consolidated into facts'],
   ['recall', 'Recall', 'Search the memory and see how each result was ranked'],
+  ['reflect', 'Reflect', 'Ask a question and get a synthesized answer from memory'],
   ['facts', 'Facts', 'Stored facts with confidence'],
   ['graph', 'Graph', 'How entities relate: the knowledge graph (drag, zoom, click for details)'],
   ['goals', 'Goals', 'What the agent is working towards'],
@@ -517,6 +519,85 @@ async function doRecall() {
       }));
   } catch (e) { toast(e.message, true); }
 }
+function md(text) {
+  if (!text) return '';
+  let html = esc(text);
+  html = html.replace(/```([\s\S]*?)```/g, '<pre style="background:var(--panel-2);padding:12px;border-radius:6px;overflow-x:auto;margin:8px 0"><code>$1</code></pre>');
+  html = html.replace(/`([^`]+)`/g, '<code style="background:var(--panel-2);padding:1px 5px;border-radius:4px;font-family:var(--mono);font-size:12.5px">$1</code>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  html = html.replace(/\*([^*]+)\*/g, '<i>$1</i>');
+  html = html.replace(/^### (.+)$/gm, '<h4 style="margin:12px 0 4px">$1</h4>');
+  html = html.replace(/^## (.+)$/gm, '<h3 style="margin:14px 0 6px">$1</h3>');
+  html = html.replace(/^# (.+)$/gm, '<h2 style="margin:16px 0 8px">$1</h2>');
+  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul style="margin:6px 0;padding-left:24px">$1</ul>');
+  html = html.replace(/\n{2,}/g, '<br><br>');
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
+
+function sourceTypeBadge(type) {
+  const colors = { fact: 'active', episode: 'pending', mental_model: 'completed', failure: 'abandoned', goal: 'testing' };
+  return `<span class="badge ${colors[type] || 'pending'}">${esc(type)}</span>`;
+}
+
+async function renderReflect() {
+  document.getElementById('content').innerHTML = toolbar(
+    `<input id="rq" placeholder="Ask a question… e.g. What do we know about the Kafka migration?" autofocus style="flex:2">` +
+    `<button class="primary" onclick="doReflect()">Reflect</button>`
+  ) + '<div class="toolbar filters">' +
+    `<label class="muted">Limit <select id="rl-limit"><option>5</option><option selected>10</option><option>20</option><option>50</option></select></label>` +
+    `<label class="muted">MMR <select id="rl-mmr"><option value="" selected>default</option><option value="0">0 (relevance)</option><option value="0.5">0.5 (balanced)</option><option value="1">1 (diversity)</option></select></label>` +
+    `<label class="muted">Context <input type="text" id="rl-context" placeholder="optional extra context" style="min-width:200px"></label>` +
+    `<label class="muted">As of <input type="datetime-local" id="rl-asof"></label>` +
+    `<label class="muted"><input type="checkbox" id="rl-skip-mm"> Skip mental models</label>` +
+    '</div><div id="reflect-out"></div>';
+  document.getElementById('rq').addEventListener('keydown', e => { if (e.key === 'Enter') doReflect(); });
+}
+
+async function doReflect() {
+  const q = document.getElementById('rq').value.trim();
+  if (!q) return;
+  const out = document.getElementById('reflect-out');
+  out.innerHTML = '<div class="muted" style="padding:20px">Reflecting… this recalls memories and synthesizes an answer.</div>';
+  const body = {
+    query: q,
+    namespaces: [state.ns],
+    limit: Number(document.getElementById('rl-limit').value),
+  };
+  const mmr = document.getElementById('rl-mmr').value;
+  if (mmr !== '') body.mmr = parseFloat(mmr);
+  const ctx = document.getElementById('rl-context').value.trim();
+  if (ctx) body.context = ctx;
+  const asOf = document.getElementById('rl-asof').value;
+  if (asOf) body.as_of = new Date(asOf).toISOString();
+  if (document.getElementById('rl-skip-mm').checked) body.skip_mental_models = true;
+  try {
+    const res = await api('/reflect', { method: 'POST', body: JSON.stringify(body) });
+    const sources = res.sources || [];
+    const mmCount = res.mental_model_count || 0;
+    const srcRows = sources.map((s, i) => `<tr>
+      <td class="muted">${i + 1}</td>
+      <td>${sourceTypeBadge(s.type)}</td>
+      <td class="mono">#${s.id}</td>
+      <td class="wrap" style="min-width:280px">${esc(s.content)}</td>
+      <td>${pct(s.score)}</td>
+    </tr>`).join('');
+    out.innerHTML = `<div class="card"><h3>Answer</h3>
+      <div style="padding:16px 20px;line-height:1.6">${md(res.answer)}</div>
+      <div class="muted" style="padding:0 20px 16px;border-top:1px solid var(--border);margin-top:8px;padding-top:12px">
+        ${res.recall_count} memories recalled · ${mmCount} mental model${mmCount === 1 ? '' : 's'} used · ${res.duration_ms} ms
+      </div>
+    </div>` +
+    (sources.length ? `<div class="card"><h3>Sources (${sources.length})</h3>${table(
+      ['#', 'Type', 'ID', 'Content', 'Score'], srcRows
+    )}</div>` : '');
+  } catch (e) {
+    out.innerHTML = `<div class="empty error">${esc(e.message)}</div>`;
+    toast(e.message, true);
+  }
+}
+
 // recallTraceCard explains the run itself: how the query was read and what each
 // step returned, so an unexpected ranking can be traced to the step that caused it.
 function recallTraceCard(tr) {
@@ -1370,7 +1451,7 @@ async function saveSchedule() {
   }
 }
 
-const renderers = { overview: renderOverview, graph: renderGraph, episodes: renderEpisodes, recall: renderRecall, facts: renderFacts,
+const renderers = { overview: renderOverview, graph: renderGraph, episodes: renderEpisodes, recall: renderRecall, reflect: renderReflect, facts: renderFacts,
   goals: renderGoals, mental: renderMentalModels, hypotheses: renderHypotheses, contradictions: renderContradictions,
   failures: renderFailures, links: renderLinks, namespaces: renderNamespaces, runs: renderRuns, settings: renderSettings,
   metrics: renderMetrics, stats: renderStats };

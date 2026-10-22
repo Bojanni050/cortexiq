@@ -508,16 +508,19 @@ func (h *Handler) reflect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Query      string   `json:"query"`
-		Namespaces []string `json:"namespaces"`
-		Limit      int      `json:"limit"`
-		Context    string   `json:"context"`
-		Types      []string `json:"types"`
-		AsOf       string   `json:"as_of"`
-		From       string   `json:"from"`
-		To         string   `json:"to"`
-		KnownFrom  string   `json:"known_from"`
-		KnownTo    string   `json:"known_to"`
+		Query            string   `json:"query"`
+		Namespaces       []string `json:"namespaces"`
+		Limit            int      `json:"limit"`
+		Context          string   `json:"context"`
+		Types            []string `json:"types"`
+		AsOf             string   `json:"as_of"`
+		From             string   `json:"from"`
+		To               string   `json:"to"`
+		KnownFrom        string   `json:"known_from"`
+		KnownTo          string   `json:"known_to"`
+		MMR              *float64 `json:"mmr"`
+		SkipMentalModels bool     `json:"skip_mental_models"`
+		MentalModelTags  []string `json:"mental_model_tags"`
 	}
 	if err := readBody(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -537,10 +540,13 @@ func (h *Handler) reflect(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	opts := brain.ReflectOptions{
-		Namespaces: body.Namespaces,
-		Limit:      body.Limit,
-		Context:    body.Context,
-		Types:      body.Types,
+		Namespaces:       body.Namespaces,
+		Limit:            body.Limit,
+		Context:          body.Context,
+		Types:            body.Types,
+		MMR:              body.MMR,
+		SkipMentalModels: body.SkipMentalModels,
+		MentalModelTags:  body.MentalModelTags,
 	}
 	if body.AsOf != "" {
 		t, err := time.Parse(time.RFC3339, body.AsOf)
