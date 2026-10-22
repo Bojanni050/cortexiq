@@ -10,6 +10,9 @@ cortexiq-*
 .env.*
 !.env.example
 
+# Host-specific compose file (template is docker-compose.prod.example.yml)
+docker-compose.prod.yml
+
 # IDE
 .idea/
 .vscode/
