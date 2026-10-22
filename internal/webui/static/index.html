@@ -205,7 +205,7 @@ dialog .err { color: var(--red); }
     <div class="brand"><div class="logo">C</div><div><b>CortexIQ</b><small>agent memory</small></div></div>
     <div>
       <div class="label">Namespace</div>
-      <select id="ns-select" onchange="state.ns=this.value;state.page={};refresh()"></select>
+      <select id="ns-select" onchange="setNamespace(this.value)"></select>
     </div>
     <div>
       <div class="label">Browse</div>
@@ -266,7 +266,11 @@ const nav = document.getElementById('nav');
 tabs.forEach(([id, label]) => {
   const b = document.createElement('button');
   b.dataset.tab = id; b.innerHTML = svg(id) + `<span>${label}</span>`;
-  b.onclick = () => { state.tab = id; refresh(); };
+  b.onclick = () => {
+    state.tab = id;
+    if (location.hash.slice(1) !== id) location.hash = id;
+    refresh();
+  };
   nav.appendChild(b);
 });
 
@@ -283,6 +287,11 @@ function toast(msg, err) {
 }
 
 const TOKEN_KEY = 'cortexiq_token';
+// The namespace is part of the view, not of the URL: keep it across reloads so
+// returning to the dashboard lands where the reader left off.
+const NS_KEY = 'cortexiq_ns';
+function rememberNS(ns) { try { localStorage.setItem(NS_KEY, ns); } catch (e) {} }
+function readStoredNS() { try { return localStorage.getItem(NS_KEY) || ''; } catch (e) { return ''; } }
 
 function readToken() {
   try {
@@ -355,9 +364,19 @@ async function loadNamespaces() {
   const sel = document.getElementById('ns-select');
   sel.innerHTML = '<option value="/">All namespaces (/)</option>' +
     list.map(n => `<option value="${esc(n.slug)}">${esc(n.slug)}</option>`).join('');
-  if (state.ns) sel.value = state.ns;
+  const wanted = state.ns || readStoredNS();
+  // A namespace that no longer exists falls back to the first option ("/").
+  if (wanted && (wanted === '/' || list.some(n => n.slug === wanted))) sel.value = wanted;
   list.forEach(n => state.nsMap[n.id] = n.slug);
   state.ns = sel.value;
+  state.nsLoaded = true;
+  rememberNS(state.ns);
+}
+function setNamespace(ns) {
+  state.ns = ns;
+  state.page = {};
+  rememberNS(ns);
+  refresh();
 }
 
 function toolbar(html) { return `<div class="toolbar">${html}</div>`; }
@@ -440,7 +459,12 @@ function paintTab(tab) {
       `<div id="list-${tab}"></div>`;
     host = document.getElementById('list-' + tab);
   }
-  host.innerHTML = table(L.spec.headers, rows.map(r => L.spec.row(r, L))) + pager;
+  // A poll that returns the same page must not rebuild the table: replacing
+  // identical rows is what made the list flicker under the background refresh.
+  const html = table(L.spec.headers, rows.map(r => L.spec.row(r, L))) + pager;
+  if (host.dataset.html === html) return;
+  host.dataset.html = html;
+  host.innerHTML = html;
 }
 
 function setFilter(tab, v) {
@@ -851,7 +875,7 @@ async function mmWait(id) {
     await new Promise(r => setTimeout(r, 3000));
     let m;
     try { m = await api(`/mental-models/${id}`); } catch (e) { return; }
-    if (state.tab === 'mental') refresh();
+    if (state.tab === 'mental') refresh({ quiet: true });
     // Content only counts when it answers the model's current query: an edit
     // that is still being rebuilt keeps showing the old document otherwise.
     if (m.content && m.last_refreshed_source_query === m.source_query) {
@@ -1572,18 +1596,23 @@ const renderers = { overview: renderOverview, graph: renderGraph, episodes: rend
   failures: renderFailures, links: renderLinks, namespaces: renderNamespaces, runs: renderRuns, settings: renderSettings,
   metrics: renderMetrics, stats: renderStats };
 
-async function refresh() {
+async function refresh(opts) {
+  const quiet = !!(opts && opts.quiet);
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === state.tab));
   const t = tabs.find(x => x[0] === state.tab);
   document.getElementById('page-title').textContent = t[1];
   document.getElementById('page-sub').textContent = t[2];
   document.getElementById('ns-select').disabled = state.tab === 'namespaces' || state.tab === 'settings';
   const c = document.getElementById('content');
-  document.getElementById('loading').style.display = 'block';
+  if (!quiet) document.getElementById('loading').style.display = 'block';
   destroyGraph();
   try {
-    await loadNamespaces();
-    c.innerHTML = '';
+    // Namespaces only change through this dashboard, so load them on the first
+    // paint (and after a mutation), not on every refresh or poll.
+    if (!state.nsLoaded) await loadNamespaces();
+    // No c.innerHTML = '': the renderer replaces the content when the tab
+    // changes, and list tabs swap only their table, so a refresh no longer
+    // blanks the screen.
     await renderers[state.tab]();
   } catch (e) {
     c.innerHTML = `<div class="empty error">${esc(e.message)}</div>`;
@@ -1592,6 +1621,17 @@ async function refresh() {
     document.getElementById('loading').style.display = 'none';
   }
 }
+function tabFromHash() {
+  const id = location.hash.replace(/^#/, '');
+  return tabs.some(([t]) => t === id) ? id : 'overview';
+}
+window.addEventListener('hashchange', () => {
+  const id = tabFromHash();
+  if (id === state.tab) return;
+  state.tab = id;
+  refresh();
+});
+state.tab = tabFromHash();
 refresh();
 </script>
 </body>
