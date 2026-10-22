@@ -209,6 +209,7 @@ const icons = {
   recall: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
   facts: '<path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
   goals: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+  mental: '<path d="M12 3a8 8 0 0 0-8 8c0 2.5 1.2 4.7 3 6.2V21h10v-3.8c1.8-1.5 3-3.7 3-6.2a8 8 0 0 0-8-8z"/><path d="M9 12h.01M15 12h.01M9.5 15.5c.7.5 1.6.8 2.5.8s1.8-.3 2.5-.8"/>',
   hypotheses: '<path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2V17h6v-.3c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z"/>',
   contradictions: '<path d="m13 2-9 12h7l-1 8 9-12h-7z"/>',
   failures: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
@@ -229,6 +230,7 @@ const tabs = [
   ['facts', 'Facts', 'Stored facts with confidence'],
   ['graph', 'Graph', 'How entities relate: the knowledge graph (drag, zoom, click for details)'],
   ['goals', 'Goals', 'What the agent is working towards'],
+  ['mental', 'Mental Models', 'Curated summaries searched first in reflect'],
   ['hypotheses', 'Hypotheses', 'Unverified beliefs waiting for evidence'],
   ['contradictions', 'Contradictions', 'Facts that disagree with each other'],
   ['failures', 'Failures', 'What went wrong, and what was learned'],
@@ -435,8 +437,9 @@ async function renderOverview() {
   // a capped page: the old cards silently said "1000" once a list grew past the
   // API's page size.
   const countOf = async (res, extra) => (await apiPage(`/${res}` + nsQS('&limit=1' + (extra || '')))).total;
-  const [episodes, facts, activeGoals, proposed, testing, cons, fails, recent, backlog] = await Promise.all([
+  const [episodes, facts, activeGoals, mental, proposed, testing, cons, fails, recent, backlog] = await Promise.all([
     countOf('episodes'), countOf('facts'), countOf('goals', '&status=active'),
+    countOf('mental-models'),
     countOf('hypotheses', '&status=proposed'), countOf('hypotheses', '&status=testing'),
     countOf('contradictions'), countOf('failures'),
     apiPage('/facts' + qs(0)), api('/consolidation' + nsQS('')),
@@ -455,6 +458,7 @@ async function renderOverview() {
       ${stat('episodes', 'var(--blue)', num(episodes), 'Episodes')}
       ${stat('facts', 'var(--accent)', num(facts), 'Facts')}
       ${stat('goals', 'var(--green)', num(activeGoals), 'Active goals')}
+      ${stat('mental', 'var(--accent-2)', num(mental), 'Mental models')}
       ${stat('hypotheses', 'var(--yellow)', num(hypo), 'Pending hypotheses')}
       ${stat('contradictions', 'var(--accent-2)', num(cons), 'Unresolved contradictions')}
       ${stat('failures', 'var(--red)', num(fails), 'Failures')}
@@ -665,6 +669,83 @@ async function goalComplete(id) {
 async function goalAbandon(id) {
   await api(`/goals/${id}/abandon`, { method: 'POST', body: JSON.stringify({ notes: 'abandoned via UI' }) });
   refresh(); toast('Goal abandoned');
+}
+
+function mmTags(tags) {
+  if (!tags || !tags.length) return '<span class="muted">—</span>';
+  return tags.map(t => `<span class="badge">${esc(t)}</span>`).join(' ');
+}
+function mmStale(m) {
+  if (!m.last_refreshed_at) return '<span class="badge pending">never refreshed</span>';
+  const age = Date.now() - new Date(m.last_refreshed_at).getTime();
+  if (age > 24 * 3600 * 1000) return '<span class="badge abandoned">stale</span>';
+  return '<span class="badge active">fresh</span>';
+}
+function mmContent(m) {
+  const c = m.content || '';
+  const short = c.length > 200 ? c.slice(0, 200) + '…' : c;
+  return `<div class="wrap">${esc(short)}</div>` + (c.length > 200 ? `<details style="margin-top:4px"><summary class="muted" style="cursor:pointer">show more</summary><div class="wrap" style="margin-top:4px;white-space:pre-wrap">${esc(c)}</div></details>` : '');
+}
+
+async function renderMentalModels() {
+  await listTab('mental', {
+    path: o => '/mental-models' + qs(o),
+    headers: ['Name', 'Content', 'Source Query', 'Tags', 'Status', 'Namespace', 'Last Refreshed', ''],
+    fields: ['id', 'name', 'content', 'source_query', 'tags'],
+    actions: `<button class="primary" onclick="mmDialog()">+ New mental model</button>`,
+    row: m => `<tr>
+      <td class="wrap"><span class="mono">#${m.id}</span> <b>${esc(m.name)}</b></td>
+      <td style="max-width:400px">${mmContent(m)}</td>
+      <td class="wrap muted" style="max-width:250px">${esc(m.source_query)}</td>
+      <td>${mmTags(m.tags)}</td>
+      <td>${mmStale(m)}</td>
+      <td class="mono">${esc(nsSlug(m.namespace_id))}</td>
+      <td class="muted">${m.last_refreshed_at ? ts(m.last_refreshed_at) : '—'}</td>
+      <td class="row-actions">
+        <button onclick="mmView(${m.id})">view</button>
+        <button onclick="mmRefresh(${m.id})">refresh</button>
+        <button class="danger" onclick="del('mental-models', ${m.id})">delete</button>
+      </td>
+    </tr>`,
+  });
+}
+
+function mmDialog() {
+  const d = document.getElementById('dlg');
+  d.innerHTML = `<h3>New mental model</h3>
+    <label>Name</label><input id="mm-name" placeholder="e.g. Kafka Migration">
+    <label>Source query (the question reflect answers to generate content)</label><textarea id="mm-query" placeholder="What do we know about the Kafka migration?"></textarea>
+    <label>Tags (comma-separated, optional)</label><input id="mm-tags" placeholder="infrastructure, messaging">
+    <label>Max tokens</label><input id="mm-tokens" type="number" value="2048" min="256" max="8192">
+    <div class="actions"><button onclick="dlgClose()">Cancel</button><button class="primary" onclick="mmCreate()">Create</button></div>`;
+  d.showModal();
+}
+async function mmCreate() {
+  const name = document.getElementById('mm-name').value.trim();
+  const query = document.getElementById('mm-query').value.trim();
+  if (!name || !query) { toast('Name and source query are required', true); return; }
+  const tags = document.getElementById('mm-tags').value.split(',').map(t => t.trim()).filter(Boolean);
+  const maxTokens = parseInt(document.getElementById('mm-tokens').value || '2048', 10);
+  toast('Generating mental model content (this calls reflect)…');
+  await api('/mental-models', { method: 'POST', body: JSON.stringify({
+    name, source_query: query, namespaces: [state.ns], tags, max_tokens: maxTokens }) });
+  dlgClose(); refresh(); toast('Mental model created');
+}
+async function mmRefresh(id) {
+  toast('Refreshing (this calls reflect)…');
+  await api(`/mental-models/${id}/refresh`, { method: 'POST', body: '{}' });
+  refresh(); toast('Mental model refreshed');
+}
+async function mmView(id) {
+  const m = await api(`/mental-models/${id}`);
+  const d = document.getElementById('dlg');
+  d.innerHTML = `<h3>${esc(m.name)} <span class="mono muted">#${m.id}</span></h3>
+    <label>Source query</label><div class="muted" style="margin-bottom:12px">${esc(m.source_query)}</div>
+    <label>Tags</label><div style="margin-bottom:12px">${mmTags(m.tags)}</div>
+    <label>Content</label><div class="wrap" style="white-space:pre-wrap;background:var(--panel-2);padding:12px;border-radius:6px;margin-bottom:12px">${esc(m.content)}</div>
+    <div class="muted" style="margin-bottom:12px">Last refreshed: ${m.last_refreshed_at ? ts(m.last_refreshed_at) : 'never'} · Created: ${ts(m.created_at)}</div>
+    <div class="actions"><button onclick="dlgClose()">Close</button><button onclick="mmRefresh(${m.id});dlgClose()">Refresh</button><button class="danger" onclick="del('mental-models', ${m.id});dlgClose()">Delete</button></div>`;
+  d.showModal();
 }
 
 async function renderHypotheses() {
@@ -1290,7 +1371,7 @@ async function saveSchedule() {
 }
 
 const renderers = { overview: renderOverview, graph: renderGraph, episodes: renderEpisodes, recall: renderRecall, facts: renderFacts,
-  goals: renderGoals, hypotheses: renderHypotheses, contradictions: renderContradictions,
+  goals: renderGoals, mental: renderMentalModels, hypotheses: renderHypotheses, contradictions: renderContradictions,
   failures: renderFailures, links: renderLinks, namespaces: renderNamespaces, runs: renderRuns, settings: renderSettings,
   metrics: renderMetrics, stats: renderStats };
 
