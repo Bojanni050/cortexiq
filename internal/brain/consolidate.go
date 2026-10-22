@@ -43,6 +43,8 @@ type ConsolidationResult struct {
 	HypothesesUpdated          int      `json:"hypotheses_updated"`
 	FactsDecayed               int      `json:"facts_decayed"`
 	FactsExpired               int      `json:"facts_expired"`
+	MentalModelsRefreshed      int      `json:"mental_models_refreshed"`
+	MentalModelsFailed         int      `json:"mental_models_failed"`
 	LLMCalls                   int      `json:"llm_calls"`
 	LLMCallsLimited            bool     `json:"llm_calls_limited"`
 	Errors                     []string `json:"errors,omitempty"`
@@ -159,6 +161,19 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 			result.FactsDecayed = decayResult.FactsDecayed
 			result.FactsExpired = decayResult.FactsExpired
 		}
+	}
+
+	// Stage 9: refresh mental models whose ground truth changed since their last
+	// synthesis. Best effort by design: a model that cannot refresh is recorded
+	// on its own row and in the result, but never fails the consolidation.
+	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
+		summary, err := b.refreshStaleMentalModels(ctx, nsID)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("refresh mental models: %v", err))
+		}
+		result.MentalModelsRefreshed = summary.Refreshed
+		result.MentalModelsFailed = summary.Failed
+		result.Errors = append(result.Errors, summary.Errors...)
 	}
 
 	// Save progress

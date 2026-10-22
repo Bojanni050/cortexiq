@@ -193,6 +193,13 @@ type Brain struct {
 	episodeNS       map[int64]struct{}
 	episodeSignal   chan struct{}
 	scheduleChanged chan struct{}
+
+	// mmMu guards mmRefreshing, the set of mental models this process is
+	// currently synthesizing. It keeps the consolidation sweep and a manual
+	// refresh from paying for the same LLM call twice; across processes the
+	// worst case is a duplicate synthesis, not a lost one.
+	mmMu         sync.Mutex
+	mmRefreshing map[int64]struct{}
 }
 
 func New(pool *pgxpool.Pool, e embedder.Embedder, r reasoner.Reasoner, q *queries.Queries, cfg Config) (*Brain, error) {
@@ -217,6 +224,7 @@ func New(pool *pgxpool.Pool, e embedder.Embedder, r reasoner.Reasoner, q *querie
 
 		episodeSignal:   make(chan struct{}, 1),
 		scheduleChanged: make(chan struct{}, 1),
+		mmRefreshing:    make(map[int64]struct{}),
 	}, nil
 }
 

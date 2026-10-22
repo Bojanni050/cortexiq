@@ -437,15 +437,16 @@ WHEN TO SEARCH MENTAL MODELS:
 - Mental models are searched automatically inside reflect
 
 WHEN TO REFRESH:
-- A mental model is marked is_stale: true
+- A mental model is marked is_stale: true (stale_reason says why: new_memories or retracted_grounding)
 - New memories arrived that change the topic's answer
 - The user says "update what you know about X"
+- Automatic: consolidation refreshes stale models after every run, oldest first, at most three per namespace. A model whose refresh found no memories is paused; its content was kept and needs an explicit refresh once there is something to ground on.
 
 WORKFLOW:
 1. mental_model_search "topic" → check if one exists
-2. If not: mental_model_create name="Topic" source_query="What do we know about topic?"
+2. If not: mental_model_create name="Topic" source_query="What do we know about topic?" (fails when the namespace has no memories)
 3. On repeat questions: mental_model_search first, use the result directly
-4. Periodically: mental_model_refresh <id> for stale models
+4. On is_stale: mental_model_refresh <id>, or rely on the automatic refresh after consolidation
 {{end}}
 
 {{define "forget_description"}}

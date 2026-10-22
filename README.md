@@ -113,7 +113,11 @@ cortexiq mental-model delete 42
 
 The same operations are available as MCP tools (`mental_model_create`, `mental_model_list`, `mental_model_get`, `mental_model_refresh`, `mental_model_delete`, `mental_model_search`) and as REST endpoints (`GET/POST /api/v1/mental-models`, `GET/DELETE /api/v1/mental-models/<id>`, `POST /api/v1/mental-models/<id>/refresh`, `POST /api/v1/mental-models/search`).
 
-**How reflect uses mental models:** every `reflect` call first searches mental models semantically. Matching models appear in the synthesis prompt *before* raw memories, labelled as "curated summaries". The LLM is instructed to prefer them. Results are marked `is_stale: true` when they haven't been refreshed in 24 hours.
+**How reflect uses mental models:** every `reflect` call first searches mental models semantically. Matching models appear in the synthesis prompt *before* raw memories, labelled as "curated summaries". The LLM is instructed to prefer them. Results carry `is_stale` and a `stale_reason`.
+
+**Freshness is measured against the memories, not the clock.** Every model stores `last_memory_seen_at` — the database-time snapshot its content was synthesized from — and `based_on`, the ids of the memories it actually read. A model is stale when a memory in its namespace (including descendants) was written or edited after that snapshot (`new_memories`), or when one of the memories it cites no longer exists (`retracted_grounding`). The second check is what catches a `forget`: deleting a fact writes nothing new for a watermark to see.
+
+**Refreshes are guarded and automatic.** Consolidation refreshes up to three stale models per namespace per run, oldest first. A refresh that finds no memories to ground the summary keeps the existing content and stamps `last_refresh_failed_at` / `last_refresh_error` instead of replacing a good summary with "I don't know"; automatic refresh then pauses that model until an explicit `mental-model refresh` succeeds. Creating a mental model in a namespace with no memories fails with the same `not grounded` error rather than storing an empty one.
 
 **Mental models vs facts vs reflect:**
 

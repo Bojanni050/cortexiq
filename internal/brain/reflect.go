@@ -202,7 +202,11 @@ func formatMentalModelsForReflect(models []MentalModelSearchResult) string {
 	for i, mm := range models {
 		stale := ""
 		if mm.IsStale {
-			stale = " [STALE - may need refresh]"
+			stale = " [STALE"
+			if mm.StaleReason != "" {
+				stale += ": " + mm.StaleReason
+			}
+			stale += " - may need refresh]"
 		}
 		fmt.Fprintf(&sb, "%d. [%s]%s\n%s\n", i+1, mm.Name, stale, mm.Content)
 	}

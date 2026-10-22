@@ -2,44 +2,129 @@
 package brain
 
 import (
+	"errors"
 	"testing"
 	"time"
+
+	"github.com/Bojanni050/cortexiq/internal/models"
 )
 
-func TestIsMentalModelStale(t *testing.T) {
-	t.Run("never refreshed is stale", func(t *testing.T) {
-		if !isMentalModelStale(nil) {
-			t.Error("nil lastRefreshedAt should be stale")
-		}
+func TestMentalModelStaleReason(t *testing.T) {
+	now := time.Now()
+	watermark := now.Add(-time.Hour)
+	older := now.Add(-2 * time.Hour)
+
+	cases := []struct {
+		name       string
+		refreshed  *time.Time
+		watermark  *time.Time
+		newest     time.Time
+		newestSeen bool
+		retracted  bool
+		want       string
+	}{
+		{"never refreshed", nil, &watermark, now, true, false, "never_refreshed"},
+		{"no watermark", &now, nil, now, true, false, "no_watermark"},
+		{"new memory after watermark", &now, &watermark, now, true, false, "new_memories"},
+		{"no new memory", &now, &watermark, older, true, false, ""},
+		{"no memories at all", &now, &watermark, time.Time{}, false, false, ""},
+		{"retracted grounding", &now, &watermark, older, true, true, "retracted_grounding"},
+		{"new memory wins over retraction", &now, &watermark, now, true, true, "new_memories"},
+		{"memory exactly at watermark is seen", &now, &watermark, watermark, true, false, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mentalModelStaleReason(tc.refreshed, tc.watermark, tc.newest, tc.newestSeen, tc.retracted)
+			if got != tc.want {
+				t.Fatalf("reason = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBasedOnFromSources(t *testing.T) {
+	got := basedOnFromSources([]ReflectSource{
+		{Type: "fact", ID: 3},
+		{Type: "episode", ID: 9},
+		{Type: "fact", ID: 1},
+		{Type: "fact", ID: 3}, // duplicate, must collapse
+		{Type: "goal", ID: 7},
+		{Type: "unknown", ID: 99},
 	})
 
-	t.Run("just refreshed is not stale", func(t *testing.T) {
-		now := time.Now()
-		if isMentalModelStale(&now) {
-			t.Error("recently refreshed should not be stale")
-		}
-	})
+	if want := []int64{1, 3}; !equalIDs(got.Facts, want) {
+		t.Errorf("facts = %v, want %v", got.Facts, want)
+	}
+	if want := []int64{9}; !equalIDs(got.Episodes, want) {
+		t.Errorf("episodes = %v, want %v", got.Episodes, want)
+	}
+	if want := []int64{7}; !equalIDs(got.Goals, want) {
+		t.Errorf("goals = %v, want %v", got.Goals, want)
+	}
+	if len(got.Failures) != 0 {
+		t.Errorf("failures = %v, want empty", got.Failures)
+	}
+}
 
-	t.Run("refreshed 1 hour ago is not stale", func(t *testing.T) {
-		h := time.Now().Add(-1 * time.Hour)
-		if isMentalModelStale(&h) {
-			t.Error("1 hour old should not be stale")
+func equalIDs(a, b []int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
 		}
-	})
+	}
+	return true
+}
 
-	t.Run("refreshed 25 hours ago is stale", func(t *testing.T) {
-		h := time.Now().Add(-25 * time.Hour)
-		if !isMentalModelStale(&h) {
-			t.Error("25 hours old should be stale")
-		}
-	})
+func TestGroundedReflect(t *testing.T) {
+	cases := []struct {
+		name    string
+		result  *ReflectResult
+		wantErr bool
+	}{
+		{"nil result", nil, true},
+		{"no sources", &ReflectResult{Answer: "something"}, true},
+		{"empty answer", &ReflectResult{Sources: []ReflectSource{{Type: "fact", ID: 1}}}, true},
+		{"grounded", &ReflectResult{
+			Answer:  "something",
+			Sources: []ReflectSource{{Type: "fact", ID: 1}},
+		}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := groundedReflect(tc.result)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("groundedReflect() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErr && !errors.Is(err, ErrMentalModelNotGrounded) {
+				t.Fatalf("error = %v, want ErrMentalModelNotGrounded", err)
+			}
+		})
+	}
+}
 
-	t.Run("refreshed exactly 24 hours ago is stale", func(t *testing.T) {
-		h := time.Now().Add(-24 * time.Hour)
-		if !isMentalModelStale(&h) {
-			t.Error("exactly 24 hours should be stale (boundary is exclusive)")
-		}
-	})
+func TestMentalModelAutoRefreshPaused(t *testing.T) {
+	old := time.Now().Add(-2 * time.Hour)
+	recent := time.Now()
+	failed := time.Now().Add(-time.Hour)
+
+	if mentalModelAutoRefreshPaused(models.MentalModel{}) {
+		t.Error("no failure should not pause")
+	}
+	if mentalModelAutoRefreshPaused(models.MentalModel{
+		LastRefreshedAt:     &old,
+		LastRefreshFailedAt: &failed,
+	}) != true {
+		t.Error("a failure after the last success should pause")
+	}
+	if mentalModelAutoRefreshPaused(models.MentalModel{
+		LastRefreshedAt:     &recent,
+		LastRefreshFailedAt: &failed,
+	}) {
+		t.Error("a failure older than the stored content should not pause")
+	}
 }
 
 func TestFormatMentalModelsForReflect(t *testing.T) {
@@ -67,11 +152,14 @@ func TestFormatMentalModelsForReflect(t *testing.T) {
 
 	t.Run("stale model is marked", func(t *testing.T) {
 		models := []MentalModelSearchResult{
-			{ID: 1, Name: "Old Model", Content: "Outdated.", IsStale: true},
+			{ID: 1, Name: "Old Model", Content: "Outdated.", IsStale: true, StaleReason: "new_memories"},
 		}
 		got := formatMentalModelsForReflect(models)
 		if !contains(got, "STALE") {
 			t.Error("stale model should be marked with [STALE]")
+		}
+		if !contains(got, "new_memories") {
+			t.Error("stale model should say why it is stale")
 		}
 	})
 
