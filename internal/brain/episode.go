@@ -32,15 +32,16 @@ func (b *Brain) RememberWithImportance(ctx context.Context, namespaceSlug, conte
 	if err := validateContent(content); err != nil {
 		return 0, err
 	}
-	// Refuse phatic noise before it costs an embedding. This is the one gate in
-	// front of every write path (MCP, HTTP, CLI), so the store never fills with
-	// "dank je wel" in the first place; see socialCloser.
-	if b.config.SocialFilter && socialCloser(content) {
-		return 0, ErrSocialCloser
-	}
 	if importance < 0 || importance > 1 || importance != importance {
 		return 0, fmt.Errorf("importance must be between 0 and 1, got %v", importance)
 	}
+	// The social filter is the one gate in front of every write path (MCP,
+	// HTTP, CLI), so the store never fills with "dank je wel" in the first
+	// place; see socialCloser. It is per-namespace overridable: a chat-like
+	// namespace may want to keep short exchanges. The lookup needs the
+	// namespace to exist, so it runs after the ID is resolved below.
+	socialFilter := b.config.SocialFilter
+
 	if err := validatePath(namespaceSlug); err != nil {
 		return 0, err
 	}
@@ -48,6 +49,13 @@ func (b *Brain) RememberWithImportance(ctx context.Context, namespaceSlug, conte
 	nsID, err := b.resolveNamespaceID(ctx, namespaceSlug)
 	if err != nil {
 		return 0, err
+	}
+
+	if eff, err := b.EffectiveNamespaceConfig(ctx, namespaceSlug); err == nil && eff != nil {
+		socialFilter = eff.SocialFilter()
+	}
+	if socialFilter && socialCloser(content) {
+		return 0, ErrSocialCloser
 	}
 
 	occurred := time.Now().UTC()

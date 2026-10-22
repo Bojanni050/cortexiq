@@ -182,12 +182,39 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		return nil, err
 	}
 
+	// Per-namespace overrides for recall. A recall can span several namespaces,
+	// so the effective config is resolved per namespace and merged: a key set on
+	// any of them wins over the global default (first namespace in the list that
+	// sets it). A lookup failure falls back to the global config.
+	recallCfg := b.config
+	hybridRecall := b.config.HybridRecall
+	minSimilarity := b.config.MinRecallSimilarity
+	recencyWeight := b.config.RecencyWeight
+	for _, slug := range namespaces {
+		eff, err := b.EffectiveNamespaceConfig(ctx, slug)
+		if err != nil || eff == nil {
+			continue
+		}
+		if _, ok := eff.Overrides()[KeyRecallHybrid]; ok {
+			hybridRecall = eff.HybridRecall()
+		}
+		if _, ok := eff.Overrides()[KeyRecallMinSimilarity]; ok {
+			minSimilarity = eff.MinRecallSimilarity()
+		}
+		if _, ok := eff.Overrides()[KeyRecallRecencyWeight]; ok {
+			recencyWeight = eff.RecencyWeight()
+		}
+	}
+	recallCfg.HybridRecall = hybridRecall
+	recallCfg.MinRecallSimilarity = minSimilarity
+	recallCfg.RecencyWeight = recencyWeight
+
 	kwQuery := ""
-	if b.config.HybridRecall {
+	if hybridRecall {
 		kwQuery = keywordQuery(query)
 	}
 	// Recency and importance reorder the fused list, so the pool must be wider than limit.
-	recency := b.reranks()
+	recency := recallCfg.RecencyWeight > 0 && recallCfg.RecencyHalfLife > 0 || recallCfg.ImportanceWeight > 0
 	candidates := limit
 	if kwQuery != "" || recency || temporal {
 		candidates = limit * 3
@@ -231,7 +258,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			tr.To = opts.To.Format(time.RFC3339)
 		}
 		tr.Temporal = temporal
-		tr.MinSimilarity, tr.RRFK = b.config.MinRecallSimilarity, rrfK
+		tr.MinSimilarity, tr.RRFK = minSimilarity, rrfK
 		tr.RecencyWeight, tr.RecencyHalfLife, tr.ImportanceWeight = b.config.RecencyWeight, b.config.RecencyHalfLife.String(), b.config.ImportanceWeight
 		tr.MMRLambda = mmrLambda
 	}
@@ -299,9 +326,9 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			if temporal {
 				scaleArms++
 			}
-			results = fuseArms(arms, scaleArms, candidates, b.config.MinRecallSimilarity)
+			results = fuseArms(arms, scaleArms, candidates, minSimilarity)
 		} else {
-			results = fuse(factVec, factKw, candidates, kwQuery != "", b.config.MinRecallSimilarity)
+			results = fuse(factVec, factKw, candidates, kwQuery != "", minSimilarity)
 		}
 		if b.config.Reranker != nil {
 			results = b.rerank(ctx, query, results)
@@ -316,7 +343,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		if !historical {
 			b.applyFeedback(ctx, results)
 		}
-		results = b.applyBoosts(results, limit, now)
+		results = applyBoosts(results, limit, now, recallCfg)
 		stage("facts_fused", len(results))
 	}
 
@@ -375,16 +402,16 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			if temporal {
 				scaleArms++
 			}
-			eps = fuseArms(arms, scaleArms, epCandidates, b.config.MinRecallSimilarity)
+			eps = fuseArms(arms, scaleArms, epCandidates, minSimilarity)
 		} else {
-			eps = fuse(epVec, epKw, epCandidates, kwQuery != "", b.config.MinRecallSimilarity)
+			eps = fuse(epVec, epKw, epCandidates, kwQuery != "", minSimilarity)
 		}
 		eps = b.rerank(ctx, query, eps)
 		if mmrOn {
 			eps = applyMMR(eps, vec, mmrLambda, epCandidates)
 			stage("episodes_mmr", len(eps))
 		}
-		results = append(results, b.applyBoosts(eps, episodeLimit, now)...)
+		results = append(results, applyBoosts(eps, episodeLimit, now, recallCfg)...)
 		stage("episodes_fused", len(eps))
 	}
 
@@ -494,22 +521,24 @@ func importanceFactor(importance float32, weight float64) float64 {
 	return (1 - weight) + weight*imp
 }
 
-// reranks reports whether recency or importance weighting is switched on.
-func (b *Brain) reranks() bool {
-	return (b.config.RecencyWeight > 0 && b.config.RecencyHalfLife > 0) || b.config.ImportanceWeight > 0
+// reranksOn reports whether recency or importance weighting is switched on for
+// the given configuration.
+func reranksOn(cfg Config) bool {
+	return (cfg.RecencyWeight > 0 && cfg.RecencyHalfLife > 0) || cfg.ImportanceWeight > 0
 }
 
 // applyBoosts rescales scores by recencyFactor, importanceFactor and a fact's
 // feedback factor, re-sorts and keeps the best limit. With all three off it only
-// truncates.
-func (b *Brain) applyBoosts(rs []RecallResult, limit int, now time.Time) []RecallResult {
+// truncates. cfg carries the per-namespace resolved configuration.
+func applyBoosts(rs []RecallResult, limit int, now time.Time, cfg Config) []RecallResult {
 	for i := range rs {
 		rs[i].fusedScore, rs[i].recencyF, rs[i].importanceF = rs[i].Score, 1, 1
 	}
-	if !b.reranks() && !anyFeedback(rs) {
+	reranksOn := (cfg.RecencyWeight > 0 && cfg.RecencyHalfLife > 0) || cfg.ImportanceWeight > 0
+	if !reranksOn && !anyFeedback(rs) {
 		return truncate(rs, limit)
 	}
-	w, hl, iw := b.config.RecencyWeight, b.config.RecencyHalfLife, b.config.ImportanceWeight
+	w, hl, iw := cfg.RecencyWeight, cfg.RecencyHalfLife, cfg.ImportanceWeight
 	for i := range rs {
 		imp := importanceFactor(rs[i].Importance, iw)
 		f, rec := imp, 1.0

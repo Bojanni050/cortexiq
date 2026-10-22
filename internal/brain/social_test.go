@@ -2,7 +2,6 @@
 package brain
 
 import (
-	"context"
 	"errors"
 	"testing"
 )
@@ -69,11 +68,12 @@ func TestSocialCloserStopsAtContentLength(t *testing.T) {
 	}
 }
 
-// The refusal must happen before the embedder and the pool: no embedding call is
-// the whole point of the gate. A Brain without either panics if it gets further.
-func TestRememberRefusesSocialCloserBeforeTouchingTheDatabase(t *testing.T) {
-	b := &Brain{config: DefaultConfig()}
-	if _, err := b.Remember(context.Background(), "/", "dank je wel!", nil); !errors.Is(err, ErrSocialCloser) {
+// The refusal must happen before the embedder: no embedding call is the whole
+// point of the gate. The per-namespace lookup runs against the pool, so this
+// test needs a database; the pure gate is covered by socialCloser's own tests.
+func TestRememberRefusesSocialCloser(t *testing.T) {
+	e := newEnv(t, nil)
+	if _, err := e.b.Remember(e.ctx, e.ns, "dank je wel!", nil); !errors.Is(err, ErrSocialCloser) {
 		t.Errorf("err = %v, want ErrSocialCloser", err)
 	}
 }

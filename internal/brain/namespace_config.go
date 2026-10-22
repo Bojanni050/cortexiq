@@ -208,6 +208,28 @@ func (e *EffectiveNamespaceConfig) MinEpisodeLength() int {
 	return e.defaults.MinEpisodeLength
 }
 
+// namespaceRunConfig resolves the effective configuration for the namespace
+// with the given ID and returns it as a Config the consolidation pipeline can
+// use directly. A lookup failure falls back to the process config, so a broken
+// override row never blocks a consolidation run.
+func (b *Brain) namespaceRunConfig(ctx context.Context, nsID int64) Config {
+	cfg := b.config
+	var slug string
+	if err := b.pool.QueryRow(ctx, "SELECT slug FROM namespaces WHERE id = $1", nsID).Scan(&slug); err != nil {
+		return cfg
+	}
+	eff, err := b.EffectiveNamespaceConfig(ctx, slug)
+	if err != nil || eff == nil {
+		return cfg
+	}
+	cfg.SimilarityThreshold = eff.SimilarityThreshold()
+	cfg.DedupThreshold = eff.DedupThreshold()
+	cfg.BatchSize = eff.BatchSize()
+	cfg.MaxLLMCallsPerRun = eff.MaxLLMCallsPerRun()
+	cfg.MinEpisodeLength = eff.MinEpisodeLength()
+	return cfg
+}
+
 // namespaceAncestorPaths returns the override-resolution chain for slug, from
 // the root down to the namespace itself: ["/", "/clients", "/clients/white-vision"].
 func namespaceAncestorPaths(slug string) []string {

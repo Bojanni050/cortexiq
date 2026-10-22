@@ -172,10 +172,10 @@ func TestPickDedupTargetWalksCandidates(t *testing.T) {
 }
 
 func TestDedupCandidatesFallsBackToDefault(t *testing.T) {
-	if got := (&Brain{}).dedupCandidates(); got != defaultDedupCandidates {
+	if got := dedupCandidates(Config{}); got != defaultDedupCandidates {
 		t.Errorf("unset config = %d, want %d", got, defaultDedupCandidates)
 	}
-	if got := (&Brain{config: Config{DedupCandidates: 3}}).dedupCandidates(); got != 3 {
+	if got := dedupCandidates(Config{DedupCandidates: 3}); got != 3 {
 		t.Errorf("configured = %d, want 3", got)
 	}
 }

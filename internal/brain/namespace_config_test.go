@@ -253,3 +253,67 @@ func TestIntegrationNamespaceConfig(t *testing.T) {
 		t.Fatal("DeleteNamespaceConfigKey with unknown key succeeded, want error")
 	}
 }
+
+// TestNamespaceRunConfigFallsBackToGlobal verifies that a namespace without
+// overrides resolves to exactly the process config, and that a namespace with
+// an override gets only that key changed.
+func TestNamespaceRunConfigFallsBackToGlobal(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.SimilarityThreshold = 0.77 })
+
+	cfg := e.b.namespaceRunConfig(e.ctx, e.nsID)
+	if cfg.SimilarityThreshold != 0.77 {
+		t.Fatalf("no overrides: threshold = %v, want the global 0.77", cfg.SimilarityThreshold)
+	}
+	if cfg.BatchSize != e.b.config.BatchSize {
+		t.Fatalf("no overrides: batch size = %v, want the global %v", cfg.BatchSize, e.b.config.BatchSize)
+	}
+
+	if err := e.b.SetNamespaceConfig(e.ctx, e.ns, map[string]any{
+		KeyConsolidationSimilarityThreshold: 0.6,
+	}); err != nil {
+		t.Fatalf("SetNamespaceConfig: %v", err)
+	}
+	cfg = e.b.namespaceRunConfig(e.ctx, e.nsID)
+	if cfg.SimilarityThreshold != 0.6 {
+		t.Fatalf("with override: threshold = %v, want 0.6", cfg.SimilarityThreshold)
+	}
+	if cfg.BatchSize != e.b.config.BatchSize {
+		t.Fatalf("with override: batch size = %v, want the global %v (untouched key)", cfg.BatchSize, e.b.config.BatchSize)
+	}
+}
+
+// TestRememberHonorsNamespaceSocialFilter checks that the social filter is
+// per-namespace: the global default refuses a greeting, an override on the
+// namespace allows it through (the write then needs a real embedder + pool,
+// which newEnv provides).
+func TestRememberHonorsNamespaceSocialFilter(t *testing.T) {
+	e := newEnv(t, nil)
+
+	// Global default: social filter on, the greeting is refused.
+	if _, err := e.b.Remember(e.ctx, e.ns, "dank je wel!", nil); !errors.Is(err, ErrSocialCloser) {
+		t.Fatalf("default: err = %v, want ErrSocialCloser", err)
+	}
+
+	// Override on this namespace: filter off, the write goes through.
+	if err := e.b.SetNamespaceConfig(e.ctx, e.ns, map[string]any{
+		KeyRememberSocialFilter: false,
+	}); err != nil {
+		t.Fatalf("SetNamespaceConfig: %v", err)
+	}
+	id, err := e.b.Remember(e.ctx, e.ns, "dank je wel!", nil)
+	if err != nil {
+		t.Fatalf("override off: Remember = %v, want the write to go through", err)
+	}
+	if id == 0 {
+		t.Fatal("override off: episode id = 0, want a stored episode")
+	}
+
+	// A sibling namespace without the override still refuses.
+	sibling := e.ns + "/sibling"
+	if _, err := e.b.CreateNamespace(e.ctx, sibling, "Sibling", ""); err != nil {
+		t.Fatalf("CreateNamespace(%q): %v", sibling, err)
+	}
+	if _, err := e.b.Remember(e.ctx, sibling, "dank je wel!", nil); !errors.Is(err, ErrSocialCloser) {
+		t.Fatalf("sibling without override: err = %v, want ErrSocialCloser", err)
+	}
+}

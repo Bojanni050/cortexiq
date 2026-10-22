@@ -79,9 +79,9 @@ func (b *Brain) nearestActiveFacts(ctx context.Context, nsID int64, vec []float3
 }
 
 // dedupCandidates is how many neighbours a new fact is compared against.
-func (b *Brain) dedupCandidates() int {
-	if b.config.DedupCandidates > 0 {
-		return b.config.DedupCandidates
+func dedupCandidates(cfg Config) int {
+	if cfg.DedupCandidates > 0 {
+		return cfg.DedupCandidates
 	}
 	return defaultDedupCandidates
 }
@@ -105,8 +105,14 @@ type dedupOutcome struct {
 // if so, which one. It weighs the nearest neighbours in score order, so a twin
 // that is not the closest fact still gets its review.
 func (b *Brain) findDuplicate(ctx context.Context, nsID int64, vec []float32, summary string) (dedupOutcome, error) {
+	return b.findDuplicateWithConfig(ctx, nsID, vec, summary, b.config)
+}
+
+// findDuplicateWithConfig is findDuplicate with an explicit configuration, so
+// the consolidation run can pass its per-namespace resolved config.
+func (b *Brain) findDuplicateWithConfig(ctx context.Context, nsID int64, vec []float32, summary string, cfg Config) (dedupOutcome, error) {
 	var out dedupOutcome
-	candidates, err := b.nearestActiveFacts(ctx, nsID, vec, b.dedupCandidates())
+	candidates, err := b.nearestActiveFacts(ctx, nsID, vec, dedupCandidates(cfg))
 	if err != nil {
 		return out, err
 	}
@@ -118,8 +124,8 @@ func (b *Brain) findDuplicate(ctx context.Context, nsID int64, vec []float32, su
 
 	out.DupID, out.Merged, out.LLMCalls, err = pickDedupTarget(
 		candidates,
-		float32(b.config.DedupThreshold),
-		float32(b.config.DedupReviewThreshold),
+		float32(cfg.DedupThreshold),
+		float32(cfg.DedupReviewThreshold),
 		func(c nearestFact) (bool, error) {
 			return b.reasoner.ReasonSameFact(ctx, c.Content, summary)
 		},

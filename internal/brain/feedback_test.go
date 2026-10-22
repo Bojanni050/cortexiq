@@ -53,15 +53,15 @@ func TestRateFactRefusesReadOnlyCaller(t *testing.T) {
 // A vote must move the list even when recency and importance weighting are both
 // off, and it must not rewrite fusedScore: that is the score the fact earned.
 func TestApplyBoostsLowersDownvotedFactWithoutRewritingFusedScore(t *testing.T) {
-	b := &Brain{config: DefaultConfig()}
-	if b.reranks() {
+	cfg := DefaultConfig()
+	if reranksOn(cfg) {
 		t.Fatal("default config should not rerank; this test pins the feedback-only path")
 	}
 	rs := []RecallResult{
 		{ID: 1, Type: "fact", Score: 0.9, Feedback: -1},
 		{ID: 2, Type: "fact", Score: 0.7},
 	}
-	got := b.applyBoosts(rs, 10, time.Now())
+	got := applyBoosts(rs, 10, time.Now(), cfg)
 	if len(got) != 2 || got[0].ID != 2 || got[1].ID != 1 {
 		t.Fatalf("order = %v, want the downvoted fact second", ids(got))
 	}
