@@ -1156,10 +1156,23 @@ func readOnlyMCP(next http.Handler) http.Handler {
 	})
 }
 
-// sseKeepAliveInterval is how often the SSE stream gets a JSON-RPC ping while
-// idle. The MCP javascript client (mcp-remote/undici) aborts a silent response
-// body after 300s, and reverse proxies in front of us are often stricter.
-const sseKeepAliveInterval = 15 * time.Second
+// mcpKeepAliveInterval is how often an idle MCP stream is kept warm: a JSON-RPC
+// ping on the SSE transport, a heartbeat on the streamable HTTP GET stream. The
+// MCP javascript client (mcp-remote/undici) aborts a silent response body after
+// 300s, and reverse proxies in front of us are often stricter.
+const mcpKeepAliveInterval = 15 * time.Second
+
+// mcpHandler routes the two MCP transports CortexIQ serves: SSE under /sse
+// (with its POST channel /message) for clients that still speak it, and
+// Streamable HTTP under /mcp for the rest. Hosted clients (Mistral Le Chat and
+// Vibe, monday, Gemini Enterprise) only support Streamable HTTP.
+func mcpHandler(sse *server.SSEServer, streamable *server.StreamableHTTPServer) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/sse", sse)
+	mux.Handle("/message", sse)
+	mux.Handle("/mcp", streamable)
+	return mux
+}
 
 func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 	bc := getBootstrap(cmd)
@@ -1180,9 +1193,14 @@ func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 	// inside that window to keep the stream alive.
 	sseServer := server.NewSSEServer(mcpServer,
 		server.WithHTTPServer(httpSrv),
-		server.WithKeepAliveInterval(sseKeepAliveInterval),
+		server.WithKeepAliveInterval(mcpKeepAliveInterval),
 	)
-	httpSrv.Handler = auth.Require(bc.Auth, readOnlyMCP(sseServer))
+	// Streamable HTTP is a second, request-based transport on the same server.
+	// Its optional long-lived GET stream gets the same treatment as SSE.
+	streamableServer := server.NewStreamableHTTPServer(mcpServer,
+		server.WithHeartbeatInterval(mcpKeepAliveInterval),
+	)
+	httpSrv.Handler = auth.Require(bc.Auth, readOnlyMCP(mcpHandler(sseServer, streamableServer)))
 	if !bc.Auth.Enabled() {
 		log.Println("WARNING: no API token configured; the MCP server is unauthenticated")
 	}
@@ -1200,7 +1218,7 @@ func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 		}()
 	}
 
-	fmt.Printf("Starting MCP SSE server on %s\n", addr)
+	fmt.Printf("Starting MCP server on %s (sse: /sse, streamable http: /mcp)\n", addr)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -1209,7 +1227,7 @@ func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 
 	select {
 	case <-ctx.Done():
-		fmt.Println("\nMCP SSE server shutting down")
+		fmt.Println("\nMCP server shutting down")
 		wg.Wait()
 		return nil
 	case err := <-errCh:

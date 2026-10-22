@@ -228,11 +228,14 @@ See [Getting Started](docs/GETTING_STARTED.md) for a fuller configuration checkl
 
 ## MCP Client Setup
 
-After `docker compose up`, CortexIQ exposes an MCP server over SSE at:
+After `docker compose up`, CortexIQ exposes an MCP server on two transports:
 
 ```
-http://localhost:8080/sse
+http://localhost:8080/sse   # SSE (GET stream + POST /message)
+http://localhost:8080/mcp   # Streamable HTTP
 ```
+
+Both serve the same tools. Streamable HTTP is what hosted clients speak — Mistral Le Chat and Vibe, monday, Gemini Enterprise; SSE still works for Claude Desktop, Cursor, opencode and the rest. `/mcp` sends a heartbeat and `/sse` a JSON-RPC ping every 15 s, so an idle stream is not cut by clients that time out a silent body after 300 s.
 
 A web dashboard is also served at `http://localhost:9090/ui` — browse and manage memories, goals, hypotheses, contradictions, and failures from your browser. The JSON API lives on that **same 9090 listener** (`POST /api/v1/recall`, `POST /api/v1/remember`, `GET /api/v1/...`); the 8080 listener speaks MCP only.
 
@@ -306,7 +309,7 @@ a `reflect` call that should ground its answer in varied sources, a dashboard
 showing "what do we know". Leave it off (λ=0) when the caller wants the single
 best match — exact lookups, dedup checks, or when result order is contractual.
 
-To protect CortexIQ, set `CORTEXIQ_API_TOKEN` in `.env`. It guards both the dashboard API (`/api/v1`) and the MCP server (`/sse`, `/message`): every request then needs `Authorization: Bearer <token>`. The dashboard asks for the token on first use and remembers it in the browser; MCP clients need to send the header (see below). Leave it empty to keep everything open. `/healthz`, `/readyz` and `/metrics` are not covered.
+To protect CortexIQ, set `CORTEXIQ_API_TOKEN` in `.env`. It guards both the dashboard API (`/api/v1`) and the MCP server (`/sse`, `/message`, `/mcp`): every request then needs `Authorization: Bearer <token>`. The dashboard asks for the token on first use and remembers it in the browser; MCP clients need to send the header (see below). Leave it empty to keep everything open. `/healthz`, `/readyz` and `/metrics` are not covered.
 
 ### Scoped tokens
 
@@ -380,7 +383,44 @@ With `CORTEXIQ_API_TOKEN` set, add the header to the client config, e.g. for Cur
 }
 ```
 
-Works with any agent that supports MCP over SSE — Claude Desktop, Cursor, Windsurf, Cline, Continue, OpenAI Agents, Ollama, OpenRouter, Atlas Cloud-backed setups, and more.
+**Mistral Vibe (CLI)** — `~/.vibe/config.toml`
+
+Vibe has no SSE transport, so point it at `/mcp`. Its auth lives in a nested
+`[mcp_servers.auth]` table; keeping the token in an env var avoids writing it to
+disk (Vibe reads `~/.vibe/.env`, or export it in your shell):
+
+```toml
+[[mcp_servers]]
+name = "cortexiq"
+transport = "streamable-http"
+url = "https://<your-host>/mcp"
+
+[mcp_servers.auth]
+type = "static"
+api_key_env = "CORTEXIQ_TOKEN"
+api_key_header = "Authorization"
+api_key_format = "Bearer {token}"
+```
+
+Or from the shell, which writes the same block:
+
+```bash
+vibe mcp add cortexiq --url https://<your-host>/mcp \
+  --transport streamable-http --api-key-env CORTEXIQ_TOKEN
+```
+
+**Mistral Le Chat** — no config file. Settings → Connectors → *+ Add Connector* →
+**Custom MCP Connector**; name `CortexIQ`, server URL `https://<your-host>/mcp`,
+authentication **API token**, header `Authorization`, value `Bearer <token>`.
+Custom connectors need a paid plan, a publicly reachable HTTPS endpoint with a
+valid certificate, and Streamable HTTP — Le Chat runs the handshake from its own
+servers, so `localhost` and tailnet-only hostnames do not work.
+
+Use a `ro` token for these two: Le Chat is a third-party cloud, and its connector
+can only read if the token cannot write. `Vibe` runs locally, so an `rw` token is
+reasonable there.
+
+Works with any agent that supports MCP — Claude Desktop, Cursor, Windsurf, Cline, Continue, OpenAI Agents, Ollama, OpenRouter, Atlas Cloud-backed setups, and more.
 
 ## What It Does
 
