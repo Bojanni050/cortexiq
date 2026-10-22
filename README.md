@@ -420,22 +420,51 @@ Use a `ro` token for these two: Le Chat is a third-party cloud, and its connecto
 can only read if the token cannot write. `Vibe` runs locally, so an `rw` token is
 reasonable there.
 
-Both need a public endpoint. A Tailscale `serve` route is **not** enough — `serve`
-binds the tailnet address, so only machines inside the tailnet reach it, and
-neither Mistral's cloud nor a Vibe install elsewhere is. Use `funnel`, which only
-accepts **443, 8443 and 10000**:
+Both need a public endpoint on **port 443**. Two traps, both hit in practice:
+
+- A Tailscale `serve` route binds the tailnet address, so only machines inside
+  the tailnet reach it. Neither Mistral's cloud nor a Vibe install elsewhere is.
+- `tailscale funnel` only accepts **443, 8443 and 10000**, and 443/8443 are
+  normally taken by the web server. A funnel on `:10000` answers fine from a
+  machine on the tailnet but cloud clients get a connection error — Le Chat
+  showed "we could not connect to the server" with nothing in the access log.
+
+So terminate TLS on a real 443 vhost and proxy to `127.0.0.1:18100`. On a Plesk
+host, one subdomain is enough:
 
 ```bash
-tailscale funnel --bg --https=10000 http://127.0.0.1:18100
+# DNS: an A record for the subdomain pointing at the server
+plesk bin subdomain --create cortexiq.example.com -domain example.com -www-root cortexiq.example.com
+plesk ext sslit --certificate -issue -domain cortexiq.example.com -secure-domain
 ```
 
-That publishes `https://<host>.<tailnet>.ts.net:10000/mcp` — keep `/mcp` or `/sse`
-on the path, the funnel maps everything else to the MCP listener. Funnel has to be
-enabled once for the tailnet (Tailscale prints an approval link on first use). If
-443 and 8443 are taken — Plesk holds both — 10000 is the only port left; the
-alternative is a reverse proxy in front of `127.0.0.1:18100` with
-`proxy_buffering off` and a long `proxy_read_timeout`, otherwise nginx cuts the
-stream.
+Plesk includes `/var/www/vhosts/system/<domain>/conf/vhost_nginx.conf` inside the
+generated vhost when that file exists, so put the proxy there rather than editing
+`nginx.conf` (which is regenerated). Only the MCP paths are proxied; the vhost's
+own `location /` cannot be overridden, and a regex location outranks it:
+
+```nginx
+location ~ ^/(mcp|sse|message)$ {
+    proxy_pass http://127.0.0.1:18100;
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Connection        "";
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+}
+```
+
+`proxy_buffering off` and the long read timeout are not optional: without them
+nginx holds the event stream until the buffer fills or the timeout fires.
+Apply with `plesk sbin httpdmng --reconfigure-domain <domain> && nginx -t &&
+systemctl reload nginx`, then check from outside the network — an unauthenticated
+`POST /mcp` must return `401`, not a timeout. Keep the reverse proxy on the same
+host as the container; do not expose the dashboard port.
 
 Works with any agent that supports MCP — Claude Desktop, Cursor, Windsurf, Cline, Continue, OpenAI Agents, Ollama, OpenRouter, Atlas Cloud-backed setups, and more.
 
