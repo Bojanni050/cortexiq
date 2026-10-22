@@ -21,20 +21,22 @@ func TestMentalModelStaleReason(t *testing.T) {
 		newest     time.Time
 		newestSeen bool
 		retracted  bool
+		grounded   bool
 		want       string
 	}{
-		{"never refreshed", nil, &watermark, now, true, false, "never_refreshed"},
-		{"no watermark", &now, nil, now, true, false, "no_watermark"},
-		{"new memory after watermark", &now, &watermark, now, true, false, "new_memories"},
-		{"no new memory", &now, &watermark, older, true, false, ""},
-		{"no memories at all", &now, &watermark, time.Time{}, false, false, ""},
-		{"retracted grounding", &now, &watermark, older, true, true, "retracted_grounding"},
-		{"new memory wins over retraction", &now, &watermark, now, true, true, "new_memories"},
-		{"memory exactly at watermark is seen", &now, &watermark, watermark, true, false, ""},
+		{"never refreshed", nil, &watermark, now, true, false, true, "never_refreshed"},
+		{"no watermark", &now, nil, now, true, false, true, "no_watermark"},
+		{"no recorded grounding", &now, &watermark, older, true, false, false, "no_grounding"},
+		{"new memory after watermark", &now, &watermark, now, true, false, true, "new_memories"},
+		{"no new memory", &now, &watermark, older, true, false, true, ""},
+		{"no memories at all", &now, &watermark, time.Time{}, false, false, true, ""},
+		{"retracted grounding", &now, &watermark, older, true, true, true, "retracted_grounding"},
+		{"new memory wins over retraction", &now, &watermark, now, true, true, true, "new_memories"},
+		{"memory exactly at watermark is seen", &now, &watermark, watermark, true, false, true, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mentalModelStaleReason(tc.refreshed, tc.watermark, tc.newest, tc.newestSeen, tc.retracted)
+			got := mentalModelStaleReason(tc.refreshed, tc.watermark, tc.newest, tc.newestSeen, tc.retracted, tc.grounded)
 			if got != tc.want {
 				t.Fatalf("reason = %q, want %q", got, tc.want)
 			}

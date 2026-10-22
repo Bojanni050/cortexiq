@@ -748,12 +748,18 @@ type mentalModelFreshness struct {
 
 // mentalModelStaleReason explains why a model is out of date, or returns "".
 // Split out from the queries so the rule is testable without a database.
-func mentalModelStaleReason(lastRefreshed, watermark *time.Time, newest time.Time, newestSeen, retracted bool) string {
+func mentalModelStaleReason(lastRefreshed, watermark *time.Time, newest time.Time, newestSeen, retracted, grounded bool) string {
 	switch {
 	case lastRefreshed == nil:
 		return "never_refreshed"
 	case watermark == nil:
 		return "no_watermark"
+	case !grounded:
+		// Models created before based_on existed have content nobody can
+		// account for. Prod proved why that matters: two models created during
+		// an embedder warm-up stored "no information is available" and reflect
+		// then served them as the most relevant knowledge. Re-ground once.
+		return "no_grounding"
 	case newestSeen && newest.After(*watermark):
 		return "new_memories"
 	case retracted:
@@ -761,6 +767,12 @@ func mentalModelStaleReason(lastRefreshed, watermark *time.Time, newest time.Tim
 	default:
 		return ""
 	}
+}
+
+// basedOnEmpty reports whether a model has no recorded grounding. Only models
+// from before the watermark column can be in that state.
+func basedOnEmpty(b models.BasedOn) bool {
+	return len(b.Facts) == 0 && len(b.Episodes) == 0 && len(b.Failures) == 0 && len(b.Goals) == 0
 }
 
 // computeFreshness answers "is this model behind its memories?" for a batch.
@@ -806,7 +818,7 @@ func (b *Brain) computeFreshness(ctx context.Context, states []mentalModelState)
 				newest, newestSeen = ts, true
 			}
 		}
-		reason := mentalModelStaleReason(s.LastRefreshedAt, s.LastMemorySeenAt, newest, newestSeen, retracted[s.ID])
+		reason := mentalModelStaleReason(s.LastRefreshedAt, s.LastMemorySeenAt, newest, newestSeen, retracted[s.ID], !basedOnEmpty(s.BasedOn))
 		out[i] = mentalModelFreshness{IsStale: reason != "", Reason: reason}
 		if newestSeen {
 			ts := newest

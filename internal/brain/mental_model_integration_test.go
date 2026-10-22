@@ -210,6 +210,37 @@ func TestMentalModelRefreshClearsFailure(t *testing.T) {
 	}
 }
 
+// TestMentalModelStaleWithoutGrounding checks the upgrade path: a model from
+// before based_on existed has content nobody can account for, so it is treated
+// as stale once instead of being trusted forever.
+func TestMentalModelStaleWithoutGrounding(t *testing.T) {
+	e := newEnv(t, nil)
+	e.insertFact(t, "the kafka cluster runs three brokers", nil)
+
+	mm, err := e.b.CreateMentalModel(e.ctx, e.nsID, CreateMentalModelOptions{
+		Name:        "Kafka",
+		SourceQuery: "What do we know about the kafka cluster?",
+	})
+	if err != nil {
+		t.Fatalf("CreateMentalModel: %v", err)
+	}
+
+	// Simulate a row written by the previous version: watermark present,
+	// grounding absent.
+	if _, err := e.b.pool.Exec(e.ctx,
+		`UPDATE mental_models SET based_on = '{}'::jsonb WHERE id = $1`, mm.ID); err != nil {
+		t.Fatalf("clear based_on: %v", err)
+	}
+
+	got, err := e.b.GetMentalModel(e.ctx, mm.ID)
+	if err != nil {
+		t.Fatalf("GetMentalModel: %v", err)
+	}
+	if !got.IsStale || got.StaleReason != "no_grounding" {
+		t.Fatalf("stale = %v, reason = %q; want stale with no_grounding", got.IsStale, got.StaleReason)
+	}
+}
+
 // TestRefreshStaleMentalModels checks the consolidation sweep end to end: nothing
 // to do on a fresh model, one refresh after a new memory.
 func TestRefreshStaleMentalModels(t *testing.T) {
