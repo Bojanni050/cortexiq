@@ -260,3 +260,19 @@ func TestParseTimeBound(t *testing.T) {
 		t.Fatal("parseTimeBound accepted a natural-language phrase")
 	}
 }
+
+func TestErrStatusMentalModels(t *testing.T) {
+	cases := []struct {
+		err  error
+		want int
+	}{
+		{brain.ErrMentalModelNotFound, http.StatusNotFound},
+		{brain.ErrMentalModelNotGrounded, http.StatusBadRequest},
+		{brain.ErrMentalModelRefreshInFlight, http.StatusBadRequest},
+	}
+	for _, tc := range cases {
+		if got := errStatus(tc.err); got != tc.want {
+			t.Errorf("errStatus(%v) = %d, want %d", tc.err, got, tc.want)
+		}
+	}
+}

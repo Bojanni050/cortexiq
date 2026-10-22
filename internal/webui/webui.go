@@ -142,7 +142,8 @@ func errStatus(err error) int {
 		errors.Is(err, brain.ErrFailureNotFound),
 		errors.Is(err, brain.ErrContradictionNotFound),
 		errors.Is(err, brain.ErrCausalLinkNotFound),
-		errors.Is(err, brain.ErrHypothesisNotFound):
+		errors.Is(err, brain.ErrHypothesisNotFound),
+		errors.Is(err, brain.ErrMentalModelNotFound):
 		return http.StatusNotFound
 	// The request itself is wrong, so a client can tell its own mistake from a
 	// server failure.
@@ -150,7 +151,9 @@ func errStatus(err error) int {
 		errors.Is(err, brain.ErrContentTooLong),
 		errors.Is(err, brain.ErrInvalidPath),
 		errors.Is(err, brain.ErrNamespacesRequired),
-		errors.Is(err, brain.ErrNamespaceNotFound):
+		errors.Is(err, brain.ErrNamespaceNotFound),
+		errors.Is(err, brain.ErrMentalModelNotGrounded),
+		errors.Is(err, brain.ErrMentalModelRefreshInFlight):
 		return http.StatusBadRequest
 	case errors.Is(err, brain.ErrResolutionRequired):
 		return http.StatusBadRequest
