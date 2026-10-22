@@ -268,8 +268,11 @@ type BasedOn struct {
 // (extracted from episodes), a mental model is a persistent artifact that is
 // refreshed when new memories arrive.
 type MentalModel struct {
-	ID              int64           `db:"id" json:"id"`
-	NamespaceID     int64           `db:"namespace_id" json:"namespace_id"`
+	ID int64 `db:"id" json:"id"`
+	// NamespaceID files the model in a namespace and scopes it to that
+	// namespace's subtree. Nil means global: synthesized from every namespace
+	// and available to reflect from any namespace.
+	NamespaceID     *int64          `db:"namespace_id" json:"namespace_id,omitempty"`
 	Name            string          `db:"name" json:"name"`
 	SourceQuery     string          `db:"source_query" json:"source_query"`
 	Content         string          `db:"content" json:"content"`

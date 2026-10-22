@@ -320,7 +320,7 @@ function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function ts(s) { return s ? new Date(s).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : ''; }
-function nsSlug(id) { return state.nsMap[id] || ('#' + id); }
+function nsSlug(id) { return id == null ? 'global' : (state.nsMap[id] || ('#' + id)); }
 function pct(v) { const n = Math.max(0, Math.min(1, Number(v) || 0)); return `<div class="conf"><i><b style="width:${n * 100}%"></b></i><span>${(n * 100).toFixed(0)}%</span></div>`; }
 function bytes(n) {
   n = Number(n) || 0;
@@ -718,12 +718,14 @@ async function renderMentalModels() {
 
 function mmDialog() {
   const d = document.getElementById('dlg');
+  const scoped = state.ns !== '/' ? `<option value="ns">Only ${esc(state.ns)} and its children</option>` : '';
   d.innerHTML = `<h3>New mental model</h3>
     <label>Name</label><input id="mm-name" placeholder="e.g. Kafka Migration">
     <label>Source query (the question reflect answers to generate content)</label><textarea id="mm-query" placeholder="What do we know about the Kafka migration?"></textarea>
     <label>Tags (comma-separated, optional)</label><input id="mm-tags" placeholder="infrastructure, messaging">
+    <label>Use memories from</label><select id="mm-scope"><option value="all">All namespaces (global)</option>${scoped}</select>
+    <p class="muted" style="margin:14px 0 0">A global model reads every namespace, is refreshed when anything changes, and is available to reflect from any namespace. A scoped model only reads the chosen namespace and its children.</p>
     <label>Max tokens</label><input id="mm-tokens" type="number" value="2048" min="256" max="8192">
-    <p class="muted" style="margin:14px 0 0">Builds from the memories in <b>${esc(state.ns)}</b>. A namespace without memories cannot produce a summary.</p>
     <div id="mm-status" class="muted" role="status" aria-live="polite" style="margin-top:10px;min-height:18px"></div>
     <div class="actions"><button onclick="dlgClose()">Cancel</button><button id="mm-create-btn" class="primary" onclick="mmCreate()">Create</button></div>`;
   d.showModal();
@@ -738,15 +740,17 @@ async function mmCreate() {
 
   const tags = document.getElementById('mm-tags').value.split(',').map(t => t.trim()).filter(Boolean);
   const maxTokens = parseInt(document.getElementById('mm-tokens').value || '2048', 10);
+  const scoped = document.getElementById('mm-scope').value === 'ns';
+  const namespaces = scoped ? [state.ns] : [];
   // The progress and the error belong in the dialog: a toast fired while a modal
   // is open used to render under its backdrop, which is exactly how a refused
   // create looked like "nothing happened".
   status.className = 'muted';
-  status.textContent = `Generating from ${state.ns} — this calls reflect and can take a while…`;
+  status.textContent = `Generating from ${scoped ? state.ns : 'all namespaces'} — this calls reflect and can take a while…`;
   btn.disabled = true; btn.textContent = 'Generating…';
   try {
     await api('/mental-models', { method: 'POST', body: JSON.stringify({
-      name, source_query: query, namespaces: [state.ns], tags, max_tokens: maxTokens }) });
+      name, source_query: query, namespaces, tags, max_tokens: maxTokens }) });
   } catch (e) {
     stop(e.message);
     return;
@@ -769,6 +773,7 @@ async function mmView(id) {
   d.innerHTML = `<h3>${esc(m.name)} <span class="mono muted">#${m.id}</span></h3>
     <label>Source query</label><div class="muted" style="margin-bottom:12px">${esc(m.source_query)}</div>
     <label>Tags</label><div style="margin-bottom:12px">${mmTags(m.tags)}</div>
+    <label>Scope</label><div class="muted" style="margin-bottom:12px">${m.namespace_id ? esc(nsSlug(m.namespace_id)) : 'all namespaces (global)'}</div>
     <label>Content</label><div class="wrap" style="white-space:pre-wrap;background:var(--panel-2);padding:12px;border-radius:6px;margin-bottom:12px">${esc(m.content)}</div>
     ${m.last_refresh_failed_at ? `<div class="err" style="margin-bottom:12px">Last refresh failed ${ts(m.last_refresh_failed_at)}: ${esc(m.last_refresh_error || 'unknown error')}</div>` : ''}
     <div class="muted" style="margin-bottom:12px">Last refreshed: ${m.last_refreshed_at ? ts(m.last_refreshed_at) : 'never'} · Created: ${ts(m.created_at)}</div>

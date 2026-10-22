@@ -35,10 +35,16 @@ const mentalModelColumns = `id, namespace_id, name, source_query, content, embed
 // over several runs instead of turning one consolidation into an unbounded bill.
 const maxMentalModelRefreshesPerConsolidation = 3
 
+// minAutomaticMentalModelRefresh is how often the consolidation sweep may touch
+// the same model. A global model is stale as soon as anything anywhere changes,
+// so without this floor it would be re-synthesized on every five-minute run.
+// An explicit refresh ignores the floor.
+const minAutomaticMentalModelRefresh = time.Hour
+
 // MentalModelSearchResult is a mental model hit from a similarity search.
 type MentalModelSearchResult struct {
 	ID               int64      `json:"id"`
-	NamespaceID      int64      `json:"namespace_id"`
+	NamespaceID      *int64     `json:"namespace_id,omitempty"`
 	Name             string     `json:"name"`
 	Content          string     `json:"content"`
 	Tags             []string   `json:"tags"`
@@ -58,6 +64,10 @@ type CreateMentalModelOptions struct {
 	SourceQuery string
 	Tags        []string
 	MaxTokens   int
+	// NamespaceID files the model in a namespace and scopes it to that
+	// namespace's subtree. Nil makes it global: it reads every namespace and is
+	// available to reflect from every namespace.
+	NamespaceID *int64
 }
 
 // MentalModelRefreshSummary reports what an automatic sweep did. Individual
@@ -173,7 +183,11 @@ func (b *Brain) memoryCutoff(ctx context.Context) (time.Time, error) {
 // CreateMentalModel creates a mental model and generates its content by running
 // a reflect call on the source query. The mental model is embedded on its
 // source query for semantic search.
-func (b *Brain) CreateMentalModel(ctx context.Context, nsID int64, opts CreateMentalModelOptions) (*models.MentalModel, error) {
+//
+// With opts.NamespaceID nil the model is global: the synthesis reads every
+// namespace, staleness follows every namespace, and reflect finds it from any
+// namespace. With a namespace it is scoped to that namespace and its children.
+func (b *Brain) CreateMentalModel(ctx context.Context, opts CreateMentalModelOptions) (*models.MentalModel, error) {
 	name := strings.TrimSpace(opts.Name)
 	if name == "" {
 		return nil, fmt.Errorf("brain: mental model name cannot be empty")
@@ -193,9 +207,15 @@ func (b *Brain) CreateMentalModel(ctx context.Context, nsID int64, opts CreateMe
 		tags = []string{}
 	}
 
-	nsSlug, err := b.namespaceSlug(ctx, nsID)
-	if err != nil {
-		return nil, err
+	// "/" is the whole store; it needs no namespace row and works on an install
+	// that never created one (prod has no "/" namespace).
+	scope := []string{"/"}
+	if opts.NamespaceID != nil {
+		slug, err := b.namespaceSlug(ctx, *opts.NamespaceID)
+		if err != nil {
+			return nil, err
+		}
+		scope = []string{slug}
 	}
 
 	// Take the watermark before the synthesis reads anything: a memory written
@@ -207,7 +227,7 @@ func (b *Brain) CreateMentalModel(ctx context.Context, nsID int64, opts CreateMe
 	}
 
 	reflectResult, err := b.Reflect(ctx, query, ReflectOptions{
-		Namespaces: []string{nsSlug},
+		Namespaces: scope,
 		Limit:      20,
 		MaxTokens:  maxTokens,
 		// A mental model is synthesized from raw memories. Its siblings would
@@ -236,7 +256,7 @@ func (b *Brain) CreateMentalModel(ctx context.Context, nsID int64, opts CreateMe
 		INSERT INTO mental_models (namespace_id, name, source_query, content, embedding, embedding_model, tags, max_tokens, last_refreshed_at, last_memory_seen_at, based_on)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), $9, $10)
 		RETURNING `+mentalModelColumns,
-		nsID, name, query, reflectResult.Answer,
+		opts.NamespaceID, name, query, reflectResult.Answer,
 		pgvector.NewVector(vec), b.embedder.Model(), tags, maxTokens, cutoff, basedOn))
 	if err != nil {
 		return nil, fmt.Errorf("insert mental model: %w", err)
@@ -283,7 +303,7 @@ func (b *Brain) ListMentalModels(ctx context.Context, namespaceSlugs []string, t
 	}
 	page = page.Sanitize()
 
-	where := "deleted_at IS NULL AND namespace_id = ANY($1)"
+	where := "deleted_at IS NULL AND (namespace_id IS NULL OR namespace_id = ANY($1))"
 	args := []any{nsIDs}
 	if len(tags) > 0 {
 		where += " AND tags && $2"
@@ -324,7 +344,7 @@ func (b *Brain) CountMentalModels(ctx context.Context, namespaceSlugs []string, 
 	if len(nsIDs) == 0 {
 		return 0, nil
 	}
-	where := "deleted_at IS NULL AND namespace_id = ANY($1)"
+	where := "deleted_at IS NULL AND (namespace_id IS NULL OR namespace_id = ANY($1))"
 	args := []any{nsIDs}
 	if len(tags) > 0 {
 		where += " AND tags && $2"
@@ -352,7 +372,7 @@ func (b *Brain) SearchMentalModels(ctx context.Context, namespaceSlugs []string,
 		return nil, fmt.Errorf("embed mental model query: %w", err)
 	}
 
-	where := "deleted_at IS NULL AND namespace_id = ANY($1) AND embedding IS NOT NULL"
+	where := "deleted_at IS NULL AND (namespace_id IS NULL OR namespace_id = ANY($1)) AND embedding IS NOT NULL"
 	args := []any{nsIDs, pgvector.NewVector(vec)}
 	argIdx := 3
 	if len(tags) > 0 {
@@ -418,9 +438,15 @@ func (b *Brain) RefreshMentalModel(ctx context.Context, id int64) (*models.Menta
 		return nil, err
 	}
 
-	nsSlug, err := b.namespaceSlug(ctx, m.NamespaceID)
-	if err != nil {
-		return nil, err
+	// A global model (no namespace) re-reads everything; a scoped one re-reads
+	// its own subtree.
+	scope := []string{"/"}
+	if m.NamespaceID != nil {
+		slug, err := b.namespaceSlug(ctx, *m.NamespaceID)
+		if err != nil {
+			return nil, err
+		}
+		scope = []string{slug}
 	}
 
 	cutoff, err := b.memoryCutoff(ctx)
@@ -429,7 +455,7 @@ func (b *Brain) RefreshMentalModel(ctx context.Context, id int64) (*models.Menta
 	}
 
 	reflectResult, err := b.Reflect(ctx, m.SourceQuery, ReflectOptions{
-		Namespaces:       []string{nsSlug},
+		Namespaces:       scope,
 		Limit:            20,
 		MaxTokens:        m.MaxTokens,
 		SkipMentalModels: true,
@@ -498,20 +524,19 @@ func (b *Brain) beginMentalModelRefresh(id int64) (release func(), busy bool) {
 	}, false
 }
 
-// refreshStaleMentalModels refreshes the models in a namespace whose ground
-// truth changed. It runs at the end of a consolidation, so a new fact reaches
-// the summaries without an agent having to remember to refresh them.
+// refreshStaleMentalModels refreshes the models a consolidation run can reach:
+// the ones filed in this namespace plus the global ones. It runs at the end of a
+// consolidation, so a new fact reaches the summaries without an agent having to
+// remember to refresh them.
 //
 // Automatic refresh skips a model whose last refresh failed: retrying the same
 // prompt on every consolidation only spends the same money to fail the same way.
 // An explicit RefreshMentalModel call is never paused and clears the mark on
-// success.
+// success. It also rate-limits itself to one synthesis per model per hour: a
+// global model sees every namespace, and without the floor every consolidation
+// run would buy it again.
 func (b *Brain) refreshStaleMentalModels(ctx context.Context, nsID int64) (MentalModelRefreshSummary, error) {
-	nsSlug, err := b.namespaceSlug(ctx, nsID)
-	if err != nil {
-		return MentalModelRefreshSummary{}, err
-	}
-	items, err := b.ListMentalModels(ctx, []string{nsSlug}, nil, Pagination{Limit: MaxLimit})
+	items, err := b.listMentalModelsForSweep(ctx, nsID)
 	if err != nil {
 		return MentalModelRefreshSummary{}, err
 	}
@@ -529,10 +554,11 @@ func (b *Brain) refreshStaleMentalModels(ctx context.Context, nsID int64) (Menta
 		return a.Before(*b)
 	})
 
+	now := time.Now()
 	var out MentalModelRefreshSummary
 	for i := range items {
 		m := &items[i]
-		if !m.IsStale || mentalModelAutoRefreshPaused(*m) {
+		if !m.IsStale || mentalModelAutoRefreshPaused(*m) || !automaticRefreshDue(*m, now) {
 			out.Skipped++
 			continue
 		}
@@ -562,6 +588,44 @@ func mentalModelAutoRefreshPaused(m models.MentalModel) bool {
 		return false
 	}
 	return m.LastRefreshedAt == nil || m.LastRefreshFailedAt.After(*m.LastRefreshedAt)
+}
+
+// automaticRefreshDue reports whether the sweep may refresh this model again.
+// Explicit refreshes do not consult it.
+func automaticRefreshDue(m models.MentalModel, now time.Time) bool {
+	return m.LastRefreshedAt == nil || now.Sub(*m.LastRefreshedAt) >= minAutomaticMentalModelRefresh
+}
+
+// listMentalModelsForSweep returns the models a namespace's consolidation is
+// responsible for: the ones filed there, plus every global model. Global models
+// are considered by every namespace, but automaticRefreshDue keeps that from
+// buying the same synthesis several times per run.
+func (b *Brain) listMentalModelsForSweep(ctx context.Context, nsID int64) ([]models.MentalModel, error) {
+	rows, err := b.pool.Query(ctx, `
+		SELECT `+mentalModelColumns+` FROM mental_models
+		WHERE deleted_at IS NULL AND (namespace_id = $1 OR namespace_id IS NULL)
+		ORDER BY last_refreshed_at NULLS FIRST, id
+		LIMIT $2`, nsID, MaxLimit)
+	if err != nil {
+		return nil, fmt.Errorf("list mental models for sweep: %w", err)
+	}
+	defer rows.Close()
+
+	var result []models.MentalModel
+	for rows.Next() {
+		var m models.MentalModel
+		if err := scanMentalModel(&m, rows); err != nil {
+			return nil, fmt.Errorf("scan mental model: %w", err)
+		}
+		result = append(result, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := b.annotateMentalModels(ctx, result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // DeleteMentalModel soft-deletes a mental model.
@@ -733,8 +797,9 @@ func (b *Brain) retractedGrounding(ctx context.Context, states []mentalModelStat
 // mentalModelState is the input to the freshness calculation, shared by the
 // stored model and the search result so both answer staleness the same way.
 type mentalModelState struct {
-	ID               int64
-	NamespaceID      int64
+	ID int64
+	// NamespaceID is nil for a global model, which reads every namespace.
+	NamespaceID      *int64
 	LastRefreshedAt  *time.Time
 	LastMemorySeenAt *time.Time
 	BasedOn          models.BasedOn
@@ -776,26 +841,45 @@ func basedOnEmpty(b models.BasedOn) bool {
 }
 
 // computeFreshness answers "is this model behind its memories?" for a batch.
-// Scopes are resolved once per distinct namespace and the two expensive checks
-// (newest memory, retracted grounding) are one round-trip each for the whole
-// batch, so a reflect call does not pay a query per model.
+// Scopes are resolved once per distinct namespace (and once for all namespaces,
+// for global models) and the two expensive checks (newest memory, retracted
+// grounding) are one round-trip each for the whole batch, so a reflect call does
+// not pay a query per model.
 func (b *Brain) computeFreshness(ctx context.Context, states []mentalModelState) ([]mentalModelFreshness, error) {
 	out := make([]mentalModelFreshness, len(states))
 	if len(states) == 0 {
 		return out, nil
 	}
 
-	scopes := make(map[int64][]int64, len(states))
-	var scopeIDs []int64
-	for _, s := range states {
-		if _, ok := scopes[s.NamespaceID]; ok {
+	scopes := make([][]int64, len(states))
+	scoped := make(map[int64][]int64, len(states))
+	var (
+		allIDs   []int64
+		scopeIDs []int64
+	)
+	for i, s := range states {
+		if s.NamespaceID == nil {
+			if allIDs == nil {
+				ids, err := b.ResolveNamespaceIDs(ctx, []string{"/"})
+				if err != nil {
+					return nil, err
+				}
+				allIDs = ids
+			}
+			scopes[i] = allIDs
+			scopeIDs = append(scopeIDs, allIDs...)
 			continue
 		}
-		ids, err := b.mentalModelScopeIDs(ctx, s.NamespaceID)
-		if err != nil {
-			return nil, err
+		ids, ok := scoped[*s.NamespaceID]
+		if !ok {
+			var err error
+			ids, err = b.mentalModelScopeIDs(ctx, *s.NamespaceID)
+			if err != nil {
+				return nil, err
+			}
+			scoped[*s.NamespaceID] = ids
 		}
-		scopes[s.NamespaceID] = ids
+		scopes[i] = ids
 		scopeIDs = append(scopeIDs, ids...)
 	}
 
@@ -813,7 +897,7 @@ func (b *Brain) computeFreshness(ctx context.Context, states []mentalModelState)
 			newest     time.Time
 			newestSeen bool
 		)
-		for _, nsID := range scopes[s.NamespaceID] {
+		for _, nsID := range scopes[i] {
 			if ts, ok := latest[nsID]; ok && (!newestSeen || ts.After(newest)) {
 				newest, newestSeen = ts, true
 			}

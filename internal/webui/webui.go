@@ -1216,18 +1216,25 @@ func (h *Handler) mentalModels(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, errors.New("name and source_query are required"))
 			return
 		}
-		if len(body.Namespaces) == 0 {
-			body.Namespaces = []string{"/"}
+		// No namespace (or "/") means a global model: it reads every namespace and
+		// is available to reflect everywhere. A named namespace scopes it there.
+		var nsID *int64
+		if len(body.Namespaces) > 0 {
+			nsPath := strings.TrimSpace(body.Namespaces[0])
+			if nsPath != "" && nsPath != "/" {
+				id, err := h.Brain.NamespaceIDByPath(r.Context(), nsPath)
+				if !hdl(w, err) {
+					return
+				}
+				nsID = &id
+			}
 		}
-		nsIDs, err := h.Brain.ResolveNamespaceIDs(r.Context(), body.Namespaces)
-		if !hdl(w, err) {
-			return
-		}
-		mm, err := h.Brain.CreateMentalModel(r.Context(), nsIDs[0], brain.CreateMentalModelOptions{
+		mm, err := h.Brain.CreateMentalModel(r.Context(), brain.CreateMentalModelOptions{
 			Name:        body.Name,
 			SourceQuery: body.SourceQuery,
 			Tags:        body.Tags,
 			MaxTokens:   body.MaxTokens,
+			NamespaceID: nsID,
 		})
 		if !hdl(w, err) {
 			return

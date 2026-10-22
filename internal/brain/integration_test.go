@@ -766,9 +766,13 @@ func TestIntegrationReflectNoMemories(t *testing.T) {
 	e := newEnv(t, nil)
 	e.r.chatAnswer = "I don't have any memory about that."
 
+	// Global mental models are searched from every namespace by design, so this
+	// test has to ask for raw memories only: it is about an empty namespace, not
+	// about an empty memory store.
 	result, err := e.b.Reflect(e.ctx, "what is the meaning of life?", ReflectOptions{
-		Namespaces: []string{e.ns},
-		Limit:      5,
+		Namespaces:       []string{e.ns},
+		Limit:            5,
+		SkipMentalModels: true,
 	})
 	if err != nil {
 		t.Fatalf("Reflect: %v", err)

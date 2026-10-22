@@ -227,3 +227,19 @@ func indexOf(s, substr string) int {
 	}
 	return -1
 }
+
+func TestAutomaticRefreshDue(t *testing.T) {
+	now := time.Now()
+	recent := now.Add(-30 * time.Minute)
+	old := now.Add(-2 * time.Hour)
+
+	if automaticRefreshDue(models.MentalModel{}, now) != true {
+		t.Error("a model that never refreshed is due")
+	}
+	if automaticRefreshDue(models.MentalModel{LastRefreshedAt: &recent}, now) {
+		t.Error("a model refreshed 30 minutes ago is throttled")
+	}
+	if !automaticRefreshDue(models.MentalModel{LastRefreshedAt: &old}, now) {
+		t.Error("a model refreshed two hours ago is due")
+	}
+}

@@ -557,7 +557,7 @@ func main() {
 						ArgsUsage: "<name> <source-query>",
 						Action:    mentalModelCreateCmd,
 						Flags: []cli.Flag{
-							&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "Namespace path"},
+							&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "File the model in this namespace and scope it there; / means all namespaces (global)"},
 							&cli.StringSliceFlag{Name: "tags", Usage: "Tags for scoped visibility"},
 							&cli.IntFlag{Name: "max-tokens", Value: 2048, Usage: "Maximum tokens for generated content"},
 						},

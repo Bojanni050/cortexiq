@@ -307,15 +307,21 @@ func mentalModelCreateCmd(ctx context.Context, cmd *cli.Command) error {
 	maxTokens := cmd.Int("max-tokens")
 
 	bc := getBootstrap(cmd)
-	nsIDs, err := bc.Brain.ResolveNamespaceIDs(ctx, []string{namespace})
-	if err != nil || len(nsIDs) == 0 {
-		return fmt.Errorf("namespace %q not found", namespace)
+	// "/" (the default) means a global model; a named namespace scopes it there.
+	var nsID *int64
+	if namespace != "" && namespace != "/" {
+		id, err := bc.Brain.NamespaceIDByPath(ctx, namespace)
+		if err != nil {
+			return fmt.Errorf("namespace %q not found", namespace)
+		}
+		nsID = &id
 	}
-	mm, err := bc.Brain.CreateMentalModel(ctx, nsIDs[0], brain.CreateMentalModelOptions{
+	mm, err := bc.Brain.CreateMentalModel(ctx, brain.CreateMentalModelOptions{
 		Name:        name,
 		SourceQuery: query,
 		Tags:        tags,
 		MaxTokens:   maxTokens,
+		NamespaceID: nsID,
 	})
 	if err != nil {
 		return err

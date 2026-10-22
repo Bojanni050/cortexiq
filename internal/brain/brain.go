@@ -305,6 +305,17 @@ func (b *Brain) resolveNamespaceID(ctx context.Context, path string) (int64, err
 	return id, nil
 }
 
+// NamespaceIDByPath resolves exactly one path to its own namespace ID, without
+// descendants. Use it when a row is filed under a namespace: ResolveNamespaceIDs
+// answers "/" with every namespace, and taking its first element would file the
+// row under an arbitrary one.
+func (b *Brain) NamespaceIDByPath(ctx context.Context, path string) (int64, error) {
+	if err := validatePath(path); err != nil {
+		return 0, err
+	}
+	return b.resolveNamespaceID(ctx, path)
+}
+
 // ResolveNamespaceIDs resolves a list of paths to namespace IDs.
 // Each path matches itself and all descendants. For "/", returns all IDs.
 // Returns ErrNamespacesRequired if paths is empty.

@@ -2,9 +2,12 @@
 package brain
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/pgvector/pgvector-go"
 )
 
 // TestMentalModelCreateStoresGrounding checks that a new model records both the
@@ -13,7 +16,8 @@ func TestMentalModelCreateStoresGrounding(t *testing.T) {
 	e := newEnv(t, nil)
 	factID := e.insertFact(t, "the kafka cluster runs three brokers", nil)
 
-	mm, err := e.b.CreateMentalModel(e.ctx, e.nsID, CreateMentalModelOptions{
+	mm, err := e.b.CreateMentalModel(e.ctx, CreateMentalModelOptions{
+		NamespaceID: &e.nsID,
 		Name:        "Kafka",
 		SourceQuery: "What do we know about the kafka cluster?",
 	})
@@ -44,7 +48,8 @@ func TestMentalModelCreateStoresGrounding(t *testing.T) {
 func TestMentalModelCreateRefusesUngrounded(t *testing.T) {
 	e := newEnv(t, nil)
 
-	_, err := e.b.CreateMentalModel(e.ctx, e.nsID, CreateMentalModelOptions{
+	_, err := e.b.CreateMentalModel(e.ctx, CreateMentalModelOptions{
+		NamespaceID: &e.nsID,
 		Name:        "Empty",
 		SourceQuery: "What do we know about anything?",
 	})
@@ -59,7 +64,8 @@ func TestMentalModelStaleAfterNewMemory(t *testing.T) {
 	e := newEnv(t, nil)
 	e.insertFact(t, "the kafka cluster runs three brokers", nil)
 
-	mm, err := e.b.CreateMentalModel(e.ctx, e.nsID, CreateMentalModelOptions{
+	mm, err := e.b.CreateMentalModel(e.ctx, CreateMentalModelOptions{
+		NamespaceID: &e.nsID,
 		Name:        "Kafka",
 		SourceQuery: "What do we know about the kafka cluster?",
 	})
@@ -92,7 +98,8 @@ func TestMentalModelStaleAfterDeletedGrounding(t *testing.T) {
 	e := newEnv(t, nil)
 	factID := e.insertFact(t, "the kafka cluster runs three brokers", nil)
 
-	mm, err := e.b.CreateMentalModel(e.ctx, e.nsID, CreateMentalModelOptions{
+	mm, err := e.b.CreateMentalModel(e.ctx, CreateMentalModelOptions{
+		NamespaceID: &e.nsID,
 		Name:        "Kafka",
 		SourceQuery: "What do we know about the kafka cluster?",
 	})
@@ -119,7 +126,8 @@ func TestMentalModelRefreshKeepsContentWhenUngrounded(t *testing.T) {
 	e := newEnv(t, nil)
 	factID := e.insertFact(t, "the kafka cluster runs three brokers", nil)
 
-	mm, err := e.b.CreateMentalModel(e.ctx, e.nsID, CreateMentalModelOptions{
+	mm, err := e.b.CreateMentalModel(e.ctx, CreateMentalModelOptions{
+		NamespaceID: &e.nsID,
 		Name:        "Kafka",
 		SourceQuery: "What do we know about the kafka cluster?",
 	})
@@ -171,7 +179,8 @@ func TestMentalModelRefreshClearsFailure(t *testing.T) {
 	e := newEnv(t, nil)
 	factID := e.insertFact(t, "the kafka cluster runs three brokers", nil)
 
-	mm, err := e.b.CreateMentalModel(e.ctx, e.nsID, CreateMentalModelOptions{
+	mm, err := e.b.CreateMentalModel(e.ctx, CreateMentalModelOptions{
+		NamespaceID: &e.nsID,
 		Name:        "Kafka",
 		SourceQuery: "What do we know about the kafka cluster?",
 	})
@@ -217,7 +226,8 @@ func TestMentalModelStaleWithoutGrounding(t *testing.T) {
 	e := newEnv(t, nil)
 	e.insertFact(t, "the kafka cluster runs three brokers", nil)
 
-	mm, err := e.b.CreateMentalModel(e.ctx, e.nsID, CreateMentalModelOptions{
+	mm, err := e.b.CreateMentalModel(e.ctx, CreateMentalModelOptions{
+		NamespaceID: &e.nsID,
 		Name:        "Kafka",
 		SourceQuery: "What do we know about the kafka cluster?",
 	})
@@ -247,7 +257,8 @@ func TestRefreshStaleMentalModels(t *testing.T) {
 	e := newEnv(t, nil)
 	e.insertFact(t, "the kafka cluster runs three brokers", nil)
 
-	mm, err := e.b.CreateMentalModel(e.ctx, e.nsID, CreateMentalModelOptions{
+	mm, err := e.b.CreateMentalModel(e.ctx, CreateMentalModelOptions{
+		NamespaceID: &e.nsID,
 		Name:        "Kafka",
 		SourceQuery: "What do we know about the kafka cluster?",
 	})
@@ -265,6 +276,12 @@ func TestRefreshStaleMentalModels(t *testing.T) {
 
 	time.Sleep(10 * time.Millisecond)
 	e.insertFact(t, "the kafka cluster was upgraded to version 4", nil)
+	// The sweep rate-limits itself to one refresh per hour; backdate the model so
+	// this run is due.
+	if _, err := e.b.pool.Exec(e.ctx,
+		`UPDATE mental_models SET last_refreshed_at = now() - interval '2 hours' WHERE id = $1`, mm.ID); err != nil {
+		t.Fatalf("backdate model: %v", err)
+	}
 
 	summary, err = e.b.refreshStaleMentalModels(e.ctx, e.nsID)
 	if err != nil {
@@ -281,4 +298,132 @@ func TestRefreshStaleMentalModels(t *testing.T) {
 	if got.IsStale {
 		t.Fatalf("model should be fresh after the sweep (reason %q)", got.StaleReason)
 	}
+}
+
+// insertFactIn writes a fact in a namespace other than the test's own.
+func (e *testEnv) insertFactIn(t *testing.T, nsID int64, content string) int64 {
+	t.Helper()
+	vec, _ := fakeEmbedder{}.Embed(e.ctx, content)
+	var id int64
+	err := e.b.pool.QueryRow(e.ctx,
+		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, valid_from)
+		 VALUES ($1, $2, $3, 'fake', 0.8, now()) RETURNING id`,
+		nsID, content, pgvector.NewVector(vec),
+	).Scan(&id)
+	if err != nil {
+		t.Fatalf("insert fact in namespace: %v", err)
+	}
+	return id
+}
+
+// TestGlobalMentalModelReadsAllNamespaces checks that a model without a
+// namespace is built from memories elsewhere, is visible everywhere, and goes
+// stale when anything changes.
+func TestGlobalMentalModelReadsAllNamespaces(t *testing.T) {
+	e := newEnv(t, nil)
+	other := e.ns + "-other"
+	otherID, err := e.b.CreateNamespace(e.ctx, other, "other", "")
+	if err != nil {
+		t.Fatalf("CreateNamespace(%q): %v", other, err)
+	}
+	otherFact := e.insertFactIn(t, otherID, "zebraqq migration uses kafkazz brokers")
+
+	mm, err := e.b.CreateMentalModel(e.ctx, CreateMentalModelOptions{
+		Name:        "Kafka",
+		SourceQuery: "What do we know about zebraqq?",
+	})
+	if err != nil {
+		t.Fatalf("CreateMentalModel: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = e.b.pool.Exec(context.Background(), `DELETE FROM mental_models WHERE id = $1`, mm.ID)
+	})
+	if mm.NamespaceID != nil {
+		t.Fatalf("a model created without a namespace should be global, got namespace %d", *mm.NamespaceID)
+	}
+	if !containsID(mm.BasedOn.Facts, otherFact) {
+		t.Fatalf("based_on facts = %v, want it to include [%d] from the sibling namespace", mm.BasedOn.Facts, otherFact)
+	}
+
+	// A reflect scoped to the empty namespace still finds the global model,
+	// alongside any global models an earlier test left behind.
+	results, err := e.b.SearchMentalModels(e.ctx, []string{e.ns}, "zebraqq", 20, nil)
+	if err != nil {
+		t.Fatalf("SearchMentalModels: %v", err)
+	}
+	found := false
+	for _, r := range results {
+		if r.ID == mm.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("global model %d not visible from %s", mm.ID, e.ns)
+	}
+
+	// A fact in yet another namespace makes it stale.
+	time.Sleep(10 * time.Millisecond)
+	e.insertFact(t, "a local zebraqq broker was added", nil)
+	got, err := e.b.GetMentalModel(e.ctx, mm.ID)
+	if err != nil {
+		t.Fatalf("GetMentalModel: %v", err)
+	}
+	if !got.IsStale || got.StaleReason != "new_memories" {
+		t.Fatalf("stale = %v, reason = %q; want new_memories", got.IsStale, got.StaleReason)
+	}
+}
+
+// TestScopedMentalModelStaysInItsNamespace checks the other half: a model filed
+// in a namespace is not visible elsewhere and ignores memories outside it.
+func TestScopedMentalModelStaysInItsNamespace(t *testing.T) {
+	e := newEnv(t, nil)
+	e.insertFact(t, "the kafka cluster runs three brokers", nil)
+
+	mm, err := e.b.CreateMentalModel(e.ctx, CreateMentalModelOptions{
+		NamespaceID: &e.nsID,
+		Name:        "Kafka",
+		SourceQuery: "What do we know about the kafka cluster?",
+	})
+	if err != nil {
+		t.Fatalf("CreateMentalModel: %v", err)
+	}
+	if mm.NamespaceID == nil || *mm.NamespaceID != e.nsID {
+		t.Fatal("scoped model should keep its namespace")
+	}
+
+	other := e.ns + "-other"
+	otherID, err := e.b.CreateNamespace(e.ctx, other, "other", "")
+	if err != nil {
+		t.Fatalf("CreateNamespace(%q): %v", other, err)
+	}
+
+	results, err := e.b.SearchMentalModels(e.ctx, []string{other}, "kafka cluster", 20, nil)
+	if err != nil {
+		t.Fatalf("SearchMentalModels: %v", err)
+	}
+	for _, r := range results {
+		if r.ID == mm.ID {
+			t.Fatalf("scoped model %d leaked into %s", mm.ID, other)
+		}
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	e.insertFactIn(t, otherID, "a fact in the sibling namespace")
+	got, err := e.b.GetMentalModel(e.ctx, mm.ID)
+	if err != nil {
+		t.Fatalf("GetMentalModel: %v", err)
+	}
+	if got.IsStale {
+		t.Fatalf("a memory outside the model's namespace made it stale (%q)", got.StaleReason)
+	}
+}
+
+// containsID reports whether id is in ids.
+func containsID(ids []int64, id int64) bool {
+	for _, got := range ids {
+		if got == id {
+			return true
+		}
+	}
+	return false
 }
