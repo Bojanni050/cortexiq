@@ -138,6 +138,26 @@ dialog .err { color: var(--red); }
 #toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 18px; border-radius: var(--radius-sm); background: var(--panel-2); border: 1px solid var(--border-2); border-left: 3px solid var(--green); box-shadow: 0 12px 32px rgba(0,0,0,.4); display: none; z-index: 100; max-width: 380px; }
 #toast.err { border-left-color: var(--red); }
 
+/* rendered markdown (mental model content) */
+.md { font-size: 13.5px; line-height: 1.6; overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 14px 0 6px; line-height: 1.3; }
+.md h1 { font-size: 18px; } .md h2 { font-size: 16px; } .md h3 { font-size: 14.5px; }
+.md p { margin: 8px 0; }
+.md ul, .md ol { margin: 8px 0; padding-left: 22px; }
+.md li { margin: 3px 0; }
+.md code { font-family: var(--mono); font-size: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+.md pre { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; overflow: auto; margin: 10px 0; }
+.md pre code { background: none; border: 0; padding: 0; }
+.md table { border-collapse: collapse; margin: 10px 0; width: 100%; }
+.md th, .md td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; vertical-align: top; }
+.md th { background: var(--panel-2); }
+.md blockquote { margin: 10px 0; padding: 2px 12px; border-left: 3px solid var(--border-2); color: var(--muted); }
+.md a { color: var(--accent); }
+.md hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
+.md img { max-width: 100%; }
+
 /* graph */
 .gmeta { color: var(--muted); font-size: 12.5px; margin: -4px 0 10px; }
 .gmeta b { color: var(--fg); }
@@ -692,6 +712,53 @@ function mmStale(m) {
   const why = m.stale_reason ? ` title="${esc(m.stale_reason)}"` : '';
   return `<span class="badge abandoned"${why}>stale</span>`;
 }
+/* Markdown for mental model content, bundled under /ui/vendor. Loaded on the
+   tab instead of the shell: it is only needed here. */
+const MD_LIBS = ['marked.umd.js', 'purify.min.js'];
+let mdLibsPromise = null;
+function loadMarkdownLibs() {
+  if (window.marked && window.DOMPurify) return Promise.resolve();
+  if (mdLibsPromise) return mdLibsPromise;
+  mdLibsPromise = MD_LIBS.reduce((p, file) => p.then(() => new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = '/ui/vendor/' + file;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Could not load ' + file));
+    document.head.appendChild(s);
+  })), Promise.resolve());
+  mdLibsPromise.catch(() => { mdLibsPromise = null; });
+  return mdLibsPromise;
+}
+// md renders model content as sanitized markdown. The content is LLM output, so
+// it is never trusted: DOMPurify strips scripts, event handlers and javascript:
+// URLs before it reaches innerHTML.
+function md(text) {
+  if (!text) return '';
+  if (!window.marked || !window.DOMPurify) return `<pre class="md">${esc(text)}</pre>`;
+  return DOMPurify.sanitize(marked.parse(text, { gfm: true, breaks: true }));
+}
+// mdPlain is the one-line preview for the table cell: markdown characters would
+// make the row unreadable, and rendering a truncated document would cut tags.
+function mdPlain(s) {
+  return String(s || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*>\s?/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '• ')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/_([^_]+)_/g, '$1')
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/\|/g, ' ')
+    .replace(/^[-: ]{3,}$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 function mmContent(m) {
   const c = m.content || '';
   if (!c) {
@@ -700,11 +767,14 @@ function mmContent(m) {
     }
     return '<span class="muted">generating…</span>';
   }
-  const short = c.length > 200 ? c.slice(0, 200) + '…' : c;
-  return `<div class="wrap">${esc(short)}</div>` + (c.length > 200 ? `<details style="margin-top:4px"><summary class="muted" style="cursor:pointer">show more</summary><div class="wrap" style="margin-top:4px;white-space:pre-wrap">${esc(c)}</div></details>` : '');
+  const plain = mdPlain(c);
+  const short = plain.length > 240 ? plain.slice(0, 240) + '…' : plain;
+  return `<div class="wrap">${esc(short)}</div>` +
+    (plain.length > 240 ? `<details style="margin-top:4px"><summary class="muted" style="cursor:pointer">show more</summary><div class="md" style="margin-top:4px">${md(c)}</div></details>` : '');
 }
 
 async function renderMentalModels() {
+  await loadMarkdownLibs().catch(() => {});
   await listTab('mental', {
     path: o => '/mental-models' + qs(o),
     headers: ['Name', 'Content', 'Source Query', 'Tags', 'Status', 'Namespace', 'Last Refreshed', ''],
@@ -809,7 +879,7 @@ async function mmView(id) {
     <label>Source query</label><div class="muted" style="margin-bottom:12px">${esc(m.source_query)}</div>
     <label>Tags</label><div style="margin-bottom:12px">${mmTags(m.tags)}</div>
     <label>Scope</label><div class="muted" style="margin-bottom:12px">${m.namespace_id ? esc(nsSlug(m.namespace_id)) : 'all namespaces (global)'}</div>
-    <label>Content</label>${m.content ? `<div class="wrap" style="white-space:pre-wrap;background:var(--panel-2);padding:12px;border-radius:6px;margin-bottom:12px">${esc(m.content)}</div>` : `<div class="muted" style="margin-bottom:12px">generating…</div>`}
+    <label>Content</label>${m.content ? `<div class="md" style="background:var(--panel-2);padding:12px;border-radius:6px;margin-bottom:12px">${md(m.content)}</div>` : `<div class="muted" style="margin-bottom:12px">generating…</div>`}
     ${m.last_refresh_failed_at ? `<div class="err" style="margin-bottom:12px">Last refresh failed ${ts(m.last_refresh_failed_at)}: ${esc(m.last_refresh_error || 'unknown error')}</div>` : ''}
     <div class="muted" style="margin-bottom:12px">Last refreshed: ${m.last_refreshed_at ? ts(m.last_refreshed_at) : 'never'} · Created: ${ts(m.created_at)}</div>
     <div class="actions"><button onclick="dlgClose()">Close</button><button onclick="mmRefresh(${m.id});dlgClose()">Refresh</button><button class="danger" onclick="del('mental-models', ${m.id});dlgClose()">Delete</button></div>`;
