@@ -756,9 +756,9 @@ func mentalModelStaleReason(lastRefreshed, watermark *time.Time, newest time.Tim
 		return "no_watermark"
 	case !grounded:
 		// Models created before based_on existed have content nobody can
-		// account for. Prod proved why that matters: two models created during
-		// an embedder warm-up stored "no information is available" and reflect
-		// then served them as the most relevant knowledge. Re-ground once.
+		// account for, and the old create path stored "no information is
+		// available" when recall found nothing. Treat them as stale so the next
+		// consolidation either re-grounds them or records that it could not.
 		return "no_grounding"
 	case newestSeen && newest.After(*watermark):
 		return "new_memories"
