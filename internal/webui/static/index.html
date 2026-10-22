@@ -683,12 +683,23 @@ function mmTags(tags) {
   return tags.map(t => `<span class="badge">${esc(t)}</span>`).join(' ');
 }
 function mmStale(m) {
+  if (!m.content) {
+    return m.last_refresh_failed_at
+      ? '<span class="badge abandoned">failed</span>'
+      : '<span class="badge pending">generating</span>';
+  }
   if (!m.is_stale) return '<span class="badge active">fresh</span>';
   const why = m.stale_reason ? ` title="${esc(m.stale_reason)}"` : '';
   return `<span class="badge abandoned"${why}>stale</span>`;
 }
 function mmContent(m) {
   const c = m.content || '';
+  if (!c) {
+    if (m.last_refresh_failed_at) {
+      return `<div class="err">generation failed</div><div class="muted wrap">${esc(m.last_refresh_error || '')}</div>`;
+    }
+    return '<span class="muted">generating…</span>';
+  }
   const short = c.length > 200 ? c.slice(0, 200) + '…' : c;
   return `<div class="wrap">${esc(short)}</div>` + (c.length > 200 ? `<details style="margin-top:4px"><summary class="muted" style="cursor:pointer">show more</summary><div class="wrap" style="margin-top:4px;white-space:pre-wrap">${esc(c)}</div></details>` : '');
 }
@@ -746,16 +757,40 @@ async function mmCreate() {
   // is open used to render under its backdrop, which is exactly how a refused
   // create looked like "nothing happened".
   status.className = 'muted';
-  status.textContent = `Generating from ${scoped ? state.ns : 'all namespaces'} — this calls reflect and can take a while…`;
-  btn.disabled = true; btn.textContent = 'Generating…';
+  status.textContent = `Queueing ${scoped ? state.ns : 'all namespaces'}…`;
+  btn.disabled = true;
+  let mm;
   try {
-    await api('/mental-models', { method: 'POST', body: JSON.stringify({
-      name, source_query: query, namespaces, tags, max_tokens: maxTokens }) });
+    mm = await api('/mental-models', { method: 'POST', body: JSON.stringify({
+      name, source_query: query, namespaces, tags, max_tokens: maxTokens, async: true }) });
   } catch (e) {
     stop(e.message);
     return;
   }
-  dlgClose(); refresh(); toast('Mental model created');
+  // Generation runs on the server in the background: close the dialog now so
+  // the list is usable, and let mmWait() replace "generating…" when it lands.
+  dlgClose(); refresh(); toast('Generating in the background…');
+  if (mm && mm.id) mmWait(mm.id);
+}
+
+// mmWait polls one queued model until it has content or a recorded failure. It
+// keeps running when the reader moves to another tab, but only re-renders the
+// mental-model tab so it never yanks them back.
+async function mmWait(id) {
+  for (let i = 0; i < 80; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    let m;
+    try { m = await api(`/mental-models/${id}`); } catch (e) { return; }
+    if (state.tab === 'mental') refresh();
+    if (m.content) {
+      if (state.tab === 'mental') toast('Mental model ready');
+      return;
+    }
+    if (m.last_refresh_failed_at) {
+      toast('Generation failed: ' + (m.last_refresh_error || 'unknown error'), true);
+      return;
+    }
+  }
 }
 async function mmRefresh(id) {
   toast('Refreshing (this calls reflect)…');
@@ -774,7 +809,7 @@ async function mmView(id) {
     <label>Source query</label><div class="muted" style="margin-bottom:12px">${esc(m.source_query)}</div>
     <label>Tags</label><div style="margin-bottom:12px">${mmTags(m.tags)}</div>
     <label>Scope</label><div class="muted" style="margin-bottom:12px">${m.namespace_id ? esc(nsSlug(m.namespace_id)) : 'all namespaces (global)'}</div>
-    <label>Content</label><div class="wrap" style="white-space:pre-wrap;background:var(--panel-2);padding:12px;border-radius:6px;margin-bottom:12px">${esc(m.content)}</div>
+    <label>Content</label>${m.content ? `<div class="wrap" style="white-space:pre-wrap;background:var(--panel-2);padding:12px;border-radius:6px;margin-bottom:12px">${esc(m.content)}</div>` : `<div class="muted" style="margin-bottom:12px">generating…</div>`}
     ${m.last_refresh_failed_at ? `<div class="err" style="margin-bottom:12px">Last refresh failed ${ts(m.last_refresh_failed_at)}: ${esc(m.last_refresh_error || 'unknown error')}</div>` : ''}
     <div class="muted" style="margin-bottom:12px">Last refreshed: ${m.last_refreshed_at ? ts(m.last_refreshed_at) : 'never'} · Created: ${ts(m.created_at)}</div>
     <div class="actions"><button onclick="dlgClose()">Close</button><button onclick="mmRefresh(${m.id});dlgClose()">Refresh</button><button class="danger" onclick="del('mental-models', ${m.id});dlgClose()">Delete</button></div>`;

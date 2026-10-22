@@ -427,3 +427,71 @@ func containsID(ids []int64, id int64) bool {
 	}
 	return false
 }
+
+// TestMentalModelQueuedGeneration checks the async split: the insert returns an
+// empty row immediately, and RefreshMentalModel fills it.
+func TestMentalModelQueuedGeneration(t *testing.T) {
+	e := newEnv(t, nil)
+	e.insertFact(t, "the kafka cluster runs three brokers", nil)
+
+	m, err := e.b.CreateMentalModelQueued(e.ctx, CreateMentalModelOptions{
+		Name:        "Kafka",
+		SourceQuery: "What do we know about the kafka cluster?",
+	})
+	if err != nil {
+		t.Fatalf("CreateMentalModelQueued: %v", err)
+	}
+	if m.Content != "" || m.LastRefreshedAt != nil || m.LastMemorySeenAt != nil {
+		t.Fatalf("queued model should be empty and unrefreshed: %+v", m)
+	}
+
+	got, err := e.b.GetMentalModel(e.ctx, m.ID)
+	if err != nil {
+		t.Fatalf("GetMentalModel: %v", err)
+	}
+	if !got.IsStale || got.StaleReason != "never_refreshed" {
+		t.Fatalf("queued model should read as never_refreshed, got %v/%q", got.IsStale, got.StaleReason)
+	}
+
+	updated, err := e.b.RefreshMentalModel(e.ctx, m.ID)
+	if err != nil {
+		t.Fatalf("RefreshMentalModel: %v", err)
+	}
+	if updated.Content == "" {
+		t.Fatal("refresh should fill the queued model")
+	}
+	if updated.LastRefreshedAt == nil || updated.LastMemorySeenAt == nil {
+		t.Fatal("refresh should stamp both clocks")
+	}
+}
+
+// TestQueuedMentalModelRecoversOnSweep checks the crash path: a queued row whose
+// background generation never ran is picked up by the consolidation sweep.
+func TestQueuedMentalModelRecoversOnSweep(t *testing.T) {
+	e := newEnv(t, nil)
+	e.insertFact(t, "the kafka cluster runs three brokers", nil)
+
+	m, err := e.b.CreateMentalModelQueued(e.ctx, CreateMentalModelOptions{
+		NamespaceID: &e.nsID,
+		Name:        "Kafka",
+		SourceQuery: "What do we know about the kafka cluster?",
+	})
+	if err != nil {
+		t.Fatalf("CreateMentalModelQueued: %v", err)
+	}
+
+	summary, err := e.b.refreshStaleMentalModels(e.ctx, e.nsID)
+	if err != nil {
+		t.Fatalf("refreshStaleMentalModels: %v", err)
+	}
+	if summary.Refreshed != 1 {
+		t.Fatalf("queued model should be swept, got %+v", summary)
+	}
+	got, err := e.b.GetMentalModel(e.ctx, m.ID)
+	if err != nil {
+		t.Fatalf("GetMentalModel: %v", err)
+	}
+	if got.Content == "" || got.LastRefreshedAt == nil {
+		t.Fatal("sweep should have generated the queued model")
+	}
+}

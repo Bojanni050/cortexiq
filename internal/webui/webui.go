@@ -3,11 +3,13 @@
 package webui
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -1207,6 +1209,10 @@ func (h *Handler) mentalModels(w http.ResponseWriter, r *http.Request) {
 			Namespaces  []string `json:"namespaces"`
 			Tags        []string `json:"tags"`
 			MaxTokens   int      `json:"max_tokens"`
+			// Async returns as soon as the row exists and generates its content
+			// in the background. The dashboard uses it so the dialog can close
+			// immediately instead of holding the user for a 30-second reflect.
+			Async bool `json:"async"`
 		}
 		if err := readBody(r, &body); err != nil {
 			writeErr(w, http.StatusBadRequest, err)
@@ -1229,13 +1235,33 @@ func (h *Handler) mentalModels(w http.ResponseWriter, r *http.Request) {
 				nsID = &id
 			}
 		}
-		mm, err := h.Brain.CreateMentalModel(r.Context(), brain.CreateMentalModelOptions{
+		opts := brain.CreateMentalModelOptions{
 			Name:        body.Name,
 			SourceQuery: body.SourceQuery,
 			Tags:        body.Tags,
 			MaxTokens:   body.MaxTokens,
 			NamespaceID: nsID,
-		})
+		}
+		if body.Async {
+			mm, err := h.Brain.CreateMentalModelQueued(r.Context(), opts)
+			if !hdl(w, err) {
+				return
+			}
+			// The request context dies with the response, so the refresh needs
+			// its own lifetime. It keeps the request's values (trace/scope) but
+			// not its cancellation.
+			base := context.WithoutCancel(r.Context())
+			go func(id int64) {
+				ctx, cancel := context.WithTimeout(base, 5*time.Minute)
+				defer cancel()
+				if _, err := h.Brain.RefreshMentalModel(ctx, id); err != nil {
+					log.Printf("mental model %d: background generation failed: %v", id, err)
+				}
+			}(mm.ID)
+			writeJSON(w, http.StatusAccepted, mm)
+			return
+		}
+		mm, err := h.Brain.CreateMentalModel(r.Context(), opts)
 		if !hdl(w, err) {
 			return
 		}

@@ -130,6 +130,8 @@ The same operations are available as MCP tools (`mental_model_create`, `mental_m
 
 **Refreshes are guarded and automatic.** Consolidation refreshes up to three stale models per namespace per run, oldest first, and never touches the same model more than once an hour (a global model sees every change, so without that floor every five-minute run would buy it again). A refresh that finds no memories to ground the summary keeps the existing content and stamps `last_refresh_failed_at` / `last_refresh_error` instead of replacing a good summary with "I don't know"; automatic refresh then pauses that model until an explicit `mental-model refresh` succeeds. Creating a mental model in a namespace with no memories fails with the same `not grounded` error rather than storing an empty one.
 
+The dashboard creates models in the background: the dialog closes as soon as the row exists, the list shows `generating…`, and the row is replaced with the synthesized content (or the failure) when it lands. The API does the same with `"async": true` and answers `202 Accepted`; without it the POST blocks and returns the finished model, which is the path the CLI and MCP tools use.
+
 **Mental models vs facts vs reflect:**
 
 | | Facts | Reflect | Mental model |
