@@ -495,3 +495,75 @@ func TestQueuedMentalModelRecoversOnSweep(t *testing.T) {
 		t.Fatal("sweep should have generated the queued model")
 	}
 }
+
+// TestUpdateMentalModelMarksSourceStale checks the edit path: a rename keeps
+// the content valid, a new source query marks it stale, and a refresh records
+// the query it answered and clears the mark.
+func TestUpdateMentalModelMarksSourceStale(t *testing.T) {
+	e := newEnv(t, nil)
+	e.insertFact(t, "the kafka cluster runs three brokers", nil)
+
+	mm, err := e.b.CreateMentalModel(e.ctx, CreateMentalModelOptions{
+		NamespaceID: &e.nsID,
+		Name:        "Kafka",
+		SourceQuery: "What do we know about the kafka cluster?",
+	})
+	if err != nil {
+		t.Fatalf("CreateMentalModel: %v", err)
+	}
+	before := mm.Content
+
+	renamed, err := e.b.UpdateMentalModel(e.ctx, mm.ID, UpdateMentalModelOptions{
+		Name:        "Kafka cluster",
+		SourceQuery: mm.SourceQuery,
+		Tags:        mm.Tags,
+		MaxTokens:   mm.MaxTokens,
+	})
+	if err != nil {
+		t.Fatalf("UpdateMentalModel rename: %v", err)
+	}
+	if renamed.Name != "Kafka cluster" {
+		t.Fatalf("name = %q, want renamed", renamed.Name)
+	}
+	got, err := e.b.GetMentalModel(e.ctx, mm.ID)
+	if err != nil {
+		t.Fatalf("GetMentalModel: %v", err)
+	}
+	if got.IsStale {
+		t.Fatalf("a rename should not invalidate the content (reason %q)", got.StaleReason)
+	}
+
+	edited, err := e.b.UpdateMentalModel(e.ctx, mm.ID, UpdateMentalModelOptions{
+		Name:        renamed.Name,
+		SourceQuery: "What do we know about the brokers?",
+		Tags:        renamed.Tags,
+		MaxTokens:   renamed.MaxTokens,
+	})
+	if err != nil {
+		t.Fatalf("UpdateMentalModel query: %v", err)
+	}
+	if edited.Content != before {
+		t.Fatal("editing the query should leave the stored content alone")
+	}
+	got, err = e.b.GetMentalModel(e.ctx, mm.ID)
+	if err != nil {
+		t.Fatalf("GetMentalModel: %v", err)
+	}
+	if !got.IsStale || got.StaleReason != "source_changed" {
+		t.Fatalf("edited query should be stale with source_changed, got %v/%q", got.IsStale, got.StaleReason)
+	}
+
+	if _, err := e.b.RefreshMentalModel(e.ctx, mm.ID); err != nil {
+		t.Fatalf("RefreshMentalModel: %v", err)
+	}
+	got, err = e.b.GetMentalModel(e.ctx, mm.ID)
+	if err != nil {
+		t.Fatalf("GetMentalModel: %v", err)
+	}
+	if got.IsStale {
+		t.Fatalf("refresh should clear source_changed (reason %q)", got.StaleReason)
+	}
+	if got.LastRefreshedSourceQuery != got.SourceQuery {
+		t.Fatalf("refresh should record the query it answered: %q vs %q", got.LastRefreshedSourceQuery, got.SourceQuery)
+	}
+}

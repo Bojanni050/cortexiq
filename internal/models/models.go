@@ -281,6 +281,10 @@ type MentalModel struct {
 	Tags            []string        `db:"tags" json:"tags"`
 	MaxTokens       int             `db:"max_tokens" json:"max_tokens"`
 	LastRefreshedAt *time.Time      `db:"last_refreshed_at" json:"last_refreshed_at,omitempty"`
+	// LastRefreshedSourceQuery is the query the stored content answers. When the
+	// model is edited to another source query, content and query disagree and
+	// the model is stale until it is refreshed.
+	LastRefreshedSourceQuery string `db:"last_refreshed_source_query" json:"last_refreshed_source_query,omitempty"`
 	// LastMemorySeenAt is the database-time snapshot the current content was
 	// synthesized from. Anything written later makes the model stale.
 	LastMemorySeenAt *time.Time `db:"last_memory_seen_at" json:"last_memory_seen_at,omitempty"`

@@ -1181,6 +1181,37 @@ func (h *Handler) stats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, st)
 }
 
+// generateMentalModelInBackground runs a refresh after the response is sent.
+// The request context dies with the response, so the refresh gets its own
+// lifetime; it keeps the request's values (trace/scope), not its cancellation.
+func (h *Handler) generateMentalModelInBackground(ctx context.Context, id int64) {
+	base := context.WithoutCancel(ctx)
+	go func() {
+		ctx, cancel := context.WithTimeout(base, 5*time.Minute)
+		defer cancel()
+		// A generation may already be running for this model (the sweep, or the
+		// refresh that preceded an edit). Wait for it and try again: dropping the
+		// request would leave the content answering the old question.
+		for attempt := 0; attempt < 10; attempt++ {
+			_, err := h.Brain.RefreshMentalModel(ctx, id)
+			if err == nil {
+				return
+			}
+			if errors.Is(err, brain.ErrMentalModelRefreshInFlight) {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(3 * time.Second):
+					continue
+				}
+			}
+			log.Printf("mental model %d: background generation failed: %v", id, err)
+			return
+		}
+		log.Printf("mental model %d: background generation still in flight after 30s", id)
+	}()
+}
+
 func (h *Handler) mentalModels(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -1250,14 +1281,7 @@ func (h *Handler) mentalModels(w http.ResponseWriter, r *http.Request) {
 			// The request context dies with the response, so the refresh needs
 			// its own lifetime. It keeps the request's values (trace/scope) but
 			// not its cancellation.
-			base := context.WithoutCancel(r.Context())
-			go func(id int64) {
-				ctx, cancel := context.WithTimeout(base, 5*time.Minute)
-				defer cancel()
-				if _, err := h.Brain.RefreshMentalModel(ctx, id); err != nil {
-					log.Printf("mental model %d: background generation failed: %v", id, err)
-				}
-			}(mm.ID)
+			h.generateMentalModelInBackground(r.Context(), mm.ID)
 			writeJSON(w, http.StatusAccepted, mm)
 			return
 		}
@@ -1291,12 +1315,50 @@ func (h *Handler) mentalModelItem(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+		case http.MethodPatch:
+			var body struct {
+				Name        string   `json:"name"`
+				SourceQuery string   `json:"source_query"`
+				Tags        []string `json:"tags"`
+				MaxTokens   int      `json:"max_tokens"`
+			}
+			if err := readBody(r, &body); err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
+			mm, err := h.Brain.UpdateMentalModel(r.Context(), id, brain.UpdateMentalModelOptions{
+				Name:        body.Name,
+				SourceQuery: body.SourceQuery,
+				Tags:        body.Tags,
+				MaxTokens:   body.MaxTokens,
+			})
+			if !hdl(w, err) {
+				return
+			}
+			writeJSON(w, http.StatusOK, mm)
 		default:
 			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
 		}
 	case "refresh":
 		if r.Method != http.MethodPost {
 			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+			return
+		}
+		var body struct {
+			Async bool `json:"async"`
+		}
+		if r.ContentLength > 0 {
+			if err := readBody(r, &body); err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
+		}
+		if _, err := h.Brain.GetMentalModel(r.Context(), id); !hdl(w, err) {
+			return
+		}
+		if body.Async {
+			h.generateMentalModelInBackground(r.Context(), id)
+			writeJSON(w, http.StatusAccepted, map[string]any{"mental_model_id": id, "status": "queued"})
 			return
 		}
 		mm, err := h.Brain.RefreshMentalModel(r.Context(), id)

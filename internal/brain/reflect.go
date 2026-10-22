@@ -59,6 +59,9 @@ type ReflectOptions struct {
 	SkipMentalModels bool
 	// MentalModelTags filters mental model search to models with any of these tags.
 	MentalModelTags []string
+	// Instructions are appended to the system prompt. The default prompt is
+	// written for answering a question; a mental model needs document rules.
+	Instructions string
 }
 
 // reflectSystemPrompt is the system prompt for the reflect synthesis. It tells
@@ -174,7 +177,7 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 	sb.WriteString("\n")
 
 	messages := []reasoner.ChatMessage{
-		{Role: "system", Content: reflectSystemPrompt},
+		{Role: "system", Content: reflectSystemPrompt + instructionsSuffix(opts.Instructions)},
 		{Role: "user", Content: sb.String()},
 	}
 
@@ -190,6 +193,15 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 		MentalModelCount: len(mentalModels),
 		DurationMs:       time.Since(start).Milliseconds(),
 	}, nil
+}
+
+// instructionsSuffix renders caller instructions as an extra system-prompt
+// paragraph, or "" when there are none.
+func instructionsSuffix(instructions string) string {
+	if strings.TrimSpace(instructions) == "" {
+		return ""
+	}
+	return "\n\n" + instructions
 }
 
 // formatMentalModelsForReflect renders curated mental models for the synthesis

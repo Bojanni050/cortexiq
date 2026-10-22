@@ -132,6 +132,8 @@ The same operations are available as MCP tools (`mental_model_create`, `mental_m
 
 The dashboard creates models in the background: the dialog closes as soon as the row exists, the list shows `generating…`, and the row is replaced with the synthesized content (or the failure) when it lands. The API does the same with `"async": true` and answers `202 Accepted`; without it the POST blocks and returns the finished model, which is the path the CLI and MCP tools use.
 
+A model can be edited from the dashboard's **Edit** button (or `PATCH /api/v1/mental-models/<id>`) to change its name, source query, tags or token budget. A rename leaves the stored content valid; changing the source query marks it stale with `stale_reason: "source_changed"` until a refresh rebuilds it, and **Save & refresh** does that in the background. Content is written as a durable document: no citation links, memory ids or agent bookkeeping.
+
 **Mental models vs facts vs reflect:**
 
 | | Facts | Reflect | Mental model |

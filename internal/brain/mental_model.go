@@ -26,8 +26,20 @@ var (
 	ErrMentalModelRefreshInFlight = errors.New("brain: mental model refresh already in progress")
 )
 
+// mentalModelInstructions steer the reflect call that writes a model. Reflect is
+// also the chat-answer path; a durable reference document needs different rules.
+// The citation links the model used to invent ("[Memories[2]](...)") and the
+// agent's own bookkeeping have no place in stored knowledge.
+const mentalModelInstructions = `You are writing a durable reference document about a topic, not answering a chat message.
+- Write a self-contained summary that reads well without the source memories.
+- Do not add citation links, memory ids, or source references. If a memory contains one, drop it.
+- Do not describe the memory system, the agent, or the act of recalling, unless the question is explicitly about them.
+- Prefer durable knowledge (decisions, preferences, architecture, processes) over one-off events and counts.
+- Write clean, grammatical prose; paraphrase fragmentary memories instead of copying their wording.
+- Use Markdown headings and lists when they help.`
+
 const mentalModelColumns = `id, namespace_id, name, source_query, content, embedding,
-	embedding_model, tags, max_tokens, last_refreshed_at, last_memory_seen_at,
+	embedding_model, tags, max_tokens, last_refreshed_at, last_refreshed_source_query, last_memory_seen_at,
 	last_refresh_failed_at, last_refresh_error, based_on, created_at, updated_at, deleted_at`
 
 // maxMentalModelRefreshesPerConsolidation bounds the LLM work one consolidation
@@ -43,14 +55,16 @@ const minAutomaticMentalModelRefresh = time.Hour
 
 // MentalModelSearchResult is a mental model hit from a similarity search.
 type MentalModelSearchResult struct {
-	ID               int64      `json:"id"`
-	NamespaceID      *int64     `json:"namespace_id,omitempty"`
-	Name             string     `json:"name"`
-	Content          string     `json:"content"`
-	Tags             []string   `json:"tags"`
-	Relevance        float32    `json:"relevance"`
-	LastRefreshedAt  *time.Time `json:"last_refreshed_at,omitempty"`
-	LastMemorySeenAt *time.Time `json:"last_memory_seen_at,omitempty"`
+	ID                       int64      `json:"id"`
+	NamespaceID              *int64     `json:"namespace_id,omitempty"`
+	Name                     string     `json:"name"`
+	Content                  string     `json:"content"`
+	SourceQuery              string     `json:"source_query"`
+	LastRefreshedSourceQuery string     `json:"last_refreshed_source_query,omitempty"`
+	Tags                     []string   `json:"tags"`
+	Relevance                float32    `json:"relevance"`
+	LastRefreshedAt          *time.Time `json:"last_refreshed_at,omitempty"`
+	LastMemorySeenAt         *time.Time `json:"last_memory_seen_at,omitempty"`
 	// BasedOn is carried for the staleness check and not exposed: the search
 	// result is a snippet, and the grounding is available on mental_model_get.
 	BasedOn     models.BasedOn `json:"-"`
@@ -92,8 +106,8 @@ func scanMentalModel(m *models.MentalModel, row rowScanner) error {
 	)
 	if err := row.Scan(
 		&m.ID, &m.NamespaceID, &m.Name, &m.SourceQuery, &m.Content, &m.Embedding,
-		&m.EmbeddingModel, &m.Tags, &m.MaxTokens, &m.LastRefreshedAt, &m.LastMemorySeenAt,
-		&m.LastRefreshFailedAt, &lastRefreshErr, &basedOn,
+		&m.EmbeddingModel, &m.Tags, &m.MaxTokens, &m.LastRefreshedAt, &m.LastRefreshedSourceQuery,
+		&m.LastMemorySeenAt, &m.LastRefreshFailedAt, &lastRefreshErr, &basedOn,
 		&m.CreatedAt, &m.UpdatedAt, &m.DeletedAt,
 	); err != nil {
 		return err
@@ -219,6 +233,7 @@ func (b *Brain) CreateMentalModel(ctx context.Context, opts CreateMentalModelOpt
 		// A mental model is synthesized from raw memories. Its siblings would
 		// make it a copy of what other models already believe.
 		SkipMentalModels: true,
+		Instructions:     mentalModelInstructions,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("generate mental model content: %w", err)
@@ -239,8 +254,8 @@ func (b *Brain) CreateMentalModel(ctx context.Context, opts CreateMentalModelOpt
 
 	var m models.MentalModel
 	err = scanMentalModel(&m, b.pool.QueryRow(ctx, `
-		INSERT INTO mental_models (namespace_id, name, source_query, content, embedding, embedding_model, tags, max_tokens, last_refreshed_at, last_memory_seen_at, based_on)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), $9, $10)
+		INSERT INTO mental_models (namespace_id, name, source_query, content, embedding, embedding_model, tags, max_tokens, last_refreshed_at, last_refreshed_source_query, last_memory_seen_at, based_on)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), $3, $9, $10)
 		RETURNING `+mentalModelColumns,
 		opts.NamespaceID, name, query, reflectResult.Answer,
 		pgvector.NewVector(vec), b.embedder.Model(), tags, maxTokens, cutoff, basedOn))
@@ -430,7 +445,8 @@ func (b *Brain) SearchMentalModels(ctx context.Context, namespaceSlugs []string,
 	args = append(args, limit)
 
 	rows, err := b.pool.Query(ctx, `
-		SELECT id, namespace_id, name, content, tags, last_refreshed_at, last_memory_seen_at, based_on,
+		SELECT id, namespace_id, name, content, source_query, last_refreshed_source_query,
+		       tags, last_refreshed_at, last_memory_seen_at, based_on,
 		       1 - (embedding <=> $2) AS relevance
 		FROM mental_models
 		WHERE `+where+`
@@ -447,8 +463,9 @@ func (b *Brain) SearchMentalModels(ctx context.Context, namespaceSlugs []string,
 			r       MentalModelSearchResult
 			basedOn []byte
 		)
-		if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Name, &r.Content, &r.Tags,
-			&r.LastRefreshedAt, &r.LastMemorySeenAt, &basedOn, &r.Relevance); err != nil {
+		if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Name, &r.Content, &r.SourceQuery,
+			&r.LastRefreshedSourceQuery, &r.Tags, &r.LastRefreshedAt, &r.LastMemorySeenAt,
+			&basedOn, &r.Relevance); err != nil {
 			return nil, fmt.Errorf("scan mental model search: %w", err)
 		}
 		if len(basedOn) > 0 {
@@ -506,6 +523,7 @@ func (b *Brain) RefreshMentalModel(ctx context.Context, id int64) (*models.Menta
 		Limit:            20,
 		MaxTokens:        m.MaxTokens,
 		SkipMentalModels: true,
+		Instructions:     mentalModelInstructions,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("refresh mental model content: %w", err)
@@ -524,10 +542,11 @@ func (b *Brain) RefreshMentalModel(ctx context.Context, id int64) (*models.Menta
 	err = scanMentalModel(&updated, b.pool.QueryRow(ctx, `
 		UPDATE mental_models
 		SET content = $1, based_on = $2, last_refreshed_at = now(), last_memory_seen_at = $3,
+		    last_refreshed_source_query = $5,
 		    last_refresh_failed_at = NULL, last_refresh_error = NULL, updated_at = now()
 		WHERE id = $4 AND deleted_at IS NULL
 		RETURNING `+mentalModelColumns,
-		reflectResult.Answer, basedOn, cutoff, id))
+		reflectResult.Answer, basedOn, cutoff, id, m.SourceQuery))
 	if err == pgx.ErrNoRows {
 		return nil, ErrMentalModelNotFound
 	}
@@ -673,6 +692,64 @@ func (b *Brain) listMentalModelsForSweep(ctx context.Context, nsID int64) ([]mod
 		return nil, err
 	}
 	return result, nil
+}
+
+// UpdateMentalModelOptions edits the definition of a model. Scope (global vs a
+// namespace) is fixed at creation: moving content between scopes is a different
+// decision than fixing its name or question.
+type UpdateMentalModelOptions struct {
+	Name        string
+	SourceQuery string
+	Tags        []string
+	MaxTokens   int
+}
+
+// UpdateMentalModel edits a model's name, source query, tags and token budget.
+// Content and watermarks are left alone: a changed query is detected as
+// source_changed and the next refresh rebuilds the document. The embedding
+// follows the query, because search matches the question a model answers.
+func (b *Brain) UpdateMentalModel(ctx context.Context, id int64, opts UpdateMentalModelOptions) (*models.MentalModel, error) {
+	name, query, tags, maxTokens, err := createMentalModelInput(CreateMentalModelOptions{
+		Name:        opts.Name,
+		SourceQuery: opts.SourceQuery,
+		Tags:        opts.Tags,
+		MaxTokens:   opts.MaxTokens,
+	})
+	if err != nil {
+		return nil, err
+	}
+	current, err := b.getMentalModel(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	var updated models.MentalModel
+	if query == current.SourceQuery {
+		err = scanMentalModel(&updated, b.pool.QueryRow(ctx, `
+			UPDATE mental_models
+			SET name = $1, source_query = $2, tags = $3, max_tokens = $4, updated_at = now()
+			WHERE id = $5 AND deleted_at IS NULL
+			RETURNING `+mentalModelColumns, name, query, tags, maxTokens, id))
+	} else {
+		vec, embedErr := b.embedder.Embed(ctx, query)
+		if embedErr != nil {
+			return nil, fmt.Errorf("embed mental model query: %w", embedErr)
+		}
+		err = scanMentalModel(&updated, b.pool.QueryRow(ctx, `
+			UPDATE mental_models
+			SET name = $1, source_query = $2, tags = $3, max_tokens = $4,
+			    embedding = $5, embedding_model = $6, updated_at = now()
+			WHERE id = $7 AND deleted_at IS NULL
+			RETURNING `+mentalModelColumns,
+			name, query, tags, maxTokens, pgvector.NewVector(vec), b.embedder.Model(), id))
+	}
+	if err == pgx.ErrNoRows {
+		return nil, ErrMentalModelNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("update mental model: %w", err)
+	}
+	return &updated, nil
 }
 
 // DeleteMentalModel soft-deletes a mental model.
@@ -846,10 +923,12 @@ func (b *Brain) retractedGrounding(ctx context.Context, states []mentalModelStat
 type mentalModelState struct {
 	ID int64
 	// NamespaceID is nil for a global model, which reads every namespace.
-	NamespaceID      *int64
-	LastRefreshedAt  *time.Time
-	LastMemorySeenAt *time.Time
-	BasedOn          models.BasedOn
+	NamespaceID              *int64
+	SourceQuery              string
+	LastRefreshedSourceQuery string
+	LastRefreshedAt          *time.Time
+	LastMemorySeenAt         *time.Time
+	BasedOn                  models.BasedOn
 }
 
 type mentalModelFreshness struct {
@@ -860,12 +939,16 @@ type mentalModelFreshness struct {
 
 // mentalModelStaleReason explains why a model is out of date, or returns "".
 // Split out from the queries so the rule is testable without a database.
-func mentalModelStaleReason(lastRefreshed, watermark *time.Time, newest time.Time, newestSeen, retracted, grounded bool) string {
+func mentalModelStaleReason(lastRefreshed, watermark *time.Time, newest time.Time, newestSeen, retracted, grounded, sourceChanged bool) string {
 	switch {
 	case lastRefreshed == nil:
 		return "never_refreshed"
 	case watermark == nil:
 		return "no_watermark"
+	case sourceChanged:
+		// The model was edited to a different question: the stored document
+		// answers the old one.
+		return "source_changed"
 	case !grounded:
 		// Models created before based_on existed have content nobody can
 		// account for, and the old create path stored "no information is
@@ -949,7 +1032,8 @@ func (b *Brain) computeFreshness(ctx context.Context, states []mentalModelState)
 				newest, newestSeen = ts, true
 			}
 		}
-		reason := mentalModelStaleReason(s.LastRefreshedAt, s.LastMemorySeenAt, newest, newestSeen, retracted[s.ID], !basedOnEmpty(s.BasedOn))
+		sourceChanged := s.SourceQuery != s.LastRefreshedSourceQuery
+		reason := mentalModelStaleReason(s.LastRefreshedAt, s.LastMemorySeenAt, newest, newestSeen, retracted[s.ID], !basedOnEmpty(s.BasedOn), sourceChanged)
 		out[i] = mentalModelFreshness{IsStale: reason != "", Reason: reason}
 		if newestSeen {
 			ts := newest
@@ -963,11 +1047,13 @@ func (b *Brain) annotateMentalModels(ctx context.Context, items []models.MentalM
 	states := make([]mentalModelState, len(items))
 	for i := range items {
 		states[i] = mentalModelState{
-			ID:               items[i].ID,
-			NamespaceID:      items[i].NamespaceID,
-			LastRefreshedAt:  items[i].LastRefreshedAt,
-			LastMemorySeenAt: items[i].LastMemorySeenAt,
-			BasedOn:          items[i].BasedOn,
+			ID:                       items[i].ID,
+			NamespaceID:              items[i].NamespaceID,
+			SourceQuery:              items[i].SourceQuery,
+			LastRefreshedSourceQuery: items[i].LastRefreshedSourceQuery,
+			LastRefreshedAt:          items[i].LastRefreshedAt,
+			LastMemorySeenAt:         items[i].LastMemorySeenAt,
+			BasedOn:                  items[i].BasedOn,
 		}
 	}
 	freshness, err := b.computeFreshness(ctx, states)
@@ -986,11 +1072,13 @@ func (b *Brain) annotateMentalModelSearch(ctx context.Context, results []MentalM
 	states := make([]mentalModelState, len(results))
 	for i := range results {
 		states[i] = mentalModelState{
-			ID:               results[i].ID,
-			NamespaceID:      results[i].NamespaceID,
-			LastRefreshedAt:  results[i].LastRefreshedAt,
-			LastMemorySeenAt: results[i].LastMemorySeenAt,
-			BasedOn:          results[i].BasedOn,
+			ID:                       results[i].ID,
+			NamespaceID:              results[i].NamespaceID,
+			SourceQuery:              results[i].SourceQuery,
+			LastRefreshedSourceQuery: results[i].LastRefreshedSourceQuery,
+			LastRefreshedAt:          results[i].LastRefreshedAt,
+			LastMemorySeenAt:         results[i].LastMemorySeenAt,
+			BasedOn:                  results[i].BasedOn,
 		}
 	}
 	freshness, err := b.computeFreshness(ctx, states)
