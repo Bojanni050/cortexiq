@@ -711,6 +711,11 @@ func (h *Handler) namespaceItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug := parts[2]
+	// /api/v1/namespaces/{slug}/config is the namespace's configuration.
+	if len(parts) >= 4 && parts[3] == "config" {
+		h.namespaceConfig(w, r)
+		return
+	}
 	if r.Method != http.MethodGet {
 		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
 		return
@@ -720,6 +725,55 @@ func (h *Handler) namespaceItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, ns)
+}
+
+// namespaceConfig serves /api/v1/namespaces/{slug}/config: GET returns the
+// effective configuration (defaults merged with ancestor and own overrides) and
+// the namespace's own overrides; PUT replaces the own overrides; DELETE removes
+// them so the namespace inherits again. DELETE with ?key= removes one key.
+func (h *Handler) namespaceConfig(w http.ResponseWriter, r *http.Request) {
+	slug := strings.TrimPrefix(r.URL.Path, "/api/v1/namespaces/")
+	slug = strings.TrimSuffix(strings.TrimSuffix(slug, "/config"), "/")
+	switch r.Method {
+	case http.MethodGet:
+		cfg, err := h.Brain.GetNamespaceConfig(r.Context(), slug)
+		if !hdl(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, cfg)
+	case http.MethodPut:
+		var body struct {
+			Overrides map[string]any `json:"overrides"`
+		}
+		if err := readBody(r, &body); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := h.Brain.SetNamespaceConfig(r.Context(), slug, body.Overrides); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		cfg, err := h.Brain.GetNamespaceConfig(r.Context(), slug)
+		if !hdl(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, cfg)
+	case http.MethodDelete:
+		if key := r.URL.Query().Get("key"); key != "" {
+			if err := h.Brain.DeleteNamespaceConfigKey(r.Context(), slug, key); err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
+		} else {
+			if err := h.Brain.DeleteNamespaceConfig(r.Context(), slug); err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+	}
 }
 
 func (h *Handler) goals(w http.ResponseWriter, r *http.Request) {

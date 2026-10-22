@@ -95,6 +95,31 @@ func main() {
 							&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
 						},
 					},
+					{
+						Name:      "config",
+						Usage:     "Manage namespace configuration overrides",
+						ArgsUsage: "<slug>",
+						Commands: []*cli.Command{
+							{
+								Name:      "get",
+								Usage:     "Show the effective configuration for a namespace",
+								ArgsUsage: "<slug>",
+								Action:    namespaceConfigGetCmd,
+							},
+							{
+								Name:      "set",
+								Usage:     "Set overrides for a namespace (key=value pairs)",
+								ArgsUsage: "<slug> [key=value ...]",
+								Action:    namespaceConfigSetCmd,
+							},
+							{
+								Name:      "unset",
+								Usage:     "Remove one override key, or all overrides when no key is given",
+								ArgsUsage: "<slug> [key]",
+								Action:    namespaceConfigUnsetCmd,
+							},
+						},
+					},
 				},
 			},
 			{

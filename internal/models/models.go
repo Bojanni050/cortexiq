@@ -19,6 +19,27 @@ type Namespace struct {
 	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// NamespaceConfig holds the per-namespace configuration overrides. Overrides is
+// a JSON object of key/value pairs; every key is optional and a namespace
+// without a row inherits the global default.
+type NamespaceConfig struct {
+	NamespaceID int64          `db:"namespace_id" json:"namespace_id"`
+	Overrides   map[string]any `db:"overrides" json:"overrides"`
+	UpdatedAt   time.Time      `db:"updated_at" json:"updated_at"`
+}
+
+// NamespaceConfigResponse is what the API returns for one namespace: the
+// effective configuration (defaults merged with the overrides of the namespace
+// and its ancestors, nearest ancestor winning) plus the namespace's own
+// overrides, so a UI can show both what applies and what is set locally.
+type NamespaceConfigResponse struct {
+	NamespaceID int64          `json:"namespace_id"`
+	Slug        string         `json:"slug"`
+	Effective   map[string]any `json:"effective"`
+	Overrides   map[string]any `json:"overrides"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+}
+
 // Episode is an immutable, append-only raw event.
 type Episode struct {
 	ID             int64           `db:"id"`
