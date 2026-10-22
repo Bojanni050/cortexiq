@@ -420,6 +420,23 @@ Use a `ro` token for these two: Le Chat is a third-party cloud, and its connecto
 can only read if the token cannot write. `Vibe` runs locally, so an `rw` token is
 reasonable there.
 
+Both need a public endpoint. A Tailscale `serve` route is **not** enough — `serve`
+binds the tailnet address, so only machines inside the tailnet reach it, and
+neither Mistral's cloud nor a Vibe install elsewhere is. Use `funnel`, which only
+accepts **443, 8443 and 10000**:
+
+```bash
+tailscale funnel --bg --https=10000 http://127.0.0.1:18100
+```
+
+That publishes `https://<host>.<tailnet>.ts.net:10000/mcp` — keep `/mcp` or `/sse`
+on the path, the funnel maps everything else to the MCP listener. Funnel has to be
+enabled once for the tailnet (Tailscale prints an approval link on first use). If
+443 and 8443 are taken — Plesk holds both — 10000 is the only port left; the
+alternative is a reverse proxy in front of `127.0.0.1:18100` with
+`proxy_buffering off` and a long `proxy_read_timeout`, otherwise nginx cuts the
+stream.
+
 Works with any agent that supports MCP — Claude Desktop, Cursor, Windsurf, Cline, Continue, OpenAI Agents, Ollama, OpenRouter, Atlas Cloud-backed setups, and more.
 
 ## What It Does
