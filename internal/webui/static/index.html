@@ -133,6 +133,8 @@ dialog h3 { margin: 0 0 4px; font-size: 17px; }
 dialog label { display: block; font-size: 12px; color: var(--muted); margin: 14px 0 5px; }
 dialog input, dialog textarea, dialog select { width: 100%; }
 dialog textarea { min-height: 76px; resize: vertical; }
+.cfg-input { font-family: var(--mono); font-size: 12.5px; }
+.cfg-input::placeholder { color: var(--dim); font-family: inherit; }
 dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 dialog .err { color: var(--red); }
 #toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 18px; border-radius: var(--radius-sm); background: var(--panel-2); border: 1px solid var(--border-2); border-left: 3px solid var(--green); box-shadow: 0 12px 32px rgba(0,0,0,.4); display: none; z-index: 100; max-width: 380px; }
@@ -1142,7 +1144,7 @@ async function renderNamespaces() {
   };
   await listTab('namespaces', {
     path: o => `/namespaces?limit=${PAGE}&offset=${o}`,
-    headers: ['Namespace', 'Description', 'Episodes', 'Facts', 'Goals', 'Hypotheses', 'Failures', 'Created'],
+    headers: ['Namespace', 'Description', 'Episodes', 'Facts', 'Goals', 'Hypotheses', 'Failures', 'Created', ''],
     fields: ['slug', 'name', 'description'],
     actions: '<button class="primary" onclick="nsDialog()">+ New namespace</button>',
     enrich: async () => {
@@ -1159,6 +1161,7 @@ async function renderNamespaces() {
         <td class="wrap muted">${esc(n.description)}</td>
         ${kinds.map((_, i) => `<td>${cell(n.id, i)}</td>`).join('')}
         <td class="muted">${ts(n.created_at)}</td>
+        <td class="row-actions"><button onclick="nsConfigDialog('${encodeURIComponent(n.slug)}')">config</button></td>
       </tr>`,
   });
 }
@@ -1238,6 +1241,83 @@ async function nsCreate() {
     slug, name: document.getElementById('n-name').value,
     description: document.getElementById('n-desc').value }) });
   dlgClose(); await loadNamespaces(); refresh(); toast('Namespace created');
+}
+
+// Known namespace config keys with their expected type and a short label, in
+// display order. The effective value comes from the API; the own-override
+// column is what this namespace sets itself (ancestors may add more).
+const NS_CONFIG_KEYS = [
+  ['consolidation.similarity_threshold', 'number', 'Consolidation similarity threshold'],
+  ['consolidation.dedup_threshold', 'number', 'Consolidation dedup threshold'],
+  ['consolidation.batch_size', 'integer', 'Consolidation batch size'],
+  ['consolidation.max_llm_calls_per_run', 'integer', 'Max LLM calls per run'],
+  ['recall.hybrid', 'boolean', 'Recall hybrid (vector + keyword)'],
+  ['recall.min_similarity', 'number', 'Recall min similarity'],
+  ['recall.recency_weight', 'number', 'Recall recency weight'],
+  ['remember.social_filter', 'boolean', 'Remember social filter'],
+  ['remember.min_episode_length', 'integer', 'Remember min episode length'],
+];
+
+// nsConfigDialog opens the configuration editor for one namespace: the
+// effective values (defaults merged with ancestor and own overrides) with the
+// own overrides editable. Saving replaces the namespace's own overrides.
+async function nsConfigDialog(encSlug) {
+  const slug = decodeURIComponent(encSlug);
+  const cfg = await api(`/namespaces/${encSlug}/config`);
+  const d = document.getElementById('dlg');
+  const fmt = v => v === true ? 'true' : v === false ? 'false' : String(v);
+  const row = ([key, type, label]) => {
+    const own = Object.prototype.hasOwnProperty.call(cfg.overrides, key);
+    const eff = fmt(cfg.effective[key]);
+    return `<tr>
+      <td><b>${esc(label)}</b><div class="mono">${esc(key)}</div></td>
+      <td class="mono">${esc(eff)}</td>
+      <td><input class="cfg-input" data-key="${esc(key)}" data-type="${type}" value="${own ? esc(fmt(cfg.overrides[key])) : ''}" placeholder="${own ? '' : 'inherit'}"></td>
+      <td class="row-actions">${own ? `<button onclick="nsConfigUnset('${encodeURIComponent(slug)}', '${esc(key)}')">reset</button>` : ''}</td>
+    </tr>`;
+  };
+  d.innerHTML = `<h3>Configuration</h3>
+    <div class="mono" style="margin-bottom:8px">${esc(slug)}</div>
+    <p class="muted" style="margin:0 0 8px">Effective values come from the global default, overridden by this namespace and its ancestors (nearest wins). The middle column is what applies here; the input is this namespace's own override — empty means inherit.</p>
+    <div class="tablewrap"><table><thead><tr><th>Key</th><th>Effective</th><th>Override</th><th></th></tr></thead>
+    <tbody>${NS_CONFIG_KEYS.map(row).join('')}</tbody></table></div>
+    <div class="actions"><button onclick="dlgClose()">Close</button><button class="primary" onclick="nsConfigSave('${encodeURIComponent(slug)}')">Save overrides</button></div>`;
+  d.style.maxWidth = '720px';
+  d.showModal();
+}
+
+// nsConfigSave collects the override inputs, parses them by their declared type,
+// and PUTs them as the namespace's own overrides. Empty inputs are dropped, so
+// clearing a field resets that key to inherit.
+async function nsConfigSave(encSlug) {
+  const slug = decodeURIComponent(encSlug);
+  const overrides = {};
+  document.querySelectorAll('#dlg .cfg-input').forEach(inp => {
+    const raw = inp.value.trim();
+    if (!raw) return;
+    const key = inp.dataset.key, type = inp.dataset.type;
+    if (type === 'boolean') {
+      if (raw !== 'true' && raw !== 'false') { toast(`"${key}" must be true or false`, true); throw new Error('invalid'); }
+      overrides[key] = raw === 'true';
+    } else if (type === 'integer') {
+      const n = Number(raw);
+      if (!Number.isInteger(n)) { toast(`"${key}" must be an integer`, true); throw new Error('invalid'); }
+      overrides[key] = n;
+    } else {
+      const n = Number(raw);
+      if (Number.isNaN(n)) { toast(`"${key}" must be a number`, true); throw new Error('invalid'); }
+      overrides[key] = n;
+    }
+  });
+  await api(`/namespaces/${encSlug}/config`, {
+    method: 'PUT', body: JSON.stringify({ overrides }) });
+  dlgClose(); refresh(); toast('Configuration saved');
+}
+
+// nsConfigUnset removes one override key so the namespace inherits it again.
+async function nsConfigUnset(encSlug, key) {
+  await api(`/namespaces/${encSlug}/config?key=${encodeURIComponent(key)}`, { method: 'DELETE' });
+  dlgClose(); await nsConfigDialog(encSlug); toast('Override reset');
 }
 
 async function purge(kind, id) {
