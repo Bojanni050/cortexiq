@@ -45,6 +45,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/recall", h.recall)
 	api.HandleFunc("/api/v1/reflect", h.reflect)
 	api.HandleFunc("/api/v1/remember", h.remember)
+	api.HandleFunc("/api/v1/tags/timeline", h.tagTimeline)
 	api.HandleFunc("/api/v1/tags", h.tags)
 	api.HandleFunc("/api/v1/namespaces", h.namespaces)
 	api.HandleFunc("/api/v1/namespaces/", h.namespaceItem)
@@ -312,6 +313,15 @@ func sinceParam(r *http.Request) *time.Time {
 		return nil
 	}
 	return since
+}
+
+// monthsParam reads how many months a trend looks back, defaulting to a year.
+func monthsParam(r *http.Request) int {
+	n := intQuery(r, "months")
+	if n <= 0 {
+		return 12
+	}
+	return n
 }
 
 type episodeJSON struct {
@@ -718,6 +728,18 @@ func (h *Handler) tags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items, err := h.Brain.ListTags(r.Context(), namespacesParam(r), sinceParam(r), pagination(r).Limit)
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, nonNil(items))
+}
+
+func (h *Handler) tagTimeline(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	items, err := h.Brain.TagTimeline(r.Context(), namespacesParam(r), tagsParam(r), monthsParam(r))
 	if !hdl(w, err) {
 		return
 	}

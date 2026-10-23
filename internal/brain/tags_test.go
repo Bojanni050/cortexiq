@@ -364,3 +364,59 @@ func TestIntegrationTagScopedConsolidation(t *testing.T) {
 		t.Errorf("untagged episode %d was lost: a normal run after a tag run did not consolidate it", untagged)
 	}
 }
+
+// TagTimeline reports one count per tag per month, which is what the dashboard's
+// trend chart draws. Months without memories are absent rather than zero rows.
+func TestIntegrationTagTimeline(t *testing.T) {
+	e := newEnv(t, nil)
+
+	if _, err := e.b.RememberWith(e.ctx, e.ns, "pgvector stores embeddings inside postgres", RememberOptions{
+		Tags: []string{"beslissing", "pgvector"},
+	}); err != nil {
+		t.Fatalf("RememberWith: %v", err)
+	}
+	if _, err := e.b.RememberWith(e.ctx, e.ns, "the queue is kafka not rabbitmq", RememberOptions{
+		Tags: []string{"bugfix"},
+	}); err != nil {
+		t.Fatalf("RememberWith: %v", err)
+	}
+
+	trend, err := e.b.TagTimeline(e.ctx, []string{e.ns}, nil, 12)
+	if err != nil {
+		t.Fatalf("TagTimeline: %v", err)
+	}
+	month := time.Now().UTC().Format("2006-01")
+	got := make(map[string]TagTrend, len(trend))
+	for _, p := range trend {
+		if p.Month != month {
+			t.Errorf("month = %q, want the current month %q", p.Month, month)
+		}
+		got[p.Tag] = p
+	}
+	if p := got["beslissing"]; p.Episodes != 1 || p.Total != 1 {
+		t.Errorf("beslissing = %+v, want 1 episode", p)
+	}
+	if p := got["bugfix"]; p.Episodes != 1 || p.Total != 1 {
+		t.Errorf("bugfix = %+v, want 1 episode", p)
+	}
+
+	// The tag filter narrows the series to one tag; unknown tags give nothing.
+	only, err := e.b.TagTimeline(e.ctx, []string{e.ns}, []string{"BUGFIX"}, 12)
+	if err != nil {
+		t.Fatalf("TagTimeline filtered: %v", err)
+	}
+	if len(only) != 1 || only[0].Tag != "bugfix" {
+		t.Errorf("filtered trend = %+v, want only bugfix", only)
+	}
+	none, err := e.b.TagTimeline(e.ctx, []string{e.ns}, []string{"no-such-tag"}, 12)
+	if err != nil {
+		t.Fatalf("TagTimeline unknown tag: %v", err)
+	}
+	if len(none) != 0 {
+		t.Errorf("unknown tag returned %+v, want none", none)
+	}
+
+	if _, err := e.b.TagTimeline(e.ctx, []string{e.ns}, []string{"-bad"}, 12); err == nil {
+		t.Error("invalid tag should be rejected, not silently ignored")
+	}
+}

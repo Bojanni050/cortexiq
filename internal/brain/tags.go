@@ -152,3 +152,78 @@ func (b *Brain) ListTags(ctx context.Context, namespaces []string, since *time.T
 	}
 	return out, rows.Err()
 }
+
+// TagTrend is one tag's count inside one month: how much of that tag was
+// recorded then. It answers "how does this tag develop over time", which a
+// single since-bounded total cannot.
+type TagTrend struct {
+	Tag      string `json:"tag"`
+	Month    string `json:"month"` // YYYY-MM, UTC
+	Facts    int    `json:"facts"`
+	Episodes int    `json:"episodes"`
+	Total    int    `json:"total"`
+}
+
+// TagTimeline returns per-month counts for the tags in use, oldest month first.
+// months is how far back it looks (counting the current month); zero means 12.
+// An empty namespace list means all namespaces; an empty tag list means every
+// tag. Months without memories are left out rather than returned as zero rows,
+// so a caller that wants an unbroken axis has to fill the gaps itself.
+func (b *Brain) TagTimeline(ctx context.Context, namespaces []string, tags []string, months int) ([]TagTrend, error) {
+	if months <= 0 {
+		months = 12
+	}
+	if months > 60 {
+		months = 60
+	}
+	tagFilter, err := NormalizeTags(tags)
+	if err != nil {
+		return nil, err
+	}
+	var nsIDs []int64
+	if len(namespaces) > 0 {
+		nsIDs, err = b.resolveNamespaceIDs(ctx, namespaces)
+		if err != nil {
+			return nil, err
+		}
+	}
+	now := time.Now().UTC()
+	since := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -(months - 1), 0)
+
+	rows, err := b.pool.Query(ctx, `
+		SELECT to_char(month, 'YYYY-MM') AS month, tag,
+		       count(*) FILTER (WHERE is_fact)::int AS facts,
+		       count(*) FILTER (WHERE NOT is_fact)::int AS episodes
+		FROM (
+		    SELECT unnest(tags) AS tag, date_trunc('month', created_at) AS month, true AS is_fact
+		      FROM facts
+		     WHERE deleted_at IS NULL AND cardinality(tags) > 0
+		       AND ($1::bigint[] IS NULL OR namespace_id = ANY($1))
+		       AND created_at >= $2
+		    UNION ALL
+		    SELECT unnest(tags) AS tag, date_trunc('month', created_at) AS month, false AS is_fact
+		      FROM episodes
+		     WHERE deleted_at IS NULL AND cardinality(tags) > 0
+		       AND ($1::bigint[] IS NULL OR namespace_id = ANY($1))
+		       AND created_at >= $2
+		) s
+		WHERE ($3::text[] IS NULL OR tag = ANY($3))
+		GROUP BY month, tag
+		ORDER BY month, count(*) DESC, tag`,
+		nsIDs, since, tagFilter)
+	if err != nil {
+		return nil, fmt.Errorf("brain: tag timeline: %w", err)
+	}
+	defer rows.Close()
+
+	out := []TagTrend{}
+	for rows.Next() {
+		var t TagTrend
+		if err := rows.Scan(&t.Month, &t.Tag, &t.Facts, &t.Episodes); err != nil {
+			return nil, fmt.Errorf("brain: tag timeline: %w", err)
+		}
+		t.Total = t.Facts + t.Episodes
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}

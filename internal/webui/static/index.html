@@ -561,15 +561,66 @@ function monthStart() {
   return isoDay(new Date(d.getFullYear(), d.getMonth(), 1));
 }
 
+// monthsSince turns the report's lower bound into a window length, so the trend
+// below the table covers the same period the table counts. Without a bound the
+// window is a year.
+function monthsSince(since) {
+  if (!since) return 12;
+  const d = new Date(since + 'T00:00:00');
+  if (isNaN(d.getTime())) return 12;
+  const now = new Date();
+  const n = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth()) + 1;
+  return Math.max(1, Math.min(n, 60));
+}
+
+// tagTrendChart draws one row of bars per tag over the months. Small multiples
+// rather than grouped or stacked bars: with six tags and twelve months a single
+// group per month is unreadable, and stacking facts on episodes hides the split
+// this whole feature exists to show.
+function tagTrendChart(trend) {
+  if (!trend || !trend.length) return '';
+  const months = [...new Set(trend.map(p => p.month))].sort();
+  const totals = new Map();
+  for (const p of trend) totals.set(p.tag, (totals.get(p.tag) || 0) + p.total);
+  const tags = [...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(e => e[0]);
+  const byKey = new Map(trend.map(p => [p.tag + '|' + p.month, p]));
+  const max = Math.max(1, ...trend.filter(p => tags.includes(p.tag)).map(p => p.total));
+
+  const labelW = 92, barW = 11, gap = 3, rowH = 30;
+  const width = labelW + months.length * (barW + gap);
+  const height = tags.length * rowH + 16;
+  const rows = tags.map((tag, i) => {
+    const bars = months.map((m, j) => {
+      const p = byKey.get(tag + '|' + m);
+      const v = p ? p.total : 0;
+      const h = v ? Math.max(2, Math.round((v / max) * (rowH - 8))) : 0;
+      const x = labelW + j * (barW + gap);
+      const y = i * rowH + (rowH - 4) - h;
+      const tip = `${tag} · ${m}: ${v}${p ? ` (${p.facts}f, ${p.episodes}e)` : ''}`;
+      return `<rect x="${x}" y="${y}" width="${barW}" height="${h}" rx="1.5" fill="${v ? 'var(--accent-2)' : 'transparent'}"><title>${esc(tip)}</title></rect>`;
+    }).join('');
+    return `<text x="0" y="${i * rowH + 15}" fill="var(--muted)" font-size="11">${esc(tag)}</text>${bars}`;
+  }).join('');
+  // Label every third month, plus the last one: twelve labels do not fit.
+  const axis = months.map((m, j) => (j % 3 === 0 || j === months.length - 1)
+    ? `<text x="${labelW + j * (barW + gap)}" y="${tags.length * rowH + 11}" fill="var(--muted)" font-size="9">${esc(m.slice(2))}</text>`
+    : '').join('');
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Tag trend per month">${rows}${axis}</svg>`;
+}
+
 // tagsReport answers "how many decisions this month?". It is a report and not a
 // filter on purpose: the chips above keep filtering all-time rows (the episodes
 // list has no since-bounded path), so a period on the chips would count rows
 // that clicking the chip does not show. since === '' means all time.
 async function tagsReport(since) {
   if (since === undefined) since = monthStart();
-  let rows;
+  let rows, trend;
+  const months = monthsSince(since);
   try {
-    rows = await apiList('/tags' + nsQS('&limit=500' + (since ? '&since=' + encodeURIComponent(since) : '')));
+    [rows, trend] = await Promise.all([
+      apiList('/tags' + nsQS('&limit=500' + (since ? '&since=' + encodeURIComponent(since) : ''))),
+      apiList('/tags/timeline' + nsQS('&months=' + months)),
+    ]);
   } catch (e) {
     toast('Could not load tag counts: ' + e.message, true);
     return;
@@ -590,6 +641,8 @@ async function tagsReport(since) {
     </div>
     <div class="tablewrap"><table><thead><tr><th>Tag</th><th>Facts</th><th>Episodes</th><th>Total</th></tr></thead><tbody>${body}</tbody></table></div>
     <p class="muted" style="margin:12px 0 0;font-size:12px">One memory can carry several tags, so this table does not add up to a unique memory count.</p>
+    ${trend.length ? `<h4 style="margin:18px 0 6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">Trend · last ${months} month${months === 1 ? '' : 's'}</h4><div class="tablewrap">${tagTrendChart(trend)}</div>
+    <p class="muted" style="margin:6px 0 0;font-size:12px">Hover a bar for that month's facts and episodes.</p>` : ''}
     <div class="actions"><button onclick="dlgClose()">Close</button></div>`;
   d.style.maxWidth = '560px';
   if (!d.open) d.showModal();
