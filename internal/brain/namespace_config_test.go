@@ -308,12 +308,23 @@ func TestRememberHonorsNamespaceSocialFilter(t *testing.T) {
 		t.Fatal("override off: episode id = 0, want a stored episode")
 	}
 
-	// A sibling namespace without the override still refuses.
-	sibling := e.ns + "/sibling"
-	if _, err := e.b.CreateNamespace(e.ctx, sibling, "Sibling", ""); err != nil {
-		t.Fatalf("CreateNamespace(%q): %v", sibling, err)
+	// A child of the overridden namespace inherits the override: the nearest
+	// ancestor that sets a key wins, so the filter stays off there.
+	child := e.ns + "/child"
+	if _, err := e.b.CreateNamespace(e.ctx, child, "Child", ""); err != nil {
+		t.Fatalf("CreateNamespace(%q): %v", child, err)
 	}
-	if _, err := e.b.Remember(e.ctx, sibling, "dank je wel!", nil); !errors.Is(err, ErrSocialCloser) {
-		t.Fatalf("sibling without override: err = %v, want ErrSocialCloser", err)
+	if _, err := e.b.Remember(e.ctx, child, "dank je wel!", nil); err != nil {
+		t.Fatalf("child inheriting the override: err = %v, want the write to go through", err)
+	}
+
+	// A namespace outside that subtree has no override anywhere on its path, so
+	// the global default refuses.
+	outside := e.ns + "-outside"
+	if _, err := e.b.CreateNamespace(e.ctx, outside, "Outside", ""); err != nil {
+		t.Fatalf("CreateNamespace(%q): %v", outside, err)
+	}
+	if _, err := e.b.Remember(e.ctx, outside, "dank je wel!", nil); !errors.Is(err, ErrSocialCloser) {
+		t.Fatalf("outside the override: err = %v, want ErrSocialCloser", err)
 	}
 }
