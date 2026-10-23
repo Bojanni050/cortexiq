@@ -247,6 +247,20 @@ func (q *Queries) FetchEpisodes(namespaceID int64, afterID int64, limit int) (st
 	})
 }
 
+// FetchEpisodesByTags is FetchEpisodes narrowed to the episodes carrying every
+// tag. A tag-scoped consolidation is a targeted run, not an incremental sweep:
+// it reads from the start of the namespace, because the checkpoint cannot move
+// over the untagged episodes in between without skipping them forever.
+func (q *Queries) FetchEpisodesByTags(namespaceID int64, afterID int64, limit int, tags []string) (string, []any, error) {
+	args := map[string]any{
+		"namespace_id": namespaceID,
+		"after_id":     afterID,
+		"limit":        limit,
+	}
+	setTags(args, tags)
+	return q.tpl.Execute("fetch_episodes", args)
+}
+
 // FetchFacts returns SQL + args for batch fact read after a checkpoint.
 func (q *Queries) FetchFacts(namespaceID int64, afterID int64, limit int) (string, []any, error) {
 	return q.tpl.Execute("fetch_facts", map[string]any{

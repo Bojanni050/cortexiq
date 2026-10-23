@@ -286,3 +286,81 @@ func TestIntegrationListFiltersByTag(t *testing.T) {
 		t.Errorf("CountFactsWindow(no filter) = %d, %v; want 1", n, err)
 	}
 }
+
+// A tag-scoped consolidation must read only the tagged episodes and must leave
+// the checkpoint alone, so the untagged episodes it skipped are still picked up
+// by the next normal run instead of being lost in the gap.
+func TestIntegrationTagScopedConsolidation(t *testing.T) {
+	e := newEnv(t, nil)
+
+	tagged, err := e.b.RememberWith(e.ctx, e.ns, "we chose pgvector for embeddings", RememberOptions{
+		Tags: []string{"beslissing"},
+	})
+	if err != nil {
+		t.Fatalf("RememberWith: %v", err)
+	}
+	untagged, err := e.b.RememberWith(e.ctx, e.ns, "the queue is kafka not rabbitmq", RememberOptions{})
+	if err != nil {
+		t.Fatalf("RememberWith: %v", err)
+	}
+
+	before, err := e.b.GetOrCreateConsolidationProgress(e.ctx, e.nsID)
+	if err != nil {
+		t.Fatalf("progress before: %v", err)
+	}
+
+	res, err := e.b.ConsolidateWithTags(e.ctx, e.ns, []string{"beslissing"})
+	if err != nil {
+		t.Fatalf("ConsolidateWithTags: %v", err)
+	}
+	if len(res.TagFilter) != 1 || res.TagFilter[0] != "beslissing" {
+		t.Errorf("tag filter = %v, want [beslissing]", res.TagFilter)
+	}
+	if res.EpisodesRead != 1 {
+		t.Errorf("episodes read = %d, want 1 (only the tagged one)", res.EpisodesRead)
+	}
+
+	sources := func() map[int64]bool {
+		t.Helper()
+		rows, err := e.b.pool.Query(e.ctx,
+			`SELECT DISTINCT fs.episode_id FROM fact_sources fs
+			 JOIN facts f ON f.id = fs.fact_id WHERE f.namespace_id = $1`, e.nsID)
+		if err != nil {
+			t.Fatalf("read fact sources: %v", err)
+		}
+		defer rows.Close()
+		out := map[int64]bool{}
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				t.Fatalf("scan fact source: %v", err)
+			}
+			out[id] = true
+		}
+		return out
+	}
+
+	got := sources()
+	if !got[tagged] {
+		t.Errorf("tagged episode %d did not become a fact source", tagged)
+	}
+	if got[untagged] {
+		t.Errorf("untagged episode %d was consolidated by a tag-scoped run", untagged)
+	}
+
+	after, err := e.b.GetOrCreateConsolidationProgress(e.ctx, e.nsID)
+	if err != nil {
+		t.Fatalf("progress after: %v", err)
+	}
+	if after.LastEpisodeID != before.LastEpisodeID {
+		t.Errorf("checkpoint moved from %d to %d on a tag-scoped run", before.LastEpisodeID, after.LastEpisodeID)
+	}
+
+	// The skipped episode must still be reachable by a normal run.
+	if _, err := e.b.Consolidate(e.ctx, e.ns); err != nil {
+		t.Fatalf("Consolidate: %v", err)
+	}
+	if !sources()[untagged] {
+		t.Errorf("untagged episode %d was lost: a normal run after a tag run did not consolidate it", untagged)
+	}
+}

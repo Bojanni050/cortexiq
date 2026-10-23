@@ -510,6 +510,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 	mcpServer.AddTool(mcp.NewTool("consolidate",
 		mcp.WithDescription(render("consolidate_description")),
 		mcp.WithString("namespaces", mcp.Description(render("namespaces_param"))),
+		mcp.WithString("tags", mcp.Description(render("consolidate_tags"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		nsRaw := request.GetString("namespaces", "/")
 		var namespaces []string
@@ -518,6 +519,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 				namespaces = append(namespaces, ns)
 			}
 		}
+		tags := splitList(request.GetString("tags", ""))
 
 		ids, err := bc.Brain.ResolveNamespaceIDs(ctx, namespaces)
 		if err != nil {
@@ -526,13 +528,14 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 
 		var summaries []map[string]any
 		for _, id := range ids {
-			result, err := bc.Brain.ConsolidateByID(ctx, id)
+			result, err := bc.Brain.ConsolidateByIDWithTags(ctx, id, tags)
 			if err != nil {
 				summaries = append(summaries, map[string]any{"namespace_id": id, "error": err.Error()})
 				continue
 			}
 			summaries = append(summaries, map[string]any{
 				"namespace":                    result.Namespace,
+				"tag_filter":                   result.TagFilter,
 				"episodes_read":                result.EpisodesRead,
 				"facts_created":                result.FactsCreated,
 				"facts_deduplicated":           result.FactsDeduplicated,

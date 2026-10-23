@@ -48,10 +48,28 @@ type ConsolidationResult struct {
 	LLMCalls                   int      `json:"llm_calls"`
 	LLMCallsLimited            bool     `json:"llm_calls_limited"`
 	Errors                     []string `json:"errors,omitempty"`
+	// TagFilter is set when the run was scoped to a tag instead of the whole
+	// namespace. Such a run only does the episode-to-fact stage and leaves the
+	// namespace-wide stages (relationships, patterns, mental models) untouched.
+	TagFilter []string `json:"tag_filter,omitempty"`
 }
 
 // Consolidate runs the full 8-stage consolidation pipeline for a namespace.
 func (b *Brain) Consolidate(ctx context.Context, namespaceSlug string) (ConsolidationResult, error) {
+	return b.ConsolidateWithTags(ctx, namespaceSlug, nil)
+}
+
+// ConsolidateWithTags runs consolidation with an optional tag selection. With no
+// tags it is exactly the full pipeline. With tags it is a targeted run: only the
+// episodes carrying every tag are read, and only the episode-to-fact stage runs.
+//
+// Two deliberate restrictions. The checkpoint is not advanced, because a tag
+// filter leaves gaps and a checkpoint that jumps over them would skip the
+// untagged episodes in those gaps forever. The later stages are skipped, because
+// they operate on facts and mental models for the whole namespace — running them
+// on a partial selection would make their output depend on which tag you happened
+// to pick.
+func (b *Brain) ConsolidateWithTags(ctx context.Context, namespaceSlug string, tags []string) (ConsolidationResult, error) {
 	if err := validatePath(namespaceSlug); err != nil {
 		return ConsolidationResult{}, err
 	}
@@ -59,7 +77,14 @@ func (b *Brain) Consolidate(ctx context.Context, namespaceSlug string) (Consolid
 	if err != nil {
 		return ConsolidationResult{}, err
 	}
-	return b.ConsolidateByID(ctx, nsID)
+	return b.consolidateByIDWithTags(ctx, nsID, tags)
+}
+
+// ConsolidateByIDWithTags is ConsolidateByID with an optional tag selection, for
+// callers that already resolved a namespace ID. With no tags it runs the full
+// pipeline; with tags it is the targeted run described on ConsolidateWithTags.
+func (b *Brain) ConsolidateByIDWithTags(ctx context.Context, nsID int64, tags []string) (ConsolidationResult, error) {
+	return b.consolidateByIDWithTags(ctx, nsID, tags)
 }
 
 // ConsolidateByID runs the full 8-stage consolidation pipeline for a namespace by ID.
@@ -73,6 +98,52 @@ func (b *Brain) Consolidate(ctx context.Context, namespaceSlug string) (Consolid
 // 7. Hypothesis Evidence Scanning         (auto-confirm/reject pending hypotheses)
 // 8. Confidence Decay                     (pure-SQL, no LLM)
 func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationResult, error) {
+	return b.consolidateByIDWithTags(ctx, nsID, nil)
+}
+
+// consolidateByIDWithTags is ConsolidateByID with an optional tag selection. A
+// non-empty tag set turns the run into the scoped form described on
+// ConsolidateWithTags.
+func (b *Brain) consolidateByIDWithTags(ctx context.Context, nsID int64, tags []string) (ConsolidationResult, error) {
+	tagFilter, err := NormalizeTags(tags)
+	if err != nil {
+		return ConsolidationResult{}, err
+	}
+	if len(tagFilter) > 0 {
+		return b.consolidateTagScoped(ctx, nsID, tagFilter)
+	}
+	return b.consolidateNamespace(ctx, nsID)
+}
+
+// consolidateTagScoped runs the episode-to-fact stage over the episodes that
+// carry every tag and nothing else. It never touches the consolidation
+// checkpoint or the namespace-wide stages; see ConsolidateWithTags for why.
+func (b *Brain) consolidateTagScoped(ctx context.Context, nsID int64, tags []string) (ConsolidationResult, error) {
+	start := time.Now()
+
+	var namespaceSlug string
+	_ = b.pool.QueryRow(ctx, "SELECT slug FROM namespaces WHERE id = $1", nsID).Scan(&namespaceSlug)
+
+	nsCfg := b.namespaceRunConfig(ctx, nsID)
+	ctx = withLLMBudget(ctx, nsCfg.MaxLLMCallsPerRun)
+
+	result := ConsolidationResult{Namespace: namespaceSlug, TagFilter: tags}
+
+	created, deduped, read, skipped, nearMisses, llmCalls, contFound, contAuto, errs := b.consolidateEpisodesToFacts(ctx, nsID, nil, tags)
+	result.FactsCreated = created
+	result.FactsDeduplicated = deduped
+	result.EpisodesRead = read
+	result.EpisodesSkipped = skipped
+	result.DedupNearMisses = nearMisses
+	result.LLMCalls = llmCalls
+	result.ContradictionsFound = contFound
+	result.ContradictionsAutoResolved = contAuto
+	result.Errors = errs
+	result.Duration = time.Since(start)
+	return result, nil
+}
+
+func (b *Brain) consolidateNamespace(ctx context.Context, nsID int64) (ConsolidationResult, error) {
 	start := time.Now()
 
 	var namespaceSlug string
@@ -93,7 +164,7 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 
 	// Stage 1: Episodes -> Facts (+ Stage 4: Contradiction detection)
 	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
-		factsCreated, factsDeduped, episodesRead, episodesSkipped, nearMisses, llmCalls, contFound, contAuto, errs := b.consolidateEpisodesToFacts(ctx, nsID, cp)
+		factsCreated, factsDeduped, episodesRead, episodesSkipped, nearMisses, llmCalls, contFound, contAuto, errs := b.consolidateEpisodesToFacts(ctx, nsID, cp, nil)
 		result.FactsCreated = factsCreated
 		result.FactsDeduplicated = factsDeduped
 		result.EpisodesRead = episodesRead
@@ -226,9 +297,24 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 
 // --- Stage 1: Episodes -> Facts ---
 
-func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (created, deduped, read, skipped, nearMisses, llmCalls, contradictionsFound, contradictionsAutoResolved int, errs []string) {
+// taggedConsolidationLimit bounds a tag-scoped run: it reads matching episodes
+// from the start of the namespace, so this is how many one run will look at.
+const taggedConsolidationLimit = 500
+
+func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *models.ConsolidationProgress, tags []string) (created, deduped, read, skipped, nearMisses, llmCalls, contradictionsFound, contradictionsAutoResolved int, errs []string) {
 	nsCfg := b.namespaceRunConfig(ctx, nsID)
-	sql, args, err := b.queries.FetchEpisodes(nsID, cp.LastEpisodeID, nsCfg.BatchSize)
+	var sql string
+	var args []any
+	var err error
+	if len(tags) > 0 {
+		sql, args, err = b.queries.FetchEpisodesByTags(nsID, 0, taggedConsolidationLimit, tags)
+	} else {
+		afterID := int64(0)
+		if cp != nil {
+			afterID = cp.LastEpisodeID
+		}
+		sql, args, err = b.queries.FetchEpisodes(nsID, afterID, nsCfg.BatchSize)
+	}
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("build fetch episodes: %v", err))
 		return
@@ -340,7 +426,7 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 	// would lose them, so only move the checkpoint when the fetch was clean.
 	// The ids come from the whole fetched batch, fragments included: a skipped
 	// fragment is done and must count when the checkpoint walks forward.
-	if scanErrs == 0 {
+	if cp != nil && scanErrs == 0 {
 		ids := make([]int64, len(episodes))
 		for i, e := range episodes {
 			ids[i] = e.ID

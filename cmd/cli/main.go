@@ -353,6 +353,7 @@ func main() {
 						Action: consolidateRunCmd,
 						Flags: []cli.Flag{
 							&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to consolidate (each includes descendants)"},
+							&cli.StringSliceFlag{Name: "tag", Aliases: []string{"t"}, Usage: "Only consolidate episodes carrying every one of these tags (targeted run; leaves the checkpoint alone)"},
 							&cli.BoolFlag{Name: "dry-run", Aliases: []string{"d"}, Usage: "Show what would be consolidated"},
 						},
 					},

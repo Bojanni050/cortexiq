@@ -586,6 +586,24 @@ Never calling — memory stays raw notes forever, no structured knowledge extrac
 Consolidating an empty namespace — returns nothing, wastes a call
 
 COST OF NOT CALLING: Memory accumulates as raw episodes. No structured facts. No entity relationships. recall results are noisier. query_facts returns nothing.
+
+To reprocess only one kind of memory, pass tags: the run then reads just the episodes carrying every tag and runs the episode-to-fact stage alone.
+{{end}}
+
+{{define "consolidate_tags"}}
+Optional. Narrows the run to episodes carrying every one of these tags (AND, not OR).
+
+A tag run is a TARGETED REPROCESS, not a normal consolidation:
+- only the episode-to-fact stage runs; relationships, causal links, patterns, goals, failure patterns, hypotheses, decay and mental models are left alone
+- the consolidation checkpoint is NOT advanced, so the untagged episodes the filter skipped are still picked up by the next normal run
+- it reads matching episodes from the start of the namespace, so old tagged episodes are seen again
+
+USE IT WHEN: you want facts from a specific kind of episode ("only the beslissing episodes"), or after fixing how a category should be summarized.
+
+DO NOT USE IT AS A REPLACEMENT for a normal run: it never catches up on everything else in the namespace.
+
+GOOD: tags="beslissing" to re-derive the decision facts of a namespace.
+BAD: tags="bugfix" called every session while untagged episodes pile up unconsolidated.
 {{end}}
 
 
