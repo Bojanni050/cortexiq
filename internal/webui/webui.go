@@ -303,6 +303,17 @@ func tagsParam(r *http.Request) []string {
 	return tags
 }
 
+// sinceParam reads ?since= as the lower bound for reporting endpoints. A bound
+// that cannot be parsed is ignored rather than fatal: the endpoint still answers
+// the unfiltered question, which is more useful than a 400 for a typo.
+func sinceParam(r *http.Request) *time.Time {
+	since, err := parseTimeBound(r.URL.Query().Get("since"))
+	if err != nil {
+		return nil
+	}
+	return since
+}
+
 type episodeJSON struct {
 	ID          int64     `json:"id"`
 	NamespaceID int64     `json:"namespace_id"`
@@ -706,7 +717,7 @@ func (h *Handler) tags(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
 		return
 	}
-	items, err := h.Brain.ListTags(r.Context(), namespacesParam(r), pagination(r).Limit)
+	items, err := h.Brain.ListTags(r.Context(), namespacesParam(r), sinceParam(r), pagination(r).Limit)
 	if !hdl(w, err) {
 		return
 	}

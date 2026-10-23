@@ -3,6 +3,7 @@ package brain
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/Bojanni050/cortexiq/internal/reasoner"
 )
@@ -173,7 +174,7 @@ func TestIntegrationListTagsCounts(t *testing.T) {
 		t.Fatalf("storeFact: %v", err)
 	}
 
-	tags, err := e.b.ListTags(e.ctx, []string{e.ns}, 10)
+	tags, err := e.b.ListTags(e.ctx, []string{e.ns}, nil, 10)
 	if err != nil {
 		t.Fatalf("ListTags: %v", err)
 	}
@@ -194,6 +195,27 @@ func TestIntegrationListTagsCounts(t *testing.T) {
 	}
 	if pgvector.Episodes != 1 || pgvector.Facts != 1 || pgvector.Total != 2 {
 		t.Errorf("pgvector = %+v, want episodes=1 facts=1 total=2", pgvector)
+	}
+
+	// A period that starts after the writes must count nothing: since filters on
+	// created_at, so it reports what was stored in that period.
+	future := time.Now().UTC().Add(time.Hour)
+	none, err := e.b.ListTags(e.ctx, []string{e.ns}, &future, 10)
+	if err != nil {
+		t.Fatalf("ListTags(since future): %v", err)
+	}
+	if len(none) != 0 {
+		t.Errorf("ListTags(since future) = %v, want no tags", none)
+	}
+
+	// A period that started an hour ago must still see everything written now.
+	past := time.Now().UTC().Add(-time.Hour)
+	all, err := e.b.ListTags(e.ctx, []string{e.ns}, &past, 10)
+	if err != nil {
+		t.Fatalf("ListTags(since past): %v", err)
+	}
+	if len(all) != len(tags) {
+		t.Errorf("ListTags(since past) returned %d tags, want %d", len(all), len(tags))
 	}
 }
 

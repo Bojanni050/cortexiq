@@ -157,6 +157,7 @@ func reflectCmd(ctx context.Context, cmd *cli.Command) error {
 		KnownFrom:  knownFrom,
 		KnownTo:    knownTo,
 		Types:      types,
+		Tags:       cmd.StringSlice("tag"),
 	})
 	if err != nil {
 		return err
@@ -263,7 +264,7 @@ func factsListCmd(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	bc := getBootstrap(cmd)
-	facts, err := bc.Brain.QueryFactsWindow(ctx, namespaces, since, until, asOf, from, to, knownFrom, knownTo, nil, page)
+	facts, err := bc.Brain.QueryFactsWindow(ctx, namespaces, since, until, asOf, from, to, knownFrom, knownTo, cmd.StringSlice("tag"), page)
 	if err != nil {
 		return err
 	}

@@ -161,6 +161,7 @@ func main() {
 					&cli.IntFlag{Name: "limit", Value: 10, Usage: "Max memories to recall for grounding"},
 					&cli.StringFlag{Name: "context", Usage: "Additional context to include in the answer synthesis"},
 					&cli.StringFlag{Name: "types", Usage: "Comma-separated filter: fact, episode, failure, goal"},
+					&cli.StringSliceFlag{Name: "tag", Aliases: []string{"t"}, Usage: "Ground the answer only on memories carrying every one of these tags (repeatable)"},
 					&cli.StringFlag{Name: "as-of", Usage: "Answer from what the system knew at this time (RFC3339 or YYYY-MM-DD)"},
 					&cli.StringFlag{Name: "known-from", Usage: "Answer from what the system held in [known-from, known-to) (RFC3339 or YYYY-MM-DD); not with --as-of"},
 					&cli.StringFlag{Name: "known-to", Usage: "Exclusive end of the knowledge window (RFC3339 or YYYY-MM-DD)"},
@@ -193,11 +194,22 @@ func main() {
 				},
 			},
 			{
+				Name:   "tags",
+				Usage:  "List the tag vocabulary with fact and episode counts (newest first)",
+				Action: tagsCmd,
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to count (each includes descendants; default all)"},
+					&cli.StringFlag{Name: "since", Usage: "Only count memories stored on or after this time (RFC3339 or YYYY-MM-DD)"},
+					&cli.IntFlag{Name: "limit", Value: 100, Usage: "Max tags"},
+				},
+			},
+			{
 				Name:   "facts",
 				Usage:  "Query facts",
 				Action: factsListCmd,
 				Flags: []cli.Flag{
 					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to query (each includes descendants)"},
+					&cli.StringSliceFlag{Name: "tag", Aliases: []string{"t"}, Usage: "Only facts carrying every one of these tags (repeatable)"},
 					&cli.StringFlag{Name: "since", Usage: "Created since (RFC3339)"},
 					&cli.StringFlag{Name: "until", Usage: "Created until (RFC3339)"},
 					&cli.StringFlag{Name: "as-of", Usage: "Only facts the system held at this time (RFC3339 or YYYY-MM-DD)"},

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // MaxTagsPerMemory caps how many tags one memory may carry. A handful is enough
@@ -92,10 +93,14 @@ type TagCount struct {
 }
 
 // ListTags returns the tags in use, most used first, optionally restricted to
-// some namespaces. It exists so an agent can reuse the existing vocabulary
-// instead of inventing "bug", "Bug" and "bugs" in the same store — the same
-// reason list_namespaces exists. An empty namespace list means all namespaces.
-func (b *Brain) ListTags(ctx context.Context, namespaces []string, limit int) ([]TagCount, error) {
+// some namespaces and to memories stored since a moment. It exists so an agent
+// can reuse the existing vocabulary instead of inventing "bug", "Bug" and "bugs"
+// in the same store — the same reason list_namespaces exists. An empty namespace
+// list means all namespaces; a nil since means all time.
+//
+// The since bound is on created_at, not occurred_at: reporting asks "what did we
+// record in this period", and occurred_at may be any moment the writer chose.
+func (b *Brain) ListTags(ctx context.Context, namespaces []string, since *time.Time, limit int) ([]TagCount, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -119,16 +124,18 @@ func (b *Brain) ListTags(ctx context.Context, namespaces []string, limit int) ([
 		      FROM facts
 		     WHERE deleted_at IS NULL AND cardinality(tags) > 0
 		       AND ($1::bigint[] IS NULL OR namespace_id = ANY($1))
+		       AND ($2::timestamptz IS NULL OR created_at >= $2)
 		    UNION ALL
 		    SELECT unnest(tags) AS tag, false AS is_fact
 		      FROM episodes
 		     WHERE deleted_at IS NULL AND cardinality(tags) > 0
 		       AND ($1::bigint[] IS NULL OR namespace_id = ANY($1))
+		       AND ($2::timestamptz IS NULL OR created_at >= $2)
 		) s
 		GROUP BY tag
 		ORDER BY count(*) DESC, tag
-		LIMIT $2`,
-		nsIDs, limit)
+		LIMIT $3`,
+		nsIDs, since, limit)
 	if err != nil {
 		return nil, fmt.Errorf("brain: list tags: %w", err)
 	}

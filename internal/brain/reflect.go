@@ -50,6 +50,10 @@ type ReflectOptions struct {
 	KnownTo   *time.Time
 	// Types limits which memory types are recalled. Empty means facts and episodes.
 	Types []string
+	// Tags narrows the grounding recall to memories carrying every listed tag
+	// (AND, not OR), the same way RecallOptions.Tags does. Mental models keep
+	// their own filter (MentalModelTags); this only applies to recalled memories.
+	Tags []string
 	// MMR overrides the server MMR lambda for the grounding recall. nil keeps
 	// the server config; 0 disables MMR; 0..1 balances relevance vs diversity.
 	MMR *float64
@@ -124,6 +128,7 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 		KnownFrom: opts.KnownFrom,
 		KnownTo:   opts.KnownTo,
 		Types:     opts.Types,
+		Tags:      opts.Tags,
 		MMR:       opts.MMR,
 	}
 	results, err := b.RecallWith(ctx, namespaces, query, limit, recallOpts)

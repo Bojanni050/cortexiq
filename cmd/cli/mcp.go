@@ -236,6 +236,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("known_from", mcp.Description(render("known_from_param"))),
 		mcp.WithString("known_to", mcp.Description(render("known_to_param"))),
 		mcp.WithString("types", mcp.Description(render("recall_types"))),
+		mcp.WithString("tags", mcp.Description(render("reflect_tags"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query := request.GetString("query", "")
 		if strings.TrimSpace(query) == "" {
@@ -295,6 +296,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			KnownFrom:  knownFrom,
 			KnownTo:    knownTo,
 			Types:      types,
+			Tags:       splitList(request.GetString("tags", "")),
 		})
 		if err != nil {
 			return nil, err
@@ -638,9 +640,14 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 	mcpServer.AddTool(mcp.NewTool("list_tags",
 		mcp.WithDescription(render("list_tags_description")),
 		mcp.WithString("namespaces", mcp.Description(render("list_tags_namespaces"))),
+		mcp.WithString("since", mcp.Description("Only count memories stored on or after this time (RFC3339 or YYYY-MM-DD). Use it for reporting a period.")),
 		mcp.WithNumber("limit", mcp.Description(render("pagination_limit")), mcp.DefaultNumber(100)),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		tags, err := bc.Brain.ListTags(ctx, splitList(request.GetString("namespaces", "")), request.GetInt("limit", 100))
+		since, err := parseAsOf(request.GetString("since", ""))
+		if err != nil {
+			return nil, fmt.Errorf("invalid since: %w", err)
+		}
+		tags, err := bc.Brain.ListTags(ctx, splitList(request.GetString("namespaces", "")), since, request.GetInt("limit", 100))
 		if err != nil {
 			return nil, err
 		}

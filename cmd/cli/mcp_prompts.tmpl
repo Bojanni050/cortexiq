@@ -423,6 +423,7 @@ PREFER recall WHEN:
 - You need exact wording or IDs to act on
 
 The answer is grounded in recalled memories. When nothing relevant is found, the answer says so. The result includes the sources used, so you can cite specific memories.
+To ground only on a kind of memory (decisions, bugfixes, a client), pass tags instead of widening the namespace list.
 {{end}}
 
 {{define "reflect_query"}}
@@ -433,6 +434,10 @@ Good: 'What do we know about the authentication approach?'. Bad: 'auth'.
 {{define "reflect_namespaces"}}
 Comma-separated namespace paths to search for grounding memories. Each path matches itself and all descendants.
 / → everything. /projects/myapp → that project and its sub-namespaces.
+{{end}}
+
+{{define "reflect_tags"}}
+Optional comma-separated tags to ground the answer only on memories carrying every one of them (AND, not OR). Use it when the question is about a kind of knowledge rather than a place: e.g. tags "beslissing" answers "which decisions did we take", whatever namespace they live in. Combine with namespaces to keep the scope narrow. Mental models are filtered separately (they have their own tags).
 {{end}}
 
 {{define "reflect_limit"}}
