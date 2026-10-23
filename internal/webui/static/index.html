@@ -236,7 +236,7 @@ dialog .err { color: var(--red); }
 <div id="toast"></div>
 <script>
 const API = '/api/v1';
-const state = { tab: 'overview', ns: '', nsMap: {}, page: {}, filter: {}, lists: {}, tags: [], tagVocab: [] };
+const state = { tab: 'overview', ns: '', nsMap: {}, page: {}, filter: {}, lists: {}, tags: [], tagVocab: [], mmBusy: new Set() };
 
 const icons = {
   overview: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
@@ -931,6 +931,10 @@ function mmTags(tags) {
   return tags.map(t => `<span class="badge">${esc(t)}</span>`).join(' ');
 }
 function mmStale(m) {
+  // A regeneration in flight has no row state of its own on the server: the
+  // model keeps its old last_refreshed_* until the new answer lands, so without
+  // this the row would show "stale" for the whole run and look stuck.
+  if (state.mmBusy.has(m.id)) return '<span class="badge pending">refreshing</span>';
   if (!m.content) {
     return m.last_refresh_failed_at
       ? '<span class="badge abandoned">failed</span>'
@@ -1071,38 +1075,66 @@ async function mmCreate() {
   if (mm && mm.id) mmWait(mm.id);
 }
 
-// mmWait polls one queued model until it has content or a recorded failure. It
-// keeps running when the reader moves to another tab, but only re-renders the
-// mental-model tab so it never yanks them back.
-async function mmWait(id) {
+// mmBaseline records the refresh state a model had before we asked for a new
+// one, so completion can be judged against that instead of against the row.
+function mmBaseline(m) {
+  return { refreshed: (m && m.last_refreshed_at) || '', failed: (m && m.last_refresh_failed_at) || '' };
+}
+
+// mmWait polls one queued model until the server records a refresh newer than
+// the one we started from. The old test — content present and
+// last_refreshed_source_query equal to source_query — was true for a model that
+// went stale because new memories arrived, so the first poll (3s) declared it
+// done while the regeneration was still running, and the row kept its stale
+// badge until a manual reload. It keeps running when the reader moves to
+// another tab, but only re-renders the mental-model tab so it never yanks them
+// back.
+async function mmWait(id, base) {
+  base = base || { refreshed: '', failed: '' };
   for (let i = 0; i < 80; i++) {
     await new Promise(r => setTimeout(r, 3000));
     let m;
-    try { m = await api(`/mental-models/${id}`); } catch (e) { return; }
+    try { m = await api(`/mental-models/${id}`); } catch (e) { state.mmBusy.delete(id); return; }
+    const refreshed = m.last_refreshed_at || '';
+    const failed = m.last_refresh_failed_at || '';
+    if (refreshed !== base.refreshed && m.content) {
+      state.mmBusy.delete(id);
+      if (state.tab === 'mental') { toast('Mental model ready'); refresh({ quiet: true }); }
+      return;
+    }
+    // A failed regeneration records its own timestamp and keeps the old content.
+    // RFC3339 strings of one format compare correctly as text.
+    if (failed && failed !== base.failed && failed > refreshed) {
+      state.mmBusy.delete(id);
+      if (state.tab === 'mental') {
+        toast('Generation failed: ' + (m.last_refresh_error || 'unknown error'), true);
+        refresh({ quiet: true });
+      }
+      return;
+    }
     if (state.tab === 'mental') refresh({ quiet: true });
-    // Content only counts when it answers the model's current query: an edit
-    // that is still being rebuilt keeps showing the old document otherwise.
-    if (m.content && m.last_refreshed_source_query === m.source_query) {
-      if (state.tab === 'mental') toast('Mental model ready');
-      return;
-    }
-    const failedAt = m.last_refresh_failed_at ? new Date(m.last_refresh_failed_at) : null;
-    const refreshedAt = m.last_refreshed_at ? new Date(m.last_refreshed_at) : null;
-    if (failedAt && (!refreshedAt || failedAt > refreshedAt)) {
-      toast('Generation failed: ' + (m.last_refresh_error || 'unknown error'), true);
-      return;
-    }
   }
+  state.mmBusy.delete(id);
+  if (state.tab === 'mental') refresh({ quiet: true });
 }
 async function mmRefresh(id) {
-  toast('Refreshing in the background…');
+  let base;
   try {
-    await api(`/mental-models/${id}/refresh`, { method: 'POST', body: JSON.stringify({ async: true }) });
+    base = mmBaseline(await api(`/mental-models/${id}`));
   } catch (e) {
     toast(e.message, true);
     return;
   }
-  refresh(); mmWait(id);
+  toast('Refreshing in the background…');
+  state.mmBusy.add(id);
+  try {
+    await api(`/mental-models/${id}/refresh`, { method: 'POST', body: JSON.stringify({ async: true }) });
+  } catch (e) {
+    state.mmBusy.delete(id);
+    toast(e.message, true);
+    return;
+  }
+  refresh({ quiet: true }); mmWait(id, base);
 }
 
 // mmEdit opens the same dialog in edit mode. Scope is fixed at creation: moving
@@ -1141,17 +1173,20 @@ async function mmSave(id, rebuild) {
     status.className = 'err'; status.textContent = e.message; btn.disabled = false;
     return;
   }
+  let base = { refreshed: '', failed: '' };
   if (rebuild) {
+    try { base = mmBaseline(await api(`/mental-models/${id}`)); } catch (e) { /* keep the empty baseline */ }
     try {
       await api(`/mental-models/${id}/refresh`, { method: 'POST', body: JSON.stringify({ async: true }) });
     } catch (e) {
       status.className = 'err'; status.textContent = e.message; btn.disabled = false;
       return;
     }
+    state.mmBusy.add(id);
   }
   dlgClose(); refresh();
   toast(rebuild ? 'Rebuilding in the background…' : 'Mental model saved');
-  if (rebuild) mmWait(id);
+  if (rebuild) mmWait(id, base);
 }
 async function mmView(id) {
   const m = await api(`/mental-models/${id}`);
