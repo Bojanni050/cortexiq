@@ -119,6 +119,7 @@ td.wrap { max-width: 720px; white-space: pre-wrap; word-break: break-word; }
 .tagchip:hover { color: var(--fg); border-color: var(--border-2); }
 .tagchip.on { background: rgba(167,139,250,.14); border-color: rgba(167,139,250,.45); color: var(--accent-2); }
 .tagchip em { font-style: normal; opacity: .65; font-size: 11px; font-variant-numeric: tabular-nums; }
+.taglegend { font-size: 11px; opacity: .45; }
 td.tagcell { white-space: nowrap; }
 .conf { display: inline-flex; align-items: center; gap: 8px; min-width: 88px; }
 .conf i { flex: 1; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
@@ -514,6 +515,18 @@ function tagChips(tags) {
   return (tags || []).map(t => `<button class="tagchip" title="Narrow to ${esc(t)}" onclick="toggleTag('${esc(t)}')">${esc(t)}</button>`).join(' ');
 }
 
+// tagCountLabel splits the total into what it is made of. A single number here
+// is ambiguous: on the Episodes tab a chip reading 7 looked like seven episodes
+// while it meant six facts and one episode.
+function tagCountLabel(t) {
+  const f = Number(t.facts) || 0;
+  const e = Number(t.episodes) || 0;
+  if (f && e) return `${f}f · ${e}e`;
+  if (f) return `${f}f`;
+  if (e) return `${e}e`;
+  return '0';
+}
+
 // tagBarHTML renders the vocabulary from state.tagVocab. Counts are unfiltered,
 // so they say how much switching a tag on would show.
 function tagBarHTML() {
@@ -521,12 +534,12 @@ function tagBarHTML() {
   if (!vocab.length) return '';
   const chips = vocab.map(t => {
     const on = state.tags.includes(t.tag);
-    const title = `${t.facts} fact${t.facts === 1 ? '' : 's'}, ${t.episodes} episode${t.episodes === 1 ? '' : 's'}`;
-    return `<button class="tagchip${on ? ' on' : ''}" title="${esc(title)}" onclick="toggleTag('${esc(t.tag)}')">${esc(t.tag)}<em>${t.total}</em></button>`;
+    const title = `${t.facts} fact${t.facts === 1 ? '' : 's'}, ${t.episodes} episode${t.episodes === 1 ? '' : 's'} — click to filter`;
+    return `<button class="tagchip${on ? ' on' : ''}" title="${esc(title)}" onclick="toggleTag('${esc(t.tag)}')">${esc(t.tag)}<em>${tagCountLabel(t)}</em></button>`;
   }).join('');
   const clear = state.tags.length ? `<button class="tagchip" onclick="clearTags()">clear ✕</button>` : '';
   const hint = state.tags.length ? `<span class="muted">${state.tags.length > 1 ? 'all of these tags' : 'this tag'}</span>` : '';
-  return `<div class="tagbar" data-tagbar>${chips}${clear}${hint}</div>`;
+  return `<div class="tagbar" data-tagbar>${chips}${clear}${hint}<span class="taglegend">f = facts · e = episodes</span></div>`;
 }
 
 // tagBar fetches the namespace's tag vocabulary and returns the rendered bar.
