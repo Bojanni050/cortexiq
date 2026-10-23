@@ -52,7 +52,7 @@ type ExportRecord struct {
 	ValidFrom  *time.Time `json:"valid_from,omitempty"`
 	ValidUntil *time.Time `json:"valid_until,omitempty"`
 	KnownUntil *time.Time `json:"known_until,omitempty"` // facts: end of the knowledge interval
-	Tags       []string   `json:"tags,omitempty"`       // both; absent in exports made before tags existed
+	Tags       []string   `json:"tags,omitempty"`        // both; absent in exports made before tags existed
 }
 
 // ExportResult counts what an export wrote.

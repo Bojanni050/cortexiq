@@ -263,7 +263,7 @@ func factsListCmd(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	bc := getBootstrap(cmd)
-	facts, err := bc.Brain.QueryFactsWindow(ctx, namespaces, since, until, asOf, from, to, knownFrom, knownTo, page)
+	facts, err := bc.Brain.QueryFactsWindow(ctx, namespaces, since, until, asOf, from, to, knownFrom, knownTo, nil, page)
 	if err != nil {
 		return err
 	}

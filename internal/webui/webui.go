@@ -268,6 +268,7 @@ type factJSON struct {
 	ValidUntil  *time.Time `json:"valid_until"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
+	Tags        []string   `json:"tags"`
 }
 
 func factToJSON(f models.Fact) factJSON {
@@ -275,8 +276,31 @@ func factToJSON(f models.Fact) factJSON {
 		ID: f.ID, NamespaceID: f.NamespaceID, Content: f.Content,
 		Confidence: f.Confidence, Entity: f.Entity, Property: f.Property,
 		Value: f.Value, ValidFrom: f.ValidFrom, ValidUntil: f.ValidUntil,
-		CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
+		CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt, Tags: nonNilStrings(f.Tags),
 	}
+}
+
+// nonNilStrings keeps a JSON list from turning into null when a memory carries no
+// tags; the dashboard then renders "" instead of having to special-case null.
+func nonNilStrings(v []string) []string {
+	if v == nil {
+		return []string{}
+	}
+	return v
+}
+
+// tagsParam reads ?tags=a,b&tags=c into a list, the same shape the mental-model
+// endpoints accept.
+func tagsParam(r *http.Request) []string {
+	var tags []string
+	for _, v := range r.URL.Query()["tags"] {
+		for _, t := range strings.Split(v, ",") {
+			if t = strings.TrimSpace(t); t != "" {
+				tags = append(tags, t)
+			}
+		}
+	}
+	return tags
 }
 
 type episodeJSON struct {
@@ -285,6 +309,7 @@ type episodeJSON struct {
 	Content     string    `json:"content"`
 	OccurredAt  time.Time `json:"occurred_at"`
 	CreatedAt   time.Time `json:"created_at"`
+	Tags        []string  `json:"tags"`
 }
 
 func (h *Handler) episodes(w http.ResponseWriter, r *http.Request) {
@@ -292,18 +317,18 @@ func (h *Handler) episodes(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
 		return
 	}
-	items, err := h.Brain.ListEpisodes(r.Context(), namespacesParam(r), pagination(r))
+	items, err := h.Brain.ListEpisodes(r.Context(), namespacesParam(r), tagsParam(r), pagination(r))
 	if !hdl(w, err) {
 		return
 	}
-	n, err := h.Brain.CountEpisodes(r.Context(), namespacesParam(r))
+	n, err := h.Brain.CountEpisodes(r.Context(), namespacesParam(r), tagsParam(r))
 	if !hdl(w, err) {
 		return
 	}
 	total(w, n)
 	out := make([]episodeJSON, 0, len(items))
 	for _, e := range items {
-		out = append(out, episodeJSON{ID: e.ID, NamespaceID: e.NamespaceID, Content: e.Content, OccurredAt: e.OccurredAt, CreatedAt: e.CreatedAt})
+		out = append(out, episodeJSON{ID: e.ID, NamespaceID: e.NamespaceID, Content: e.Content, OccurredAt: e.OccurredAt, CreatedAt: e.CreatedAt, Tags: nonNilStrings(e.Tags)})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -355,11 +380,11 @@ func (h *Handler) facts(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid known_to: %w", err))
 		return
 	}
-	items, err := h.Brain.QueryFactsWindow(r.Context(), namespacesParam(r), nil, nil, asOf, from, to, knownFrom, knownTo, pagination(r))
+	items, err := h.Brain.QueryFactsWindow(r.Context(), namespacesParam(r), nil, nil, asOf, from, to, knownFrom, knownTo, tagsParam(r), pagination(r))
 	if !hdl(w, err) {
 		return
 	}
-	count, err := h.Brain.CountFactsWindow(r.Context(), namespacesParam(r), nil, nil, asOf, from, to, knownFrom, knownTo)
+	count, err := h.Brain.CountFactsWindow(r.Context(), namespacesParam(r), nil, nil, asOf, from, to, knownFrom, knownTo, tagsParam(r))
 	if !hdl(w, err) {
 		return
 	}
@@ -427,6 +452,8 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 		// Types limits the search to "fact", "episode", "failure" and/or "goal";
 		// empty means facts and episodes.
 		Types []string `json:"types"`
+		// Tags narrows the search to memories carrying every listed tag (AND).
+		Tags []string `json:"tags"`
 		// AsOf is an RFC 3339 moment: recall what was known then.
 		AsOf string `json:"as_of"`
 		From string `json:"from"`
@@ -449,7 +476,7 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 	if len(body.Namespaces) == 0 {
 		body.Namespaces = []string{"/"}
 	}
-	opts := brain.RecallOptions{Types: body.Types}
+	opts := brain.RecallOptions{Types: body.Types, Tags: body.Tags}
 	for _, t := range body.Types {
 		if t != "fact" && t != "episode" && t != "failure" && t != "goal" {
 			writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid type %q: use fact, episode, failure or goal", t))

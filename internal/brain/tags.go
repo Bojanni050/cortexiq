@@ -70,6 +70,17 @@ func tagsOrEmpty(tags []string) []string {
 	return tags
 }
 
+// tagWhere appends a tag filter to a WHERE clause that already uses positional
+// placeholders, returning the clause and the extended argument list. Every
+// requested tag must be present (AND), matching recall.
+func tagWhere(where string, args []any, tags []string) (string, []any) {
+	if len(tags) == 0 {
+		return where, args
+	}
+	args = append(args, tags)
+	return fmt.Sprintf("%s AND tags @> $%d", where, len(args)), args
+}
+
 // TagCount is one entry of the tag vocabulary: how many live facts and episodes
 // carry the tag. A tag can appear on facts only (consolidated knowledge) or on
 // episodes only (raw memories that have not been consolidated yet).

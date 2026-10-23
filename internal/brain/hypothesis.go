@@ -272,13 +272,13 @@ func (b *Brain) ConfirmHypothesis(ctx context.Context, id int64) (*models.Hypoth
 	var f models.Fact
 	err = tx.QueryRow(ctx,
 		`SELECT id, namespace_id, content, embedding, embedding_model, confidence,
-		 entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at
+		 entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at, tags
 		 FROM facts WHERE id = $1`,
 		factID,
 	).Scan(
 		&f.ID, &f.NamespaceID, &f.Content, &f.Embedding, &f.EmbeddingModel,
 		&f.Confidence, &f.Entity, &f.Property, &f.Value,
-		&f.ValidFrom, &f.ValidUntil, &f.CreatedAt, &f.UpdatedAt, &f.DeletedAt,
+		&f.ValidFrom, &f.ValidUntil, &f.CreatedAt, &f.UpdatedAt, &f.DeletedAt, &f.Tags,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("scan confirmed fact: %w", err)

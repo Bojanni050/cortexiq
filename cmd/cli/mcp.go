@@ -739,7 +739,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			return nil, fmt.Errorf("invalid known_to: %w", err)
 		}
 
-		facts, err := bc.Brain.QueryFactsWindow(ctx, namespaces, nil, nil, asOf, from, to, knownFrom, knownTo, page)
+		facts, err := bc.Brain.QueryFactsWindow(ctx, namespaces, nil, nil, asOf, from, to, knownFrom, knownTo, nil, page)
 		if err != nil {
 			return nil, err
 		}

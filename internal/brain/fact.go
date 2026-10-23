@@ -80,14 +80,14 @@ func checkFactWindows(asOf, from, to, knownFrom, knownTo *time.Time) error {
 // (created_at <= asOf < known_until), which includes facts that were replaced or
 // expired since. A nil asOf lists every fact, like QueryFacts.
 func (b *Brain) QueryFactsAsOf(ctx context.Context, namespaceSlugs []string, since, until, asOf *time.Time, page Pagination) ([]models.Fact, error) {
-	return b.QueryFactsWindow(ctx, namespaceSlugs, since, until, asOf, nil, nil, nil, nil, page)
+	return b.QueryFactsWindow(ctx, namespaceSlugs, since, until, asOf, nil, nil, nil, nil, nil, page)
 }
 
 // QueryFactsWindow filters facts whose validity intervals overlap [from,to) (valid
 // time) and whose knowledge intervals overlap [knownFrom,knownTo) (knowledge
 // time), while retaining since/until as created_at filters and asOf as the point
 // form of the knowledge axis. asOf cannot be combined with knownFrom/knownTo.
-func (b *Brain) QueryFactsWindow(ctx context.Context, namespaceSlugs []string, since, until, asOf, from, to, knownFrom, knownTo *time.Time, page Pagination) ([]models.Fact, error) {
+func (b *Brain) QueryFactsWindow(ctx context.Context, namespaceSlugs []string, since, until, asOf, from, to, knownFrom, knownTo *time.Time, tags []string, page Pagination) ([]models.Fact, error) {
 	if err := checkFactWindows(asOf, from, to, knownFrom, knownTo); err != nil {
 		return nil, err
 	}
@@ -99,8 +99,9 @@ func (b *Brain) QueryFactsWindow(ctx context.Context, namespaceSlugs []string, s
 	page = page.Sanitize()
 
 	where, args := factWhereWindow(nsIDs, since, until, asOf, from, to, knownFrom, knownTo)
+	where, args = tagWhere(where, args, tags)
 	query := `SELECT id, namespace_id, content, embedding, embedding_model, confidence,
-	          entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at
+	          entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at, tags
 	          FROM facts WHERE ` + where +
 		fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
 	args = append(args, page.Limit, page.Offset)
@@ -118,7 +119,7 @@ func (b *Brain) QueryFactsWindow(ctx context.Context, namespaceSlugs []string, s
 			&f.ID, &f.NamespaceID, &f.Content, &f.Embedding, &f.EmbeddingModel,
 			&f.Confidence, &f.Entity, &f.Property, &f.Value,
 			&f.ValidFrom, &f.ValidUntil,
-			&f.CreatedAt, &f.UpdatedAt, &f.DeletedAt,
+			&f.CreatedAt, &f.UpdatedAt, &f.DeletedAt, &f.Tags,
 		); err != nil {
 			return nil, fmt.Errorf("scan fact: %w", err)
 		}
@@ -130,10 +131,10 @@ func (b *Brain) QueryFactsWindow(ctx context.Context, namespaceSlugs []string, s
 // CountFacts counts the facts QueryFactsAsOf would return for the same filters,
 // ignoring paging, so a caller can tell a full page from a truncated one.
 func (b *Brain) CountFacts(ctx context.Context, namespaceSlugs []string, since, until, asOf *time.Time) (int, error) {
-	return b.CountFactsWindow(ctx, namespaceSlugs, since, until, asOf, nil, nil, nil, nil)
+	return b.CountFactsWindow(ctx, namespaceSlugs, since, until, asOf, nil, nil, nil, nil, nil)
 }
 
-func (b *Brain) CountFactsWindow(ctx context.Context, namespaceSlugs []string, since, until, asOf, from, to, knownFrom, knownTo *time.Time) (int, error) {
+func (b *Brain) CountFactsWindow(ctx context.Context, namespaceSlugs []string, since, until, asOf, from, to, knownFrom, knownTo *time.Time, tags []string) (int, error) {
 	if err := checkFactWindows(asOf, from, to, knownFrom, knownTo); err != nil {
 		return 0, err
 	}
@@ -142,6 +143,7 @@ func (b *Brain) CountFactsWindow(ctx context.Context, namespaceSlugs []string, s
 		return 0, err
 	}
 	where, args := factWhereWindow(nsIDs, since, until, asOf, from, to, knownFrom, knownTo)
+	where, args = tagWhere(where, args, tags)
 	return b.countWhere(ctx, "facts", where, args...)
 }
 
@@ -174,14 +176,14 @@ func (b *Brain) GetFact(ctx context.Context, factID int64) (*models.Fact, error)
 	var f models.Fact
 	err := b.pool.QueryRow(ctx,
 		`SELECT id, namespace_id, content, embedding, embedding_model, confidence,
-		 entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at
+		 entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at, tags
 		 FROM facts WHERE id = $1`,
 		factID,
 	).Scan(
 		&f.ID, &f.NamespaceID, &f.Content, &f.Embedding, &f.EmbeddingModel,
 		&f.Confidence, &f.Entity, &f.Property, &f.Value,
 		&f.ValidFrom, &f.ValidUntil,
-		&f.CreatedAt, &f.UpdatedAt, &f.DeletedAt,
+		&f.CreatedAt, &f.UpdatedAt, &f.DeletedAt, &f.Tags,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {

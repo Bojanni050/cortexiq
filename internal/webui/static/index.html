@@ -112,6 +112,14 @@ td.wrap { max-width: 720px; white-space: pre-wrap; word-break: break-word; }
 .badge.abandoned, .badge.rejected { background: rgba(248,113,113,.12); color: var(--red); }
 .badge.pending, .badge.proposed { background: rgba(251,191,36,.12); color: var(--yellow); }
 .badge.testing { background: rgba(96,165,250,.12); color: var(--blue); }
+/* A tag says what a memory is about; the namespace says where it belongs. The
+   chips are buttons because clicking one narrows the view. */
+.tagbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.tagchip { display: inline-flex; align-items: center; gap: 7px; padding: 3px 11px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel-2); color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; transition: all .15s; }
+.tagchip:hover { color: var(--fg); border-color: var(--border-2); }
+.tagchip.on { background: rgba(167,139,250,.14); border-color: rgba(167,139,250,.45); color: var(--accent-2); }
+.tagchip em { font-style: normal; opacity: .65; font-size: 11px; font-variant-numeric: tabular-nums; }
+td.tagcell { white-space: nowrap; }
 .conf { display: inline-flex; align-items: center; gap: 8px; min-width: 88px; }
 .conf i { flex: 1; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
 .conf i b { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
@@ -224,7 +232,7 @@ dialog .err { color: var(--red); }
 <div id="toast"></div>
 <script>
 const API = '/api/v1';
-const state = { tab: 'overview', ns: '', nsMap: {}, page: {}, filter: {}, lists: {} };
+const state = { tab: 'overview', ns: '', nsMap: {}, page: {}, filter: {}, lists: {}, tags: [], tagVocab: [] };
 
 const icons = {
   overview: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
@@ -377,6 +385,11 @@ async function loadNamespaces() {
 function setNamespace(ns) {
   state.ns = ns;
   state.page = {};
+  // Tags are a property of the memories in a namespace, so a different
+  // namespace starts without a tag filter rather than inheriting a tag that may
+  // not exist there.
+  state.tags = [];
+  state.tagVocab = [];
   rememberNS(ns);
   refresh();
 }
@@ -458,8 +471,17 @@ function paintTab(tab) {
   if (!host) {
     document.getElementById('content').innerHTML = toolbar((L.spec.actions || '') +
       `<input id="f-${tab}" placeholder="Filter these rows…" value="${esc(state.filter[tab] || '')}" oninput="setFilter('${tab}', this.value)">`) +
+      `<div id="above-${tab}">${L.spec.above || ''}</div>` +
       `<div id="list-${tab}"></div>`;
     host = document.getElementById('list-' + tab);
+  } else if (L.spec.above != null) {
+    // The tag bar changes when the filter changes; repaint it in place so the
+    // table below is not rebuilt for a chip click.
+    const above = document.getElementById('above-' + tab);
+    if (above && above.dataset.html !== L.spec.above) {
+      above.dataset.html = L.spec.above;
+      above.innerHTML = L.spec.above;
+    }
   }
   // A poll that returns the same page must not rebuild the table: replacing
   // identical rows is what made the list flicker under the background refresh.
@@ -481,6 +503,60 @@ function goPage(tab, delta) {
 }
 
 function badge(v) { return v ? `<span class="badge ${esc(v)}">${esc(v)}</span>` : ''; }
+
+// --- tags -------------------------------------------------------------------
+// The active tag set is AND: every selected tag must be present. It is applied
+// by the server (list endpoints and recall both accept `tags`), so it narrows
+// the whole result set and the totals, not just the rows currently on screen.
+function tagQS() { return state.tags.length ? '&tags=' + encodeURIComponent(state.tags.join(',')) : ''; }
+
+function tagChips(tags) {
+  return (tags || []).map(t => `<button class="tagchip" title="Narrow to ${esc(t)}" onclick="toggleTag('${esc(t)}')">${esc(t)}</button>`).join(' ');
+}
+
+// tagBarHTML renders the vocabulary from state.tagVocab. Counts are unfiltered,
+// so they say how much switching a tag on would show.
+function tagBarHTML() {
+  const vocab = state.tagVocab || [];
+  if (!vocab.length) return '';
+  const chips = vocab.map(t => {
+    const on = state.tags.includes(t.tag);
+    const title = `${t.facts} fact${t.facts === 1 ? '' : 's'}, ${t.episodes} episode${t.episodes === 1 ? '' : 's'}`;
+    return `<button class="tagchip${on ? ' on' : ''}" title="${esc(title)}" onclick="toggleTag('${esc(t.tag)}')">${esc(t.tag)}<em>${t.total}</em></button>`;
+  }).join('');
+  const clear = state.tags.length ? `<button class="tagchip" onclick="clearTags()">clear ✕</button>` : '';
+  const hint = state.tags.length ? `<span class="muted">${state.tags.length > 1 ? 'all of these tags' : 'this tag'}</span>` : '';
+  return `<div class="tagbar" data-tagbar>${chips}${clear}${hint}</div>`;
+}
+
+// tagBar fetches the namespace's tag vocabulary and returns the rendered bar.
+// The vocabulary is kept in state so a toggle can repaint in place on tabs that
+// must not refetch (recall).
+async function tagBar() {
+  state.tagVocab = await apiList('/tags' + nsQS('&limit=100'));
+  return tagBarHTML();
+}
+
+function repaintTagBars() {
+  document.querySelectorAll('[data-tagbar]').forEach(el => { el.innerHTML = tagBarHTML(); });
+}
+
+function toggleTag(t) {
+  const i = state.tags.indexOf(t);
+  if (i >= 0) state.tags.splice(i, 1); else state.tags.push(t);
+  // Recall is a snapshot: narrowing it should not wipe the query and results the
+  // reader is looking at. Lists do refetch, because their pages and totals change.
+  if (state.tab === 'recall') { repaintTagBars(); return; }
+  state.page[state.tab] = 0;
+  refresh();
+}
+
+function clearTags() {
+  state.tags = [];
+  if (state.tab === 'recall') { repaintTagBars(); return; }
+  state.page[state.tab] = 0;
+  refresh();
+}
 function stat(key, tone, num, lbl) {
   return `<div class="stat" style="--tone:${tone}"><div class="ico">${svg(key)}</div><div class="num">${num}</div><div class="lbl">${lbl}</div></div>`;
 }
@@ -522,10 +598,11 @@ async function renderOverview() {
 }
 
 async function renderRecall() {
+  const bar = await tagBar();
   document.getElementById('content').innerHTML = toolbar(
     `<input id="q" placeholder="Ask your memory anything…" autofocus>` +
     `<button class="primary" onclick="doRecall()">Recall</button>`
-  ) + '<div class="toolbar filters">' +
+  ) + bar + '<div class="toolbar filters">' +
     `<label class="muted"><input type="checkbox" id="rt-fact" checked> Facts</label>` +
 
     `<label class="muted"><input type="checkbox" id="rt-episode" checked> Episodes</label>` +
@@ -548,6 +625,7 @@ async function doRecall() {
   if (!types.length) { toast('Pick facts, episodes or both', true); return; }
   const body = { query: q, namespaces: [state.ns], limit: Number(document.getElementById('rlimit').value), trace: true };
   if (types.length === 1) body.types = types;
+  if (state.tags.length) body.tags = state.tags;
   const asOf = document.getElementById('rasof').value;
   if (asOf) body.as_of = new Date(asOf).toISOString();
   const graph = document.getElementById('rt-graph').value;
@@ -557,13 +635,13 @@ async function doRecall() {
     const results = (res && res.results) || [];
     const graph = !!(res && res.trace && res.trace.graph);
     document.getElementById('recall-out').innerHTML = recallTraceCard(res && res.trace) + table(
-      ['#', 'Type', 'Content', 'Score', 'Vector (cosine)', 'Keyword (ts_rank)'].concat(graph ? ['Graph'] : [], ['Fused', 'Boost', 'When']),
+      ['#', 'Type', 'Tags', 'Content', 'Score', 'Vector (cosine)', 'Keyword (ts_rank)'].concat(graph ? ['Graph'] : [], ['Fused', 'Boost', 'When']),
       results.map((r, i) => {
         const t = r.trace || {};
         const boost = (t.recency_factor != null && (t.recency_factor !== 1 || t.importance_factor !== 1))
           ? `recency ×${t.recency_factor.toFixed(2)}<br>importance ×${t.importance_factor.toFixed(2)}` : '<span class="muted">–</span>';
         return `<tr><td class="muted">${i + 1}</td>
-          <td><span class="badge pending">${esc(r.type)}</span></td><td class="wrap" style="min-width:280px">${esc(r.content)}</td>
+          <td><span class="badge pending">${esc(r.type)}</span></td><td class="tagcell">${tagChips(r.tags)}</td><td class="wrap" style="min-width:280px">${esc(r.content)}</td>
           <td>${pct(r.score)}</td><td>${armCell(t.vector_rank, t.vector_similarity, 3)}</td>
           <td>${armCell(t.keyword_rank, t.keyword_score, 3)}</td>${graph ? `<td>${armCell(t.graph_rank, t.graph_score, 2)}</td>` : ''}<td class="mono">${(t.fused_score || 0).toFixed(3)}</td>
           <td class="muted">${boost}</td><td class="muted">${ts(r.occurred_at || r.created_at)}</td></tr>`;
@@ -584,6 +662,7 @@ function recallTraceCard(tr) {
       ${tr.hybrid ? 'Hybrid: vector + keyword' + (tr.graph ? ' + graph' : '') + ', reciprocal rank fusion (k=' + tr.rrf_k + ')' : 'Vector only (no usable keyword terms or hybrid recall is off)'} ·
       ${tr.candidates} candidates per arm · min similarity ${tr.min_similarity} · ${tr.namespace_ids} namespace${tr.namespace_ids === 1 ? '' : 's'}
       ${tr.as_of ? ' · as of ' + esc(ts(tr.as_of)) : ''}${weights.length ? ' · ' + weights.join(', ') : ' · no recency or importance weighting'}
+      ${(tr.tags || []).length ? ' · tags ' + tr.tags.map(esc).join(' + ') : ''}
       · total ${tr.total_ms.toFixed(1)} ms
     </div>
     ${tr.keyword_query ? `<div style="margin-bottom:10px">Keyword query: <span class="mono">${esc(tr.keyword_query)}</span></div>` : ''}
@@ -598,11 +677,13 @@ async function renderEpisodes() {
     return ts(e.occurred_at) + (lag > 60000 ? `<div class="muted">stored ${ts(e.created_at)}</div>` : '');
   };
   await listTab('episodes', {
-    path: o => '/episodes' + qs(o),
-    headers: ['Episode', 'Namespace', 'When', ''],
-    fields: ['id', 'content'],
+    above: await tagBar(),
+    path: o => '/episodes' + qs(o, tagQS()),
+    headers: ['Episode', 'Tags', 'Namespace', 'When', ''],
+    fields: ['id', 'content', 'tags'],
     row: e => `<tr>
       <td class="wrap"><span class="mono">#${e.id}</span> ${esc(e.content)}</td>
+      <td class="tagcell">${tagChips(e.tags)}</td>
       <td class="mono">${esc(nsSlug(e.namespace_id))}</td>
       <td class="muted">${when(e)}</td>
       <td class="row-actions"><button class="danger" onclick="purge('episodes', ${e.id})">purge</button></td>
@@ -631,9 +712,10 @@ async function renderFacts() {
     return c || e ? `<span class="muted">${c} cause${c === 1 ? '' : 's'} · ${e} effect${e === 1 ? '' : 's'}</span>` : '<span class="muted">—</span>';
   };
   await listTab('facts', {
-    path: o => '/facts' + qs(o),
-    headers: ['Fact', 'Detail', 'Namespace', 'Validity', 'Links', 'Confidence', 'Created', ''],
-    fields: ['id', 'content', 'entity', 'property', 'value'],
+    above: await tagBar(),
+    path: o => '/facts' + qs(o, tagQS()),
+    headers: ['Fact', 'Tags', 'Detail', 'Namespace', 'Validity', 'Links', 'Confidence', 'Created', ''],
+    fields: ['id', 'content', 'entity', 'property', 'value', 'tags'],
     enrich: async () => {
       const links = await apiList('/causal-links' + nsQS('&limit=1000'));
       for (const l of links) {
@@ -643,6 +725,7 @@ async function renderFacts() {
     },
     row: f => `<tr>
       <td class="wrap"><span class="mono">#${f.id}</span> ${esc(f.content)}</td>
+      <td class="tagcell">${tagChips(f.tags)}</td>
       <td class="wrap">${structured(f)}</td>
       <td class="mono">${esc(nsSlug(f.namespace_id))}</td>
       <td>${validity(f)}</td>

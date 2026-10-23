@@ -196,3 +196,71 @@ func TestIntegrationListTagsCounts(t *testing.T) {
 		t.Errorf("pgvector = %+v, want episodes=1 facts=1 total=2", pgvector)
 	}
 }
+
+// The dashboard list endpoints filter server-side; a client-side filter would
+// only narrow the current page. This covers the two paths the UI uses.
+func TestIntegrationListFiltersByTag(t *testing.T) {
+	e := newEnv(t, nil)
+
+	tagged, err := e.b.RememberWith(e.ctx, e.ns, "pgvector stores embeddings inside postgres", RememberOptions{
+		Tags: []string{"beslissing"},
+	})
+	if err != nil {
+		t.Fatalf("RememberWith: %v", err)
+	}
+	if _, err := e.b.RememberWith(e.ctx, e.ns, "the queue is kafka not rabbitmq", RememberOptions{
+		Tags: []string{"beslissing"},
+	}); err != nil {
+		t.Fatalf("RememberWith: %v", err)
+	}
+	if _, err := e.b.RememberWith(e.ctx, e.ns, "the dashboard listens on port 8090", RememberOptions{}); err != nil {
+		t.Fatalf("RememberWith: %v", err)
+	}
+
+	got, err := e.b.ListEpisodes(e.ctx, []string{e.ns}, []string{"beslissing"}, Pagination{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListEpisodes: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("ListEpisodes(tags=beslissing) returned %d, want 2", len(got))
+	}
+	for _, ep := range got {
+		if !reflect.DeepEqual(ep.Tags, []string{"beslissing"}) {
+			t.Errorf("episode %d tags = %v, want [beslissing]", ep.ID, ep.Tags)
+		}
+	}
+	if n, err := e.b.CountEpisodes(e.ctx, []string{e.ns}, []string{"beslissing"}); err != nil || n != 2 {
+		t.Errorf("CountEpisodes = %d, %v; want 2", n, err)
+	}
+	if n, err := e.b.CountEpisodes(e.ctx, []string{e.ns}, nil); err != nil || n != 3 {
+		t.Errorf("CountEpisodes(no filter) = %d, %v; want 3", n, err)
+	}
+
+	if _, err := e.b.storeFact(e.ctx, e.nsID, &reasoner.StructuredFact{
+		Entity:   "pgvector",
+		Property: "stores",
+		Value:    "embeddings",
+		Summary:  "pgvector stores embeddings inside postgres",
+	}, []int64{tagged}); err != nil {
+		t.Fatalf("storeFact: %v", err)
+	}
+
+	facts, err := e.b.QueryFactsWindow(e.ctx, []string{e.ns}, nil, nil, nil, nil, nil, nil, nil, []string{"beslissing"}, Pagination{Limit: 10})
+	if err != nil {
+		t.Fatalf("QueryFactsWindow: %v", err)
+	}
+	if len(facts) != 1 {
+		t.Errorf("QueryFactsWindow(tags=beslissing) returned %d facts, want 1", len(facts))
+	}
+	for _, f := range facts {
+		if !reflect.DeepEqual(f.Tags, []string{"beslissing"}) {
+			t.Errorf("fact %d tags = %v, want [beslissing]", f.ID, f.Tags)
+		}
+	}
+	if n, err := e.b.CountFactsWindow(e.ctx, []string{e.ns}, nil, nil, nil, nil, nil, nil, nil, []string{"beslissing"}); err != nil || n != 1 {
+		t.Errorf("CountFactsWindow = %d, %v; want 1", n, err)
+	}
+	if n, err := e.b.CountFactsWindow(e.ctx, []string{e.ns}, nil, nil, nil, nil, nil, nil, nil, nil); err != nil || n != 1 {
+		t.Errorf("CountFactsWindow(no filter) = %d, %v; want 1", n, err)
+	}
+}

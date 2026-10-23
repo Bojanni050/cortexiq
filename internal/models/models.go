@@ -50,6 +50,7 @@ type Episode struct {
 	OccurredAt     time.Time       `db:"occurred_at"`
 	CreatedAt      time.Time       `db:"created_at"`
 	DeletedAt      *time.Time      `db:"deleted_at"`
+	Tags           []string        `db:"tags"`
 }
 
 // Fact is a belief derived from episodes.
@@ -68,6 +69,7 @@ type Fact struct {
 	CreatedAt      time.Time       `db:"created_at"`
 	UpdatedAt      time.Time       `db:"updated_at"`
 	DeletedAt      *time.Time      `db:"deleted_at"`
+	Tags           []string        `db:"tags"`
 }
 
 // Contradiction records a conflict between two facts about the same entity and property.

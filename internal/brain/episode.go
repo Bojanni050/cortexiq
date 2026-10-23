@@ -178,40 +178,44 @@ func (b *Brain) PurgeEpisode(ctx context.Context, episodeID int64) error {
 }
 
 // CountEpisodes counts the episodes ListEpisodes would return, ignoring paging.
-func (b *Brain) CountEpisodes(ctx context.Context, namespaceSlugs []string) (int, error) {
+// tags narrows the count the same way it narrows the list (AND).
+func (b *Brain) CountEpisodes(ctx context.Context, namespaceSlugs []string, tags []string) (int, error) {
 	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
 	if err != nil {
 		return 0, err
 	}
-	return b.countWhere(ctx, "episodes", "namespace_id = ANY($1) AND deleted_at IS NULL", nsIDs)
+	where, args := tagWhere("namespace_id = ANY($1) AND deleted_at IS NULL", []any{nsIDs}, tags)
+	return b.countWhere(ctx, "episodes", where, args...)
 }
 
 // GetEpisode returns a single episode by ID.
 func (b *Brain) GetEpisode(ctx context.Context, episodeID int64) (*models.Episode, error) {
 	var e models.Episode
 	err := b.pool.QueryRow(ctx,
-		`SELECT id, namespace_id, content, embedding, embedding_model, occurred_at, created_at, deleted_at
+		`SELECT id, namespace_id, content, embedding, embedding_model, occurred_at, created_at, deleted_at, tags
 		 FROM episodes WHERE id = $1`,
 		episodeID,
-	).Scan(&e.ID, &e.NamespaceID, &e.Content, &e.Embedding, &e.EmbeddingModel, &e.OccurredAt, &e.CreatedAt, &e.DeletedAt)
+	).Scan(&e.ID, &e.NamespaceID, &e.Content, &e.Embedding, &e.EmbeddingModel, &e.OccurredAt, &e.CreatedAt, &e.DeletedAt, &e.Tags)
 	if err != nil {
 		return nil, ErrEpisodeNotFound
 	}
 	return &e, nil
 }
 
-// ListEpisodes returns the most recent episodes for the given namespaces, newest first.
-func (b *Brain) ListEpisodes(ctx context.Context, namespaceSlugs []string, page Pagination) ([]models.Episode, error) {
+// ListEpisodes returns the most recent episodes for the given namespaces, newest
+// first. tags narrows the list to episodes carrying every listed tag (AND).
+func (b *Brain) ListEpisodes(ctx context.Context, namespaceSlugs []string, tags []string, page Pagination) ([]models.Episode, error) {
 	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
 	if err != nil {
 		return nil, err
 	}
 	page = page.Sanitize()
-	rows, err := b.pool.Query(ctx,
-		`SELECT id, namespace_id, content, embedding_model, occurred_at, created_at
-		 FROM episodes WHERE namespace_id = ANY($1) AND deleted_at IS NULL
-		 ORDER BY occurred_at DESC LIMIT $2 OFFSET $3`,
-		nsIDs, page.Limit, page.Offset)
+	where, args := tagWhere("namespace_id = ANY($1) AND deleted_at IS NULL", []any{nsIDs}, tags)
+	query := `SELECT id, namespace_id, content, embedding_model, occurred_at, created_at, tags
+		 FROM episodes WHERE ` + where +
+		fmt.Sprintf(" ORDER BY occurred_at DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	args = append(args, page.Limit, page.Offset)
+	rows, err := b.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list episodes: %w", err)
 	}
@@ -220,7 +224,7 @@ func (b *Brain) ListEpisodes(ctx context.Context, namespaceSlugs []string, page 
 	var out []models.Episode
 	for rows.Next() {
 		var e models.Episode
-		if err := rows.Scan(&e.ID, &e.NamespaceID, &e.Content, &e.EmbeddingModel, &e.OccurredAt, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.NamespaceID, &e.Content, &e.EmbeddingModel, &e.OccurredAt, &e.CreatedAt, &e.Tags); err != nil {
 			return nil, fmt.Errorf("scan episode: %w", err)
 		}
 		out = append(out, e)

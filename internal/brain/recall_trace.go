@@ -76,9 +76,9 @@ type RecallTrace struct {
 	Graph         bool     `json:"graph"`
 	GraphEntities []string `json:"graph_entities,omitempty"`
 	// Routed lists the extra types the query's wording added ("failure", "goal").
-	Routed       []string `json:"routed,omitempty"`
+	Routed []string `json:"routed,omitempty"`
 	// Tags is the normalized filter the recall ran with.
-	Tags []string `json:"tags,omitempty"`
+	Tags         []string `json:"tags,omitempty"`
 	Limit        int      `json:"limit"`
 	Candidates   int      `json:"candidates"`
 	Namespaces   []string `json:"namespaces"`
