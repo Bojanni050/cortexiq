@@ -1,4 +1,22 @@
 {{/* Modifications copyright (c) 2026 Bojan van der Heide */}}
+{{/*
+  Tags narrow a recall: every requested tag must be present (AND, not OR), so a
+  filter can only make the result smaller. The filter must appear in every arm —
+  vector, keyword, graph and temporal — because the arms are fused by rank; an
+  unfiltered arm would put untagged rows back into the result.
+*/}}
+{{define "tag_filter"}}
+{{if .Args.tags}}
+    AND tags @> ARRAY[{{.Bind .Args.tags}}]::text[]
+{{end}}
+{{end}}
+
+{{define "tag_filter_f"}}
+{{if .Args.tags}}
+    AND f.tags @> ARRAY[{{.Bind .Args.tags}}]::text[]
+{{end}}
+{{end}}
+
 {{define "recall_episodes"}}
 SELECT
     id,
@@ -7,6 +25,7 @@ SELECT
     occurred_at,
     created_at,
     importance,
+    tags,
     1 - (embedding <=> {{.Bind .Args.vector}}) AS score
 {{if .Args.include_embedding}},
     embedding{{end}}
@@ -17,6 +36,7 @@ WHERE deleted_at IS NULL
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
 {{end}}
+{{template "tag_filter" .}}
 ORDER BY embedding <=> {{.Bind .Args.vector}}
 LIMIT {{.Bind .Args.limit}}
 {{end}}
@@ -29,6 +49,7 @@ SELECT
     confidence,
     created_at,
     importance,
+    tags,
     1 - (embedding <=> {{.Bind .Args.vector}}) AS score
 {{if .Args.include_embedding}},
     embedding{{end}}
@@ -45,6 +66,7 @@ WHERE deleted_at IS NULL
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
 {{end}}
+{{template "tag_filter" .}}
 ORDER BY embedding <=> {{.Bind .Args.vector}}
 LIMIT {{.Bind .Args.limit}}
 {{end}}
@@ -57,6 +79,7 @@ SELECT
     occurred_at,
     created_at,
     importance,
+    tags,
     ts_rank_cd(content_tsv, websearch_to_tsquery('simple', {{.Bind .Args.query}})) AS score
 FROM episodes
 WHERE deleted_at IS NULL
@@ -65,6 +88,7 @@ WHERE deleted_at IS NULL
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
 {{end}}
+{{template "tag_filter" .}}
 ORDER BY score DESC, id DESC
 LIMIT {{.Bind .Args.limit}}
 {{end}}
@@ -77,6 +101,7 @@ SELECT
     confidence,
     created_at,
     importance,
+    tags,
     ts_rank_cd(content_tsv, websearch_to_tsquery('simple', {{.Bind .Args.query}})) AS score
 FROM facts
 WHERE deleted_at IS NULL
@@ -91,6 +116,7 @@ WHERE deleted_at IS NULL
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
 {{end}}
+{{template "tag_filter" .}}
 ORDER BY score DESC, id DESC
 LIMIT {{.Bind .Args.limit}}
 {{end}}
@@ -141,18 +167,18 @@ neighbours AS (
     GROUP BY 1
 ),
 candidates AS (
-    SELECT f.id, f.namespace_id, f.content, f.confidence, f.created_at, f.importance,
+    SELECT f.id, f.namespace_id, f.content, f.confidence, f.created_at, f.importance, f.tags,
            0 AS hop, 1.0::real AS arm_score
     FROM facts f
     WHERE lower(f.entity) IN (SELECT name FROM matched)
     UNION ALL
-    SELECT f.id, f.namespace_id, f.content, f.confidence, f.created_at, f.importance,
+    SELECT f.id, f.namespace_id, f.content, f.confidence, f.created_at, f.importance, f.tags,
            1 AS hop, (n.rel_conf * 0.5)::real AS arm_score
     FROM facts f
     JOIN neighbours n ON lower(f.entity) = n.name
     WHERE lower(f.entity) NOT IN (SELECT name FROM matched)
 )
-SELECT c.id, c.namespace_id, c.content, c.confidence, c.created_at, c.importance, c.arm_score AS score
+SELECT c.id, c.namespace_id, c.content, c.confidence, c.created_at, c.importance, c.tags, c.arm_score AS score
 FROM candidates c
 JOIN facts f ON f.id = c.id
 WHERE f.deleted_at IS NULL
@@ -179,6 +205,7 @@ WHERE f.deleted_at IS NULL
 {{if .Args.namespace_ids}}
     AND f.namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
 {{end}}
+{{template "tag_filter_f" .}}
 ORDER BY c.hop, COALESCE(1 - (f.embedding <=> {{.Bind .Args.vector}}), -1) DESC, c.confidence DESC, c.id DESC
 LIMIT {{.Bind .Args.limit}}
 {{end}}
@@ -223,19 +250,20 @@ LIMIT {{.Bind .Args.limit}}
 {{end}}
 
 {{define "recall_episodes_temporal"}}
-SELECT id, namespace_id, content, occurred_at, created_at, importance, 1.0::real AS score
+SELECT id, namespace_id, content, occurred_at, created_at, importance, tags, 1.0::real AS score
 FROM episodes
 WHERE deleted_at IS NULL
 {{template "episode_time_filter" .}}
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
 {{end}}
+{{template "tag_filter" .}}
 ORDER BY occurred_at DESC, id DESC
 LIMIT {{.Bind .Args.limit}}
 {{end}}
 
 {{define "recall_facts_temporal"}}
-SELECT id, namespace_id, content, confidence, created_at, importance, 1.0::real AS score
+SELECT id, namespace_id, content, confidence, created_at, importance, tags, 1.0::real AS score
 FROM facts
 WHERE deleted_at IS NULL
 {{if or .Args.from .Args.to}}
@@ -248,6 +276,7 @@ WHERE deleted_at IS NULL
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
 {{end}}
+{{template "tag_filter" .}}
 ORDER BY COALESCE(valid_from, created_at) DESC, id DESC
 LIMIT {{.Bind .Args.limit}}
 {{end}}

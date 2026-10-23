@@ -36,7 +36,11 @@ func rememberCmd(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	bc := getBootstrap(cmd)
-	id, err := bc.Brain.RememberWithImportance(ctx, namespace, content, occurredAt, float32(cmd.Float("importance")))
+	id, err := bc.Brain.RememberWith(ctx, namespace, content, brain.RememberOptions{
+		OccurredAt: occurredAt,
+		Importance: float32(cmd.Float("importance")),
+		Tags:       cmd.StringSlice("tag"),
+	})
 	if errors.Is(err, brain.ErrSocialCloser) {
 		return printJSON(map[string]any{"skipped": true, "reason": err.Error()})
 	}
@@ -88,7 +92,7 @@ func recallCmd(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	bc := getBootstrap(cmd)
-	results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo, MMR: mmr})
+	results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo, Tags: cmd.StringSlice("tag"), MMR: mmr})
 	if err != nil {
 		return err
 	}

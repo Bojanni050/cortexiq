@@ -52,6 +52,7 @@ type ExportRecord struct {
 	ValidFrom  *time.Time `json:"valid_from,omitempty"`
 	ValidUntil *time.Time `json:"valid_until,omitempty"`
 	KnownUntil *time.Time `json:"known_until,omitempty"` // facts: end of the knowledge interval
+	Tags       []string   `json:"tags,omitempty"`       // both; absent in exports made before tags existed
 }
 
 // ExportResult counts what an export wrote.
@@ -99,7 +100,7 @@ func (b *Brain) Export(ctx context.Context, w io.Writer, namespaces []string, ty
 
 	if want[RecordEpisode] {
 		rows, err := b.pool.Query(ctx,
-			`SELECT n.slug, e.content, e.occurred_at, e.created_at, e.importance
+			`SELECT n.slug, e.content, e.occurred_at, e.created_at, e.importance, e.tags
 			 FROM episodes e JOIN namespaces n ON n.id = e.namespace_id
 			 WHERE e.namespace_id = ANY($1) AND e.deleted_at IS NULL
 			 ORDER BY e.id`, nsIDs)
@@ -110,7 +111,7 @@ func (b *Brain) Export(ctx context.Context, w io.Writer, namespaces []string, ty
 			rec := ExportRecord{Type: RecordEpisode}
 			var occurred, created time.Time
 			var importance float32
-			if err := rows.Scan(&rec.Namespace, &rec.Content, &occurred, &created, &importance); err != nil {
+			if err := rows.Scan(&rec.Namespace, &rec.Content, &occurred, &created, &importance, &rec.Tags); err != nil {
 				rows.Close()
 				return res, fmt.Errorf("scan episode: %w", err)
 			}
@@ -130,7 +131,7 @@ func (b *Brain) Export(ctx context.Context, w io.Writer, namespaces []string, ty
 	if want[RecordFact] {
 		rows, err := b.pool.Query(ctx,
 			`SELECT n.slug, f.content, f.confidence, f.entity, f.property, f.value,
-			        f.valid_from, f.valid_until, f.known_until, f.created_at, f.importance
+			        f.valid_from, f.valid_until, f.known_until, f.created_at, f.importance, f.tags
 			 FROM facts f JOIN namespaces n ON n.id = f.namespace_id
 			 WHERE f.namespace_id = ANY($1) AND f.deleted_at IS NULL
 			 ORDER BY f.id`, nsIDs)
@@ -142,7 +143,7 @@ func (b *Brain) Export(ctx context.Context, w io.Writer, namespaces []string, ty
 			var conf, importance float32
 			var created time.Time
 			if err := rows.Scan(&rec.Namespace, &rec.Content, &conf, &rec.Entity, &rec.Property, &rec.Value,
-				&rec.ValidFrom, &rec.ValidUntil, &rec.KnownUntil, &created, &importance); err != nil {
+				&rec.ValidFrom, &rec.ValidUntil, &rec.KnownUntil, &created, &importance, &rec.Tags); err != nil {
 				rows.Close()
 				return res, fmt.Errorf("scan fact: %w", err)
 			}
@@ -302,10 +303,14 @@ func (b *Brain) importRecord(ctx context.Context, rec ExportRecord, nsCache map[
 		if rec.OccurredAt != nil {
 			occurred = rec.OccurredAt.UTC()
 		}
+		tags, err := NormalizeTags(rec.Tags)
+		if err != nil {
+			return false, err
+		}
 		_, err = b.pool.Exec(ctx,
-			`INSERT INTO episodes (namespace_id, content, embedding, embedding_model, occurred_at, created_at, importance)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			nsID, rec.Content, pgVec, b.embedder.Model(), occurred, created, importance)
+			`INSERT INTO episodes (namespace_id, content, embedding, embedding_model, occurred_at, created_at, importance, tags)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+			nsID, rec.Content, pgVec, b.embedder.Model(), occurred, created, importance, tagsOrEmpty(tags))
 		return err == nil, err
 	}
 
@@ -313,12 +318,16 @@ func (b *Brain) importRecord(ctx context.Context, rec ExportRecord, nsCache map[
 	if rec.Confidence != nil {
 		conf = *rec.Confidence
 	}
+	tags, err := NormalizeTags(rec.Tags)
+	if err != nil {
+		return false, err
+	}
 	_, err = b.pool.Exec(ctx,
 		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence,
-		                    entity, property, value, valid_from, valid_until, known_until, created_at, importance)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+		                    entity, property, value, valid_from, valid_until, known_until, created_at, importance, tags)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
 		nsID, rec.Content, pgVec, b.embedder.Model(), conf,
-		rec.Entity, rec.Property, rec.Value, rec.ValidFrom, rec.ValidUntil, rec.KnownUntil, created, importance)
+		rec.Entity, rec.Property, rec.Value, rec.ValidFrom, rec.ValidUntil, rec.KnownUntil, created, importance, tagsOrEmpty(tags))
 	return err == nil, err
 }
 

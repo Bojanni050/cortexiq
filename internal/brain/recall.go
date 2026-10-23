@@ -45,6 +45,10 @@ type RecallResult struct {
 	// Importance (0..1, 0.5 neutral) is what the caller said this memory is worth;
 	// it only influences Score when importance weighting is enabled.
 	Importance float32 `json:"importance"`
+	// Tags say what the memory is about (e.g. "beslissing", "bugfix"). They are
+	// orthogonal to NamespaceID, which says where it belongs. Facts inherit the
+	// tags of the episodes they were consolidated from.
+	Tags []string `json:"tags,omitempty"`
 	// Feedback is the net of the callers' verdicts on this fact (+1 helpful,
 	// -1 wrong), counting only each principal's latest vote. It is absent when
 	// nobody voted or the votes cancel out, and it scales Score by a bounded
@@ -160,6 +164,13 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 	if err := validateContent(query); err != nil {
 		return nil, err
 	}
+	// Normalize here as well, not only on write: a caller that types "Bugfix"
+	// should match the stored "bugfix", and an invalid tag must fail loudly
+	// instead of silently matching nothing.
+	tagFilter, err := NormalizeTags(opts.Tags)
+	if err != nil {
+		return nil, err
+	}
 	if limit <= 0 {
 		limit = 10
 	}
@@ -241,6 +252,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 	if tr != nil {
 		tr.Query, tr.KeywordQuery, tr.Hybrid, tr.Graph, tr.Limit, tr.Candidates = query, kwQuery, kwQuery != "", graph, limit, candidates
 		tr.Namespaces, tr.NamespaceIDs, tr.Routed = namespaces, len(nsIDs), routed
+		tr.Tags = tagFilter
 		if asOf != nil {
 			tr.AsOf = asOf.Format(time.RFC3339)
 		}
@@ -267,7 +279,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 
 	// Search facts first (higher quality, consolidated)
 	if facts {
-		factSQL, factArgs, err := b.queries.RecallFactsWindowWithEmbedding(nsIDs, pgVec, candidates, asOf, opts.From, opts.To, known, mmrOn)
+		factSQL, factArgs, err := b.queries.RecallFactsWindowWithEmbedding(nsIDs, pgVec, candidates, asOf, opts.From, opts.To, known, mmrOn, tagFilter)
 		if err != nil {
 			return nil, fmt.Errorf("build fact query: %w", err)
 		}
@@ -279,7 +291,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 
 		var factKw, factGraph, factTemporal []RecallResult
 		if kwQuery != "" {
-			kwSQL, kwArgs, err := b.queries.RecallFactsKeywordWindow(nsIDs, kwQuery, candidates, asOf, opts.From, opts.To, known)
+			kwSQL, kwArgs, err := b.queries.RecallFactsKeywordWindow(nsIDs, kwQuery, candidates, asOf, opts.From, opts.To, known, tagFilter)
 			if err != nil {
 				return nil, fmt.Errorf("build fact keyword query: %w", err)
 			}
@@ -289,7 +301,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			stage("facts_keyword", len(factKw))
 		}
 		if graph {
-			graphSQL, graphArgs, err := b.queries.RecallFactsGraphWindow(nsIDs, query, pgVec, candidates, asOf, opts.From, opts.To, known)
+			graphSQL, graphArgs, err := b.queries.RecallFactsGraphWindow(nsIDs, query, pgVec, candidates, asOf, opts.From, opts.To, known, tagFilter)
 			if err != nil {
 				return nil, fmt.Errorf("build fact graph query: %w", err)
 			}
@@ -302,7 +314,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			}
 		}
 		if temporal {
-			temporalSQL, temporalArgs, err := b.queries.RecallFactsTemporal(nsIDs, candidates, asOf, opts.From, opts.To, known)
+			temporalSQL, temporalArgs, err := b.queries.RecallFactsTemporal(nsIDs, candidates, asOf, opts.From, opts.To, known, tagFilter)
 			if err != nil {
 				return nil, fmt.Errorf("build fact temporal query: %w", err)
 			}
@@ -356,7 +368,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 				epCandidates = maxCandidates
 			}
 		}
-		epSQL, epArgs, err := b.queries.RecallEpisodesWindowWithEmbedding(nsIDs, pgVec, epCandidates, asOf, opts.From, opts.To, known, mmrOn)
+		epSQL, epArgs, err := b.queries.RecallEpisodesWindowWithEmbedding(nsIDs, pgVec, epCandidates, asOf, opts.From, opts.To, known, mmrOn, tagFilter)
 		if err != nil {
 			return nil, fmt.Errorf("build episode query: %w", err)
 		}
@@ -368,7 +380,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 
 		var epKw, epTemporal []RecallResult
 		if kwQuery != "" {
-			kwSQL, kwArgs, err := b.queries.RecallEpisodesKeywordWindow(nsIDs, kwQuery, epCandidates, asOf, opts.From, opts.To, known)
+			kwSQL, kwArgs, err := b.queries.RecallEpisodesKeywordWindow(nsIDs, kwQuery, epCandidates, asOf, opts.From, opts.To, known, tagFilter)
 			if err != nil {
 				return nil, fmt.Errorf("build episode keyword query: %w", err)
 			}
@@ -378,7 +390,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			stage("episodes_keyword", len(epKw))
 		}
 		if temporal {
-			temporalSQL, temporalArgs, err := b.queries.RecallEpisodesTemporal(nsIDs, epCandidates, asOf, opts.From, opts.To, known)
+			temporalSQL, temporalArgs, err := b.queries.RecallEpisodesTemporal(nsIDs, epCandidates, asOf, opts.From, opts.To, known, tagFilter)
 			if err != nil {
 				return nil, fmt.Errorf("build episode temporal query: %w", err)
 			}
@@ -416,8 +428,10 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 	}
 
 	// Failures and goals only take part when asked for by type; they compete with
-	// facts and episodes in the final sort.
-	if failures, goals := opts.includesWork(); failures || goals {
+	// facts and episodes in the final sort. A tag filter excludes them: they have
+	// no tags, so they could never satisfy it, and letting them through would
+	// return rows the caller explicitly filtered out.
+	if failures, goals := opts.includesWork(); (failures || goals) && len(tagFilter) == 0 {
 		work, err := b.recallWork(ctx, nsIDs, query, limit, asOf, failures, goals)
 		if err != nil {
 			return nil, err
@@ -616,24 +630,24 @@ func (b *Brain) runRecallWithEmbedding(ctx context.Context, sql string, args []a
 		var emb pgvector.Vector
 		if kind == "fact" {
 			if includeEmbedding {
-				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &r.Confidence, &createdAt, &r.Importance, &r.Score, &emb); err != nil {
+				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &r.Confidence, &createdAt, &r.Importance, &r.Tags, &r.Score, &emb); err != nil {
 					return nil, fmt.Errorf("scan fact: %w", err)
 				}
 				r.embedding = emb.Slice()
 			} else {
-				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &r.Confidence, &createdAt, &r.Importance, &r.Score); err != nil {
+				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &r.Confidence, &createdAt, &r.Importance, &r.Tags, &r.Score); err != nil {
 					return nil, fmt.Errorf("scan fact: %w", err)
 				}
 			}
 		} else {
 			var occurredAt time.Time
 			if includeEmbedding {
-				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &occurredAt, &createdAt, &r.Importance, &r.Score, &emb); err != nil {
+				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &occurredAt, &createdAt, &r.Importance, &r.Tags, &r.Score, &emb); err != nil {
 					return nil, fmt.Errorf("scan episode: %w", err)
 				}
 				r.embedding = emb.Slice()
 			} else {
-				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &occurredAt, &createdAt, &r.Importance, &r.Score); err != nil {
+				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &occurredAt, &createdAt, &r.Importance, &r.Tags, &r.Score); err != nil {
 					return nil, fmt.Errorf("scan episode: %w", err)
 				}
 			}

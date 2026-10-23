@@ -15,25 +15,53 @@ import (
 // If occurredAt is nil, the current time is used.
 // Returns the episode ID on success.
 func (b *Brain) Remember(ctx context.Context, namespaceSlug, content string, occurredAt *time.Time) (int64, error) {
-	return b.RememberWithImportance(ctx, namespaceSlug, content, occurredAt, DefaultImportance)
+	return b.RememberWith(ctx, namespaceSlug, content, RememberOptions{
+		OccurredAt: occurredAt,
+		Importance: DefaultImportance,
+	})
 }
 
 // DefaultImportance is the neutral importance of a memory nobody rated.
 const DefaultImportance float32 = 0.5
+
+// RememberOptions carries the optional attributes of a memory. Importance has
+// no "unset" value (0 is a legitimate rating), so callers that do not rate a
+// memory pass DefaultImportance explicitly.
+type RememberOptions struct {
+	OccurredAt *time.Time
+	Importance float32
+	// Tags describe what a memory is about ("beslissing", "bugfix",
+	// "klant-x"). They are orthogonal to the namespace and normalized by
+	// NormalizeTags. Facts consolidated from this episode inherit them.
+	Tags []string
+}
 
 // RememberWithImportance is Remember with an explicit importance in 0..1
 // (0.5 is neutral). Importance only matters when recall importance weighting is
 // enabled (CORTEXIQ_RECALL_IMPORTANCE_WEIGHT); facts consolidated from the episode
 // inherit the highest importance of their source episodes.
 func (b *Brain) RememberWithImportance(ctx context.Context, namespaceSlug, content string, occurredAt *time.Time, importance float32) (int64, error) {
+	return b.RememberWith(ctx, namespaceSlug, content, RememberOptions{
+		OccurredAt: occurredAt,
+		Importance: importance,
+	})
+}
+
+// RememberWith stores a new episode with all optional attributes set at once.
+func (b *Brain) RememberWith(ctx context.Context, namespaceSlug, content string, opts RememberOptions) (int64, error) {
 	if err := requireWrite(ctx); err != nil {
 		return 0, err
 	}
 	if err := validateContent(content); err != nil {
 		return 0, err
 	}
+	importance := opts.Importance
 	if importance < 0 || importance > 1 || importance != importance {
 		return 0, fmt.Errorf("importance must be between 0 and 1, got %v", importance)
+	}
+	tags, err := NormalizeTags(opts.Tags)
+	if err != nil {
+		return 0, err
 	}
 	// The social filter is the one gate in front of every write path (MCP,
 	// HTTP, CLI), so the store never fills with "dank je wel" in the first
@@ -59,8 +87,8 @@ func (b *Brain) RememberWithImportance(ctx context.Context, namespaceSlug, conte
 	}
 
 	occurred := time.Now().UTC()
-	if occurredAt != nil {
-		occurred = *occurredAt
+	if opts.OccurredAt != nil {
+		occurred = *opts.OccurredAt
 	}
 
 	vec, err := b.embedder.Embed(ctx, content)
@@ -70,9 +98,9 @@ func (b *Brain) RememberWithImportance(ctx context.Context, namespaceSlug, conte
 
 	var id int64
 	err = b.pool.QueryRow(ctx,
-		`INSERT INTO episodes (namespace_id, content, embedding, embedding_model, occurred_at, importance)
-		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		nsID, content, pgvector.NewVector(vec), b.embedder.Model(), occurred, importance,
+		`INSERT INTO episodes (namespace_id, content, embedding, embedding_model, occurred_at, importance, tags)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		nsID, content, pgvector.NewVector(vec), b.embedder.Model(), occurred, importance, tagsOrEmpty(tags),
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("insert episode: %w", err)

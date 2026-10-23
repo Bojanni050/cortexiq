@@ -45,6 +45,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/recall", h.recall)
 	api.HandleFunc("/api/v1/reflect", h.reflect)
 	api.HandleFunc("/api/v1/remember", h.remember)
+	api.HandleFunc("/api/v1/tags", h.tags)
 	api.HandleFunc("/api/v1/namespaces", h.namespaces)
 	api.HandleFunc("/api/v1/namespaces/", h.namespaceItem)
 	api.HandleFunc("/api/v1/episodes", h.episodes)
@@ -615,6 +616,7 @@ func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
 		Namespaces []string `json:"namespaces"`
 		Importance *float32 `json:"importance"`
 		OccurredAt string   `json:"occurred_at"`
+		Tags       []string `json:"tags"`
 	}
 	if err := readBody(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -637,7 +639,11 @@ func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	id, err := h.Brain.RememberWithImportance(r.Context(), rememberNamespace(body.Namespace, body.Namespaces), body.Content, occurredAt, importance)
+	id, err := h.Brain.RememberWith(r.Context(), rememberNamespace(body.Namespace, body.Namespaces), body.Content, brain.RememberOptions{
+		OccurredAt: occurredAt,
+		Importance: importance,
+		Tags:       body.Tags,
+	})
 	if errors.Is(err, brain.ErrSocialCloser) {
 		// Nothing is wrong with the request; the content just is not a memory.
 		// 200 (not 201) keeps clients from reporting a row that was never created,
@@ -666,6 +672,18 @@ func rememberNamespace(single string, many []string) string {
 		}
 	}
 	return "/"
+}
+
+func (h *Handler) tags(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	items, err := h.Brain.ListTags(r.Context(), namespacesParam(r), pagination(r).Limit)
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, nonNil(items))
 }
 
 func (h *Handler) namespaces(w http.ResponseWriter, r *http.Request) {

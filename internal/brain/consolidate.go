@@ -523,11 +523,11 @@ func (b *Brain) storeFactWithConfig(ctx context.Context, nsID int64, sf *reasone
 
 	var factID int64
 	err = b.pool.QueryRow(ctx,
-		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, entity, property, value, valid_from, importance)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, entity, property, value, valid_from, importance, tags)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
 		nsID, sf.Summary, pgvector.NewVector(vec), b.embedder.Model(), confidence,
 		strPtrOrNull(sf.Entity), strPtrOrNull(sf.Property), strPtrOrNull(sf.Value), now,
-		b.sourceImportance(ctx, episodeIDs),
+		b.sourceImportance(ctx, episodeIDs), b.sourceTags(ctx, episodeIDs),
 	).Scan(&factID)
 	if err != nil {
 		return r, fmt.Errorf("insert fact: %w", err)
@@ -561,9 +561,11 @@ func (b *Brain) storeFactWithConfig(ctx context.Context, nsID int64, sf *reasone
 func (b *Brain) reinforceFact(ctx context.Context, factID int64, episodeIDs []int64) {
 	_, _ = b.pool.Exec(ctx,
 		`UPDATE facts SET confidence = LEAST(1.0, confidence + (1 - confidence) * $2),
-		        importance = GREATEST(importance, $3), updated_at = now()
+		        importance = GREATEST(importance, $3),
+		        tags = (SELECT COALESCE(array_agg(DISTINCT t ORDER BY t), '{}') FROM unnest(tags || $4) AS t),
+		        updated_at = now()
 		 WHERE id = $1`,
-		factID, reinforceStep, b.sourceImportance(ctx, episodeIDs),
+		factID, reinforceStep, b.sourceImportance(ctx, episodeIDs), b.sourceTags(ctx, episodeIDs),
 	)
 	for _, eid := range episodeIDs {
 		_, _ = b.pool.Exec(ctx,
@@ -571,6 +573,27 @@ func (b *Brain) reinforceFact(ctx context.Context, factID int64, episodeIDs []in
 			factID, eid,
 		)
 	}
+}
+
+// sourceTags is the union of the tags on the given source episodes, sorted so
+// the stored array is deterministic. It is how a fact keeps its topics after
+// consolidation: recall returns mostly facts, so a tag that only lives on the
+// episode it came from would stop filtering the moment the episode is
+// consolidated. Best effort — tags are annotation and must never fail
+// consolidation; an empty result is an empty array, never NULL.
+func (b *Brain) sourceTags(ctx context.Context, episodeIDs []int64) []string {
+	tags := []string{}
+	if len(episodeIDs) == 0 {
+		return tags
+	}
+	if err := b.pool.QueryRow(ctx,
+		`SELECT COALESCE(array_agg(DISTINCT t ORDER BY t), '{}')
+		   FROM episodes e, unnest(e.tags) AS t
+		  WHERE e.id = ANY($1)`, episodeIDs,
+	).Scan(&tags); err != nil {
+		return []string{}
+	}
+	return tags
 }
 
 // sourceImportance is the highest importance among the given source episodes: a

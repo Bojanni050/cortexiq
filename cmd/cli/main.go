@@ -131,6 +131,7 @@ func main() {
 					&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "Namespace path"},
 					&cli.StringFlag{Name: "occurred-at", Usage: "When it occurred (RFC3339 or YYYY-MM-DD)"},
 					&cli.FloatFlag{Name: "importance", Value: 0.5, Usage: "How much it matters, 0..1 (0.5 = neutral)"},
+					&cli.StringSliceFlag{Name: "tag", Aliases: []string{"t"}, Usage: "Tag describing what it is about (repeatable)"},
 				},
 			},
 			{
@@ -147,6 +148,7 @@ func main() {
 					&cli.StringFlag{Name: "from", Usage: "Include event/valid time on or after this bound (RFC3339 or YYYY-MM-DD)"},
 					&cli.StringFlag{Name: "to", Usage: "Exclude event/valid time at or after this bound (RFC3339 or YYYY-MM-DD)"},
 					&cli.FloatFlag{Name: "mmr", Usage: "MMR diversity 0..1 (0=relevance, 1=diversity, 0.5=balanced); default: server config"},
+					&cli.StringSliceFlag{Name: "tag", Aliases: []string{"t"}, Usage: "Only memories carrying every one of these tags (repeatable)"},
 				},
 			},
 			{

@@ -2,11 +2,11 @@ package queries
 
 import (
 	"strconv"
+	"strings"
+	"testing"
 	"time"
 
 	"github.com/pgvector/pgvector-go"
-	"strings"
-	"testing"
 )
 
 // The keyword templates bind the query twice (rank + filter) and a variable
@@ -149,20 +149,22 @@ func TestRecallWindowTemplatesRender(t *testing.T) {
 			return q.RecallFactsWindow([]int64{7}, vec, 10, nil, &from, &to, Known{})
 		},
 		"fact keyword": func() (string, []any, error) {
-			return q.RecallFactsKeywordWindow([]int64{7}, "project", 10, nil, &from, &to, Known{})
+			return q.RecallFactsKeywordWindow([]int64{7}, "project", 10, nil, &from, &to, Known{}, nil)
 		},
 		"fact graph": func() (string, []any, error) {
-			return q.RecallFactsGraphWindow([]int64{7}, "project", vec, 10, nil, &from, &to, Known{})
+			return q.RecallFactsGraphWindow([]int64{7}, "project", vec, 10, nil, &from, &to, Known{}, nil)
 		},
 		"episode vector": func() (string, []any, error) {
 			return q.RecallEpisodesWindow([]int64{7}, vec, 10, nil, &from, &to, Known{})
 		},
 		"episode keyword": func() (string, []any, error) {
-			return q.RecallEpisodesKeywordWindow([]int64{7}, "project", 10, nil, &from, &to, Known{})
+			return q.RecallEpisodesKeywordWindow([]int64{7}, "project", 10, nil, &from, &to, Known{}, nil)
 		},
-		"fact temporal": func() (string, []any, error) { return q.RecallFactsTemporal([]int64{7}, 10, nil, &from, &to, Known{}) },
+		"fact temporal": func() (string, []any, error) {
+			return q.RecallFactsTemporal([]int64{7}, 10, nil, &from, &to, Known{}, nil)
+		},
 		"episode temporal": func() (string, []any, error) {
-			return q.RecallEpisodesTemporal([]int64{7}, 10, nil, &from, &to, Known{})
+			return q.RecallEpisodesTemporal([]int64{7}, 10, nil, &from, &to, Known{}, nil)
 		},
 	}
 	for name, build := range checks {
@@ -200,3 +202,78 @@ func TestRecallWindowTemplatesRender(t *testing.T) {
 }
 
 func itoa(i int) string { return strconv.Itoa(i) }
+
+// Every recall arm must carry the tag filter: the arms are fused by rank, so one
+// unfiltered arm would put untagged rows back into the result.
+func TestRecallTagFilterRendersInEveryArm(t *testing.T) {
+	q, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vec := pgvector.NewVector([]float32{1, 0})
+	tags := []string{"beslissing", "pgvector"}
+	builders := map[string]func() (string, []any, error){
+		"fact vector": func() (string, []any, error) {
+			return q.RecallFactsWindowWithEmbedding([]int64{7}, vec, 10, nil, nil, nil, Known{}, false, tags)
+		},
+		"fact keyword": func() (string, []any, error) {
+			return q.RecallFactsKeywordWindow([]int64{7}, "project", 10, nil, nil, nil, Known{}, tags)
+		},
+		"fact graph": func() (string, []any, error) {
+			return q.RecallFactsGraphWindow([]int64{7}, "project", vec, 10, nil, nil, nil, Known{}, tags)
+		},
+		"fact temporal": func() (string, []any, error) {
+			return q.RecallFactsTemporal([]int64{7}, 10, nil, nil, nil, Known{}, tags)
+		},
+		"episode vector": func() (string, []any, error) {
+			return q.RecallEpisodesWindowWithEmbedding([]int64{7}, vec, 10, nil, nil, nil, Known{}, false, tags)
+		},
+		"episode keyword": func() (string, []any, error) {
+			return q.RecallEpisodesKeywordWindow([]int64{7}, "project", 10, nil, nil, nil, Known{}, tags)
+		},
+		"episode temporal": func() (string, []any, error) {
+			return q.RecallEpisodesTemporal([]int64{7}, 10, nil, nil, nil, Known{}, tags)
+		},
+	}
+	for name, build := range builders {
+		t.Run(name, func(t *testing.T) {
+			sql, args, err := build()
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "tags @> ARRAY[$"
+			if name == "fact graph" {
+				want = "f.tags @> ARRAY[$"
+			}
+			if !strings.Contains(sql, want) {
+				t.Errorf("SQL lacks %q:\n%s", want, sql)
+			}
+			if !strings.Contains(sql, "]::text[]") {
+				t.Errorf("SQL lacks the text[] cast:\n%s", sql)
+			}
+			bound := 0
+			for _, a := range args {
+				if s, ok := a.(string); ok && (s == "beslissing" || s == "pgvector") {
+					bound++
+				}
+			}
+			if bound != len(tags) {
+				t.Errorf("bound %d of %d tag arguments: %v", bound, len(tags), args)
+			}
+		})
+	}
+
+	// Without tags the filter must disappear entirely, not match on an empty array.
+	sql, args, err := q.RecallFactsWindowWithEmbedding([]int64{7}, vec, 10, nil, nil, nil, Known{}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(sql, "tags @>") {
+		t.Errorf("unfiltered recall still filters on tags:\n%s", sql)
+	}
+	for _, a := range args {
+		if _, ok := a.([]string); ok {
+			t.Errorf("unfiltered recall bound a tag argument: %v", args)
+		}
+	}
+}

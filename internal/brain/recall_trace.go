@@ -24,6 +24,11 @@ type RecallOptions struct {
 	// Types limits the search to "fact", "episode", "failure" and/or "goal". Empty
 	// means facts and episodes; failures and goals are only searched when named.
 	Types []string
+	// Tags narrows the search to memories carrying every listed tag (AND, not
+	// OR). Tags are normalized the same way as on write, so "Bugfix" matches
+	// "bugfix". Facts carry the union of the tags of the episodes they were
+	// consolidated from, so filtering keeps working after consolidation.
+	Tags []string
 	// Graph overrides the configured graph arm for this call: true forces it on,
 	// false forces it off, nil keeps the configuration. The recall evaluation uses
 	// it to compare the same corpus with and without the arm.
@@ -72,6 +77,8 @@ type RecallTrace struct {
 	GraphEntities []string `json:"graph_entities,omitempty"`
 	// Routed lists the extra types the query's wording added ("failure", "goal").
 	Routed       []string `json:"routed,omitempty"`
+	// Tags is the normalized filter the recall ran with.
+	Tags []string `json:"tags,omitempty"`
 	Limit        int      `json:"limit"`
 	Candidates   int      `json:"candidates"`
 	Namespaces   []string `json:"namespaces"`

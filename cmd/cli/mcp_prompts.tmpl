@@ -232,6 +232,7 @@ The new path. Must not exist yet and must not lie inside "from". Missing parent 
 Permanently stores an observation (episode) into memory. Raw, immutable, timestamped.
 
 BEFORE CALLING: Call list_namespaces to verify the target namespace exists. If not, call create_namespace first.
+Call list_tags when you want to tag this memory, to reuse the tags that already exist.
 
 CALL THIS WHEN:
 - User shares a preference, habit, constraint, or personal detail
@@ -293,6 +294,23 @@ Optional point in time (RFC3339, e.g. 2026-09-01T00:00:00Z, or a date like 2026-
 How much this memory matters, 0 to 1. Default 0.5 (neutral). Use ~0.8-1.0 for decisions, standing preferences and corrections; ~0.1-0.3 for passing detail. Only affects ranking when the server has importance weighting enabled.
 {{end}}
 
+{{define "remember_tags"}}
+Optional comma-separated tags describing what this memory is about, not where it belongs (the namespace does that). Use lowercase words: 'beslissing', 'bugfix', 'observatie', 'klant-x', 'sprint-42'. Facts consolidated from this memory inherit its tags, so tags keep filtering after the raw memory is gone.
+At most 8 tags, each up to 32 characters of lowercase letters, digits, '-' or '_'. Call list_tags first to reuse tags that already exist instead of inventing near-duplicates.
+{{end}}
+
+{{define "recall_tags"}}
+Optional comma-separated tags to narrow the search: only memories carrying all of them are returned (AND, not OR). Tags are lowercase words like 'beslissing' or 'klant-x'; the filter applies to consolidated facts and to raw episodes. Failures and goals have no tags and are excluded when this is set.
+{{end}}
+
+{{define "list_tags_description"}}
+Lists the tags in use, most used first, with how many facts and episodes carry each one. Call this before writing tags, so you reuse the existing vocabulary instead of creating near-duplicates such as 'bug', 'Bug' and 'bugs'.
+{{end}}
+
+{{define "list_tags_namespaces"}}
+Optional comma-separated namespaces to count tags in. Omit to count across all namespaces.
+{{end}}
+
 {{define "occurred_at_param"}}
 Optional event time (RFC3339 or YYYY-MM-DD). Use it for when the observation happened, not when you stored it. Omit to use the current time.
 {{end}}
@@ -316,6 +334,8 @@ Optional exclusive end of a half-open [from,to) event/valid-time window (RFC3339
 {{define "remember_namespace"}}
 Where to store this. Must be an existing namespace path verified via list_namespaces.
 If not found, call create_namespace first. Default: / (root — only for truly uncategorized memories).
+
+The namespace says WHERE the memory belongs; tags say WHAT it is about. They are not a substitute for each other.
 {{end}}
 
 

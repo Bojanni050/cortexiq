@@ -58,6 +58,19 @@ func skippedResult(err error) (*mcp.CallToolResult, error) {
 	return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(payload)}}}, nil
 }
 
+// splitList parses the comma-separated form MCP arguments use for lists
+// (namespaces, types, tags). Empty entries are dropped so a trailing comma is
+// harmless.
+func splitList(raw string) []string {
+	var out []string
+	for _, v := range strings.Split(raw, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // toolErrorResult turns a failed tool into a normal tool result carrying the
 // error text. Without it the SDK answers a handler error with a JSON-RPC
 // -32603, and hosted clients (Claude connectors, Le Chat) replace that with a
@@ -117,6 +130,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("namespace", mcp.Description(render("remember_namespace"))),
 		mcp.WithString("occurred_at", mcp.Description(render("occurred_at_param"))),
 		mcp.WithNumber("importance", mcp.Description(render("remember_importance")), mcp.DefaultNumber(0.5)),
+		mcp.WithString("tags", mcp.Description(render("remember_tags"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		content := request.GetString("content", "")
 		namespace := request.GetString("namespace", "/")
@@ -126,7 +140,11 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			return nil, fmt.Errorf("invalid occurred_at: %w", err)
 		}
 
-		id, err := bc.Brain.RememberWithImportance(ctx, namespace, content, occurredAt, importance)
+		id, err := bc.Brain.RememberWith(ctx, namespace, content, brain.RememberOptions{
+			OccurredAt: occurredAt,
+			Importance: importance,
+			Tags:       splitList(request.GetString("tags", "")),
+		})
 		if errors.Is(err, brain.ErrSocialCloser) {
 			return skippedResult(err)
 		}
@@ -149,6 +167,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("from", mcp.Description(render("from_param"))),
 		mcp.WithString("to", mcp.Description(render("to_param"))),
 		mcp.WithString("types", mcp.Description(render("recall_types"))),
+		mcp.WithString("tags", mcp.Description(render("recall_tags"))),
 		mcp.WithNumber("mmr", mcp.Description(render("recall_mmr"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query := request.GetString("query", "")
@@ -173,10 +192,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			return nil, fmt.Errorf("invalid known_to: %w", err)
 		}
 		var types []string
-		for _, t := range strings.Split(request.GetString("types", ""), ",") {
-			if t = strings.TrimSpace(strings.ToLower(t)); t == "" {
-				continue
-			}
+		for _, t := range splitList(request.GetString("types", "")) {
 			// An unknown type would otherwise match neither store and return an
 			// empty list that looks like "nothing remembered".
 			if t != "fact" && t != "episode" && t != "failure" && t != "goal" {
@@ -200,7 +216,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			mmr = &v
 		}
 
-		results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo, Types: types, MMR: mmr})
+		results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo, Types: types, Tags: splitList(request.GetString("tags", "")), MMR: mmr})
 		if err != nil {
 			return nil, err
 		}
@@ -616,6 +632,19 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			return nil, err
 		}
 		b, _ := json.Marshal(namespaces)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
+	mcpServer.AddTool(mcp.NewTool("list_tags",
+		mcp.WithDescription(render("list_tags_description")),
+		mcp.WithString("namespaces", mcp.Description(render("list_tags_namespaces"))),
+		mcp.WithNumber("limit", mcp.Description(render("pagination_limit")), mcp.DefaultNumber(100)),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		tags, err := bc.Brain.ListTags(ctx, splitList(request.GetString("namespaces", "")), request.GetInt("limit", 100))
+		if err != nil {
+			return nil, err
+		}
+		b, _ := json.Marshal(tags)
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
@@ -1141,6 +1170,7 @@ var readOnlyTools = map[string]bool{
 	"query_facts":         true,
 	"query_relationships": true,
 	"list_namespaces":     true,
+	"list_tags":           true,
 	"list_goals":          true,
 	"list_hypotheses":     true,
 	"list_contradictions": true,
