@@ -58,10 +58,29 @@ func skippedResult(err error) (*mcp.CallToolResult, error) {
 	return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(payload)}}}, nil
 }
 
+// toolErrorResult turns a failed tool into a normal tool result carrying the
+// error text. Without it the SDK answers a handler error with a JSON-RPC
+// -32603, and hosted clients (Claude connectors, Le Chat) replace that with a
+// generic "the connector returned an error or an invalid response": the caller
+// learns nothing and cannot correct itself. A result with IsError is what the
+// protocol asks for a tool that ran and failed, and the log line is the only
+// trace a failed call leaves on the server.
+func toolErrorResult(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		result, err := next(ctx, request)
+		if err == nil {
+			return result, nil
+		}
+		log.Printf("tool %s failed: %v", request.Params.Name, err)
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+}
+
 func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 	mcpServer := server.NewMCPServer("cortexiq", "0.3.0",
 		server.WithToolCapabilities(true),
 		server.WithDescription(render("server_description")),
+		server.WithToolHandlerMiddleware(toolErrorResult),
 	)
 
 	mcpServer.AddTool(mcp.NewTool("init",
