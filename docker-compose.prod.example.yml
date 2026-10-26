@@ -64,9 +64,11 @@ services:
       - ollama_data:/root/.ollama
     restart: unless-stopped
 
+  # Image comes from the release workflow (GHCR), built by CI from the tag.
+  # Pin CORTEXIQ_IMAGE_TAG in .env to the release you want; "latest" is what
+  # you get if you do not, which is fine for a test box and wrong for prod.
   cortexiq:
-    build: .
-    image: cortexiq:local
+    image: ghcr.io/bojanni050/cortexiq:${CORTEXIQ_IMAGE_TAG:-latest}
     command: ["mcp", "serve", "--host", "0.0.0.0", "--port", "8080", "--with-consolidation"]
     ports:
       - "127.0.0.1:18100:8080"
@@ -77,7 +79,7 @@ services:
     restart: unless-stopped
 
   cortexiq-ui:
-    image: cortexiq:local
+    image: ghcr.io/bojanni050/cortexiq:${CORTEXIQ_IMAGE_TAG:-latest}
     command: ["http", "serve", "--host", "0.0.0.0", "--port", "9090"]
     ports:
       - "127.0.0.1:18101:9090"

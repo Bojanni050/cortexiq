@@ -24,11 +24,16 @@ in `internal/version`.
   `strato-vps`, in `/opt/cortexiq`, running `v0.1.0` (`cortexiq version` inside the
   container is the source of truth). Migration `00038` applied on the 2026-10-26
   restart.
-- Deploying: the image is built on the server, not pulled from GHCR —
-  `docker compose -f docker-compose.prod.yml build --build-arg VERSION=vX --build-arg COMMIT=<sha>`
-  then `up -d`. An image built without those args reports `dev`, so pass them.
-  Migrations run on startup. The release workflow additionally publishes a
-  multi-arch image to GHCR.
+- Deploying: production pulls the image CI built —
+  `ghcr.io/bojanni050/cortexiq:${CORTEXIQ_IMAGE_TAG}`. To deploy, bump
+  `CORTEXIQ_IMAGE_TAG` in `/opt/cortexiq/.env` to the new release and run
+  `docker compose -f docker-compose.prod.yml up -d`; nothing is compiled on the
+  server, so the running binary is byte-for-byte the one the release workflow
+  produced (compare `.Image` with the tag's digest). Rolling back is setting the
+  previous tag. Migrations run on startup.
+- `build: .` is no longer in the prod compose. The old locally built
+  `cortexiq:local` image is still on the server as a rollback artifact until it
+  is pruned; nothing pulls it any more.
 - This page may be one documentation-only commit ahead of the deployed binary;
   compare with `cortexiq version` rather than assuming.
 - Storage: Postgres + pgvector. At the last count: 9,526 memories, 65.9 MB,
@@ -86,9 +91,7 @@ in place.
    memories, or leave at 0.
 2. Graph recall: needs a real question set before it is on by default.
 3. RRF arm weights: currently equal; no data yet to tune them.
-4. Deploy path: build on the server as today, or switch production to the GHCR
-   image so the running binary is the exact one CI built.
-5. Cross-encoder reranker: a new external dependency, not just code.
+4. Cross-encoder reranker: a new external dependency, not just code.
 
 ## Known rough edges
 
