@@ -43,7 +43,15 @@ jobs:
         run: |
           EXT=""
           if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
-          go build -ldflags="-s -w" -o cortexiq-${{ matrix.label }}$EXT ./cmd/cli/
+          VERSION="${{ github.ref_name }}"
+          COMMIT="${GITHUB_SHA}"
+          BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          go build \
+            -ldflags="-s -w \
+              -X github.com/Bojanni050/cortexiq/internal/version.Version=${VERSION} \
+              -X github.com/Bojanni050/cortexiq/internal/version.Commit=${COMMIT} \
+              -X github.com/Bojanni050/cortexiq/internal/version.Date=${BUILT_AT}" \
+            -o cortexiq-${{ matrix.label }}$EXT ./cmd/cli/
 
       - name: Upload Binary to Release
         uses: softprops/action-gh-release@v3
@@ -89,5 +97,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.release.published_at }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

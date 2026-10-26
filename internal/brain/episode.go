@@ -3,11 +3,13 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/Bojanni050/cortexiq/internal/models"
+	"github.com/jackc/pgx/v5"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -114,67 +116,80 @@ func (b *Brain) RememberWith(ctx context.Context, namespaceSlug, content string,
 	return id, nil
 }
 
-// ForgetEpisode soft-deletes the episode that best matches the query across the given namespaces.
-// If namespaceSlugs is empty, searches all namespaces.
-func (b *Brain) ForgetEpisode(ctx context.Context, namespaceSlugs []string, query string) error {
+// findEpisode returns the episode closest to query across the given
+// namespaces, without changing it. Soft-deleted episodes are invisible, so a
+// claim that was already forgotten or retracted cannot be matched by accident.
+func (b *Brain) findEpisode(ctx context.Context, namespaceSlugs []string, query string) (id, nsID int64, content string, err error) {
 	if err := validateContent(query); err != nil {
-		return err
+		return 0, 0, "", err
 	}
 	for _, slug := range namespaceSlugs {
 		if err := validatePath(slug); err != nil {
-			return err
+			return 0, 0, "", err
 		}
 	}
 
 	nsIDs, err := b.resolveNamespaceIDs(ctx, namespaceSlugs)
 	if err != nil {
-		return err
+		return 0, 0, "", err
 	}
 
 	vec, err := b.embedder.Embed(ctx, query)
 	if err != nil {
-		return fmt.Errorf("embed: %w", err)
+		return 0, 0, "", fmt.Errorf("embed: %w", err)
 	}
 
-	var id int64
 	if len(nsIDs) == 1 {
 		err = b.pool.QueryRow(ctx,
-			`SELECT id FROM episodes
+			`SELECT id, namespace_id, content FROM episodes
 			 WHERE namespace_id = $1 AND deleted_at IS NULL AND embedding IS NOT NULL
 			 ORDER BY embedding <=> $2 LIMIT 1`,
 			nsIDs[0], pgvector.NewVector(vec),
-		).Scan(&id)
+		).Scan(&id, &nsID, &content)
 	} else {
 		err = b.pool.QueryRow(ctx,
-			`SELECT id FROM episodes
+			`SELECT id, namespace_id, content FROM episodes
 			 WHERE namespace_id = ANY($1) AND deleted_at IS NULL AND embedding IS NOT NULL
 			 ORDER BY embedding <=> $2 LIMIT 1`,
 			nsIDs, pgvector.NewVector(vec),
-		).Scan(&id)
+		).Scan(&id, &nsID, &content)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, 0, "", ErrEpisodeNotFound
 	}
 	if err != nil {
-		return ErrEpisodeNotFound
+		return 0, 0, "", fmt.Errorf("find episode: %w", err)
 	}
+	return id, nsID, content, nil
+}
 
-	_, err = b.pool.Exec(ctx,
-		"UPDATE episodes SET deleted_at = now() WHERE id = $1", id,
-	)
+// ForgetEpisode soft-deletes the episode that best matches the query across the given namespaces.
+// If namespaceSlugs is empty, searches all namespaces.
+//
+// Forget says "stop using this" and makes no claim about whether it was true.
+// Use RetractEpisode when the memory was wrong and the correction matters.
+func (b *Brain) ForgetEpisode(ctx context.Context, namespaceSlugs []string, query string) error {
+	id, _, _, err := b.findEpisode(ctx, namespaceSlugs, query)
 	if err != nil {
+		return err
+	}
+	if _, err := b.pool.Exec(ctx,
+		"UPDATE episodes SET deleted_at = now() WHERE id = $1", id,
+	); err != nil {
 		return fmt.Errorf("soft delete episode: %w", err)
 	}
 	return nil
 }
 
-// PurgeEpisode hard-deletes an episode by ID.
-func (b *Brain) PurgeEpisode(ctx context.Context, episodeID int64) error {
-	tag, err := b.pool.Exec(ctx, "DELETE FROM episodes WHERE id = $1", episodeID)
+// PurgeEpisodeByQuery hard-deletes the episode that best matches query. It
+// exists for the MCP `forget` tool, where the caller names a memory by what it
+// says, not by an id it has never seen.
+func (b *Brain) PurgeEpisodeByQuery(ctx context.Context, namespaceSlugs []string, query string, opts PurgeOptions) (PurgeCounts, error) {
+	id, _, _, err := b.findEpisode(ctx, namespaceSlugs, query)
 	if err != nil {
-		return fmt.Errorf("purge episode: %w", err)
+		return PurgeCounts{}, err
 	}
-	if tag.RowsAffected() == 0 {
-		return ErrEpisodeNotFound
-	}
-	return nil
+	return b.PurgeEpisode(ctx, id, opts)
 }
 
 // CountEpisodes counts the episodes ListEpisodes would return, ignoring paging.

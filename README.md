@@ -7,10 +7,11 @@ Every LLM starts every conversation from zero. CortexIQ gives your agent persist
 
 Open source. Self-hosted. Works with any MCP-compatible agent.
 
+**[Status](docs/STATUS.md)** — what is live, what is switched off on purpose, and what is still open.
+
 ---
 
-> **Don't want to self-host?**
-> **[usestash.io](https://usestash.io)** is the hosted cloud version — sign in with Google, copy one MCP URL, and you're done. Free to start.
+> **Hosted alternative:** [usestash.io](https://usestash.io) hosts the upstream Stash cloud — a different product built on the same foundation, not CortexIQ. CortexIQ itself is self-hosted; see Quick Start below.
 
 ---
 
@@ -52,7 +53,36 @@ A vote never edits the fact and never touches confidence, `valid_from`/`valid_un
 
 Every caller has one standing vote per fact — changing your mind replaces it (`replaced: true`), so nobody wins an argument by voting more often. Votes are kept append-only in `fact_feedback` for audit, but only each principal's latest vote counts. Recalls with `as_of` or a `known_from`/`known_to` window ignore feedback: today's opinion must not rewrite what was known then.
 
+## Removing memory: forget, retract, purge
+
+Three verbs, because "remove this" means three different things:
+
+| You mean | Use | What happens |
+|---|---|---|
+| Stop using it | `forget` | Soft delete. Hidden from recall; makes no claim about whether it was true. |
+| It was wrong | `retract` | Soft delete **and a record** of what was withdrawn and why. |
+| It must not exist | `purge` | Hard delete. The row, the facts only it sourced and the cached copy of its text are gone. No undo. |
+
+```bash
+cortexiq forget "the queue is kafka"                     # stop using it
+cortexiq retract "the queue is kafka"   --reason "the queue is Redis, migrated in March"        # withdraw and keep the correction
+cortexiq retract --fact 42 --reason "..."                 # by id
+cortexiq retractions                                      # what was withdrawn, and why
+
+cortexiq purge fact 42 --reason "user asked for removal"
+cortexiq purge episode 17 --reason "..." --dry-run        # report what would go first
+cortexiq purge namespace /projects/old --confirm /projects/old --reason "..."
+cortexiq purge-log                                        # audit trail: what, when, why
+```
+
+`retract` requires a reason because a withdrawal is itself a claim about the world; without the correction it is just a delete. The retraction is stored in `retractions` together with the claim as it was, so a later reader finds the correction instead of an unexplained hole.
+
+`purge` also deletes facts that were sourced *only* by the purged episode — otherwise the memory survives under another name — and the `embedding_cache` row that still held the original text. A namespace purge refuses to run while the namespace has children, and requires the slug twice. Every purge is written to `purge_log`, never with the content, by design.
+
+MCP clients use one tool with a `mode`: `forget` (default), `retract` or `purge`, plus `reason` for the last two.
+
 ## What is not worth storing
+
 
 A memory server that stores "dank je wel, tot morgen" is one whose recall fills with noise. Every write goes through the same gate (`Remember`), and content that says nothing — greetings, thanks, acknowledgements and the function words around them — is refused with `skipped: true` instead of becoming an episode:
 

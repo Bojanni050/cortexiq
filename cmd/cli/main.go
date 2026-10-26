@@ -3,19 +3,30 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Bojanni050/cortexiq/internal/bootstrap"
+	"github.com/Bojanni050/cortexiq/internal/version"
 	"github.com/urfave/cli/v3"
 )
 
 func main() {
 	cmd := &cli.Command{
-		Name:  "cortexiq",
-		Usage: "CortexIQ - Persistent Memory for AI",
+		Name:    "cortexiq",
+		Usage:   "CortexIQ - Persistent Memory for AI",
+		Version: version.Version,
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			// Version must work without a database: it is the one command an
+			// operator runs when the service will not start. The root Before
+			// hook runs before the subcommand is resolved (cmd is always the
+			// root here), so read the first positional argument instead.
+			if firstCommand(os.Args[1:]) == "version" {
+				return ctx, nil
+			}
 			if _, ok := cmd.Root().Metadata["bootstrapCtx"]; ok {
 				return ctx, nil
 			}
@@ -65,6 +76,14 @@ func main() {
 				Name:   "env",
 				Usage:  "Show environment variables and configuration",
 				Action: EnvCmd,
+			},
+			{
+				Name:  "version",
+				Usage: "Print the version, commit and build date of this binary",
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					fmt.Print(version.Details())
+					return nil
+				},
 			},
 			{
 				Name:  "namespace",
@@ -178,19 +197,59 @@ func main() {
 				},
 			},
 			{
+				Name:    "retract",
+				Aliases: []string{"correct"},
+				Usage:   "Withdraw a claim because it was wrong, and record the correction",
+				Action:  retractCmd,
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "reason", Aliases: []string{"r"}, Usage: "What was wrong and what is true instead (required)"},
+					&cli.Int64Flag{Name: "fact", Usage: "Retract this fact id instead of searching by description"},
+					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to search (each includes descendants)"},
+					&cli.StringFlag{Name: "actor", Usage: "Who is retracting (default: cli)"},
+				},
+			},
+			{
+				Name:   "retractions",
+				Usage:  "List recorded retractions, newest first",
+				Action: retractionsCmd,
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to list (each includes descendants)"},
+					&cli.IntFlag{Name: "limit", Value: 50, Usage: "Max retractions"},
+				},
+			},
+			{
 				Name:  "purge",
-				Usage: "Hard-delete by ID",
+				Usage: "Hard-delete memory and log what was removed",
 				Commands: []*cli.Command{
 					{
 						Name:   "episode",
-						Usage:  "Hard-delete an episode by ID",
+						Usage:  "Hard-delete an episode by ID, with facts only it sourced",
 						Action: purgeEpisodeCmd,
+						Flags:  purgeFlags(),
 					},
 					{
 						Name:   "fact",
 						Usage:  "Hard-delete a fact by ID",
 						Action: purgeFactCmd,
+						Flags:  purgeFlags(),
 					},
+					{
+						Name:      "namespace",
+						Usage:     "Hard-delete a namespace and everything filed under it",
+						ArgsUsage: "<slug>",
+						Action:    purgeNamespaceCmd,
+						Flags: append(purgeFlags(),
+							&cli.StringFlag{Name: "confirm", Usage: "Repeat the slug to confirm (required)"},
+						),
+					},
+				},
+			},
+			{
+				Name:   "purge-log",
+				Usage:  "List recent hard deletes: what, when, by whom and why",
+				Action: purgeLogCmd,
+				Flags: []cli.Flag{
+					&cli.IntFlag{Name: "limit", Value: 50, Usage: "Max entries"},
 				},
 			},
 			{
@@ -715,5 +774,28 @@ func main() {
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		log.Fatal(err)
+	}
+}
+
+// firstCommand returns the first positional argument, ignoring flags. It is
+// used only to let `version` run before the database is opened: the root
+// Before hook fires before the subcommand is known, so the argument list is
+// the only thing that distinguishes `cortexiq version` from any other command.
+func firstCommand(args []string) string {
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		return arg
+	}
+	return ""
+}
+
+// purgeFlags are shared by every purge subcommand.
+func purgeFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.StringFlag{Name: "reason", Aliases: []string{"r"}, Usage: "Why this is being deleted (recorded in purge_log)"},
+		&cli.StringFlag{Name: "actor", Usage: "Who is deleting (default: cli)"},
+		&cli.BoolFlag{Name: "dry-run", Usage: "Report what would be removed without removing it"},
 	}
 }

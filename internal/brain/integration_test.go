@@ -411,10 +411,10 @@ func TestIntegrationExportImportRoundTrip(t *testing.T) {
 	}
 	data := buf.String()
 
-	if err := e.b.PurgeEpisode(e.ctx, epID); err != nil {
+	if _, err := e.b.PurgeEpisode(e.ctx, epID, PurgeOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.b.PurgeFact(e.ctx, factID); err != nil {
+	if _, err := e.b.PurgeFact(e.ctx, factID, PurgeOptions{}); err != nil {
 		t.Fatal(err)
 	}
 

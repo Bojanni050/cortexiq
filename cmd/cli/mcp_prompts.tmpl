@@ -479,12 +479,21 @@ WORKFLOW:
 {{end}}
 
 {{define "forget_description"}}
-Removes incorrect or outdated information from memory.
+Removes incorrect or outdated information from memory. Three modes, and the
+difference matters:
+
+- forget (default): stop using it. Makes no claim about whether it was true.
+- retract: it was WRONG. Soft-deletes it and records what was withdrawn and
+  why, keeping the correction on the record. Requires `reason`.
+- purge: it must not exist at all. Hard-deletes the memory, facts sourced only
+  by it, and the cached copy of its text. Requires `reason`. No undo.
 
 BEFORE CALLING:
 1. Call recall(what you want to forget) first
 2. Use the EXACT content returned by recall as the `about` parameter
 3. Never guess the stored wording — search first, then forget with precision
+4. User says it was wrong → mode: retract with a reason. User says "delete it"
+   or asks for removal under privacy rules → mode: purge. Otherwise forget.
 
 CALL THIS WHEN:
 - User says "forget that", "that's wrong", "I changed my mind", "ignore what I said"
@@ -513,6 +522,17 @@ COST OF NOT CALLING: You give advice based on facts the user explicitly correcte
 What to forget. Must closely match the stored content — call recall first to find the exact wording.
 Good: 'User preferred gRPC over REST for the API layer.' (matches stored text)
 Bad: 'grpc stuff' or 'the database thing'.
+{{end}}
+
+{{define "forget_mode"}}
+forget (default) stops using the memory; retract records that it was wrong;
+purge deletes it without a trace. Use retract or purge only with a reason.
+{{end}}
+
+{{define "forget_reason"}}
+Required for retract and purge. For retract: what was wrong and what is true
+instead ('the queue is Redis, not Kafka'). For purge: why it must be gone
+('user asked for removal'). Recorded in the audit log.
 {{end}}
 
 

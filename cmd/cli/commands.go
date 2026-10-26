@@ -186,37 +186,122 @@ func forgetCmd(ctx context.Context, cmd *cli.Command) error {
 }
 
 func purgeEpisodeCmd(ctx context.Context, cmd *cli.Command) error {
-	args := cmd.Args()
-	if args.Len() == 0 {
-		return fmt.Errorf("episode ID is required")
-	}
-	var id int64
-	if _, err := fmt.Sscanf(args.First(), "%d", &id); err != nil {
-		return fmt.Errorf("invalid episode ID: %w", err)
-	}
-
-	bc := getBootstrap(cmd)
-	if err := bc.Brain.PurgeEpisode(ctx, id); err != nil {
-		return err
-	}
-	return printJSON(map[string]string{"message": "Episode purged successfully"})
+	return runPurge(cmd, "episode ID is required", func(bc *bootstrap.Context, id int64) (brain.PurgeCounts, error) {
+		return bc.Brain.PurgeEpisode(ctx, id, purgeOptions(cmd))
+	})
 }
 
 func purgeFactCmd(ctx context.Context, cmd *cli.Command) error {
+	return runPurge(cmd, "fact ID is required", func(bc *bootstrap.Context, id int64) (brain.PurgeCounts, error) {
+		return bc.Brain.PurgeFact(ctx, id, purgeOptions(cmd))
+	})
+}
+
+// runPurge parses the id, runs one purge, and prints what was (or would be)
+// removed. A dry run says so in the output so its counts cannot be mistaken
+// for a completed delete.
+func runPurge(cmd *cli.Command, missing string, purge func(*bootstrap.Context, int64) (brain.PurgeCounts, error)) error {
 	args := cmd.Args()
 	if args.Len() == 0 {
-		return fmt.Errorf("fact ID is required")
+		return fmt.Errorf("%s", missing)
 	}
 	var id int64
 	if _, err := fmt.Sscanf(args.First(), "%d", &id); err != nil {
-		return fmt.Errorf("invalid fact ID: %w", err)
+		return fmt.Errorf("invalid id: %w", err)
 	}
 
-	bc := getBootstrap(cmd)
-	if err := bc.Brain.PurgeFact(ctx, id); err != nil {
+	counts, err := purge(getBootstrap(cmd), id)
+	if err != nil {
 		return err
 	}
-	return printJSON(map[string]string{"message": "Fact purged successfully"})
+	out := map[string]any{"removed": counts}
+	if cmd.Bool("dry-run") {
+		out["dry_run"] = true
+		out["message"] = "nothing was deleted; re-run without --dry-run to apply"
+	} else {
+		out["message"] = "purged"
+	}
+	return printJSON(out)
+}
+
+func purgeOptions(cmd *cli.Command) brain.PurgeOptions {
+	return brain.PurgeOptions{
+		Reason: cmd.String("reason"),
+		Actor:  cmd.String("actor"),
+		DryRun: cmd.Bool("dry-run"),
+	}
+}
+
+// purgeNamespaceCmd requires the slug twice: --confirm must repeat the
+// positional argument. A namespace purge cascades to every memory filed under
+// it, so a single typo must not be enough to run it.
+func purgeNamespaceCmd(ctx context.Context, cmd *cli.Command) error {
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("namespace slug is required")
+	}
+	slug := args.First()
+	if cmd.String("confirm") != slug {
+		return fmt.Errorf("refusing to purge %q: pass --confirm %q to confirm", slug, slug)
+	}
+
+	counts, err := getBootstrap(cmd).Brain.PurgeNamespace(ctx, slug, purgeOptions(cmd))
+	if err != nil {
+		return err
+	}
+	out := map[string]any{"namespace": slug, "removed": counts}
+	if cmd.Bool("dry-run") {
+		out["dry_run"] = true
+		out["message"] = "nothing was deleted; re-run without --dry-run to apply"
+	} else {
+		out["message"] = "purged"
+	}
+	return printJSON(out)
+}
+
+// retractCmd withdraws a claim and records why. Either a query (the episode it
+// best matches) or --fact selects the target.
+func retractCmd(ctx context.Context, cmd *cli.Command) (err error) {
+	reason := cmd.String("reason")
+	if factID := cmd.Int64("fact"); factID > 0 {
+		var r *brain.Retraction
+		r, err = getBootstrap(cmd).Brain.RetractFact(ctx, factID, reason, cmd.String("actor"))
+		if err != nil {
+			return err
+		}
+		return printJSON(r)
+	}
+
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("a description of the claim is required (or pass --fact <id>)")
+	}
+	query := args.First()
+	if strings.TrimSpace(query) == "" {
+		return fmt.Errorf("description cannot be empty")
+	}
+
+	r, err := getBootstrap(cmd).Brain.RetractEpisode(ctx, cmd.StringSlice("namespaces"), query, reason, cmd.String("actor"))
+	if err != nil {
+		return err
+	}
+	return printJSON(r)
+}
+
+func retractionsCmd(ctx context.Context, cmd *cli.Command) error {
+	rows, err := getBootstrap(cmd).Brain.Retractions(ctx, cmd.StringSlice("namespaces"), cmd.Int("limit"))
+	if err != nil {
+		return err
+	}
+	return printJSON(rows)
+}
+
+func purgeLogCmd(ctx context.Context, cmd *cli.Command) error {
+	rows, err := getBootstrap(cmd).Brain.PurgeLog(ctx, cmd.Int("limit"))
+	if err != nil {
+		return err
+	}
+	return printJSON(rows)
 }
 
 func factsListCmd(ctx context.Context, cmd *cli.Command) error {

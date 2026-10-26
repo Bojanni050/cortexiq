@@ -309,6 +309,8 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithDescription(render("forget_description")),
 		mcp.WithString("about", mcp.Description(render("forget_about")), mcp.Required()),
 		mcp.WithString("namespaces", mcp.Description(render("namespaces_param"))),
+		mcp.WithString("mode", mcp.Description(render("forget_mode"))),
+		mcp.WithString("reason", mcp.Description(render("forget_reason"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		about := request.GetString("about", "")
 		nsRaw := request.GetString("namespaces", "/")
@@ -320,10 +322,36 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			}
 		}
 
-		if err := bc.Brain.ForgetEpisode(ctx, namespaces, about); err != nil {
-			return nil, err
+		mode := strings.ToLower(strings.TrimSpace(request.GetString("mode", "forget")))
+		reason := request.GetString("reason", "")
+
+		var payload any = map[string]bool{"ok": true}
+		switch mode {
+		case "", "forget":
+			if err := bc.Brain.ForgetEpisode(ctx, namespaces, about); err != nil {
+				return nil, err
+			}
+		case "retract":
+			r, err := bc.Brain.RetractEpisode(ctx, namespaces, about, reason, "mcp")
+			if err != nil {
+				return nil, err
+			}
+			payload = r
+		case "purge":
+			counts, err := bc.Brain.PurgeEpisodeByQuery(ctx, namespaces, about, brain.PurgeOptions{
+				Reason: reason,
+				Actor:  "mcp",
+			})
+			if err != nil {
+				return nil, err
+			}
+			payload = counts
+		default:
+			return nil, fmt.Errorf("mode must be forget, retract or purge (got %q)", mode)
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: `{"ok": true}`}}}, nil
+
+		b, _ := json.Marshal(payload)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
 	mcpServer.AddTool(mcp.NewTool("mental_model_create",

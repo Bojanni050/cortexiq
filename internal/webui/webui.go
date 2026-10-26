@@ -364,10 +364,14 @@ func (h *Handler) episodeItem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
 		return
 	}
-	if !hdl(w, h.Brain.PurgeEpisode(r.Context(), id)) {
+	counts, err := h.Brain.PurgeEpisode(r.Context(), id, brain.PurgeOptions{
+		Reason: "deleted from the dashboard",
+		Actor:  "dashboard",
+	})
+	if !hdl(w, err) {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "purged"})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "purged", "removed": counts})
 }
 
 func (h *Handler) facts(w http.ResponseWriter, r *http.Request) {
@@ -433,10 +437,14 @@ func (h *Handler) factItem(w http.ResponseWriter, r *http.Request) {
 			}
 			writeJSON(w, http.StatusOK, factToJSON(*f))
 		case http.MethodDelete:
-			if !hdl(w, h.Brain.PurgeFact(r.Context(), id)) {
+			counts, err := h.Brain.PurgeFact(r.Context(), id, brain.PurgeOptions{
+				Reason: "deleted from the dashboard",
+				Actor:  "dashboard",
+			})
+			if !hdl(w, err) {
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]string{"status": "purged"})
+			writeJSON(w, http.StatusOK, map[string]any{"status": "purged", "removed": counts})
 		default:
 			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
 		}

@@ -159,18 +159,6 @@ func (b *Brain) UpdateFactConfidence(ctx context.Context, factID int64, confiden
 	return nil
 }
 
-// PurgeFact hard-deletes a fact by ID.
-func (b *Brain) PurgeFact(ctx context.Context, factID int64) error {
-	tag, err := b.pool.Exec(ctx, "DELETE FROM facts WHERE id = $1", factID)
-	if err != nil {
-		return fmt.Errorf("purge fact: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrFactNotFound
-	}
-	return nil
-}
-
 // GetFact returns a single fact by ID.
 func (b *Brain) GetFact(ctx context.Context, factID int64) (*models.Fact, error) {
 	var f models.Fact

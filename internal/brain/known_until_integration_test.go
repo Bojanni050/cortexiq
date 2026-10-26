@@ -117,10 +117,10 @@ func TestIntegrationExportImportKeepsKnownUntil(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := buf.String()
-	if err := e.b.PurgeFact(e.ctx, old); err != nil {
+	if _, err := e.b.PurgeFact(e.ctx, old, PurgeOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.b.PurgeFact(e.ctx, cur); err != nil {
+	if _, err := e.b.PurgeFact(e.ctx, cur, PurgeOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.b.Import(e.ctx, strings.NewReader(data), ImportOptions{}); err != nil {
