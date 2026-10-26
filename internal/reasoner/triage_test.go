@@ -80,10 +80,10 @@ func TestTriageReadsVerdict(t *testing.T) {
 // cost money, never a memory.
 func TestTriageFailsOpen(t *testing.T) {
 	cases := map[string]string{
-		"unparseable":       "I think this is chatter?",
-		"unknown verdict":   `{"verdict":"maybe","reason":"unclear"}`,
-		"missing reason":    `not json at all {`,
-		"empty":             ``,
+		"unparseable":     "I think this is chatter?",
+		"unknown verdict": `{"verdict":"maybe","reason":"unclear"}`,
+		"missing reason":  `not json at all {`,
+		"empty":           ``,
 	}
 	for name, answer := range cases {
 		t.Run(name, func(t *testing.T) {

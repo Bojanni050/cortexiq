@@ -1956,9 +1956,166 @@ async function renderSettings() {
       <p class="muted" style="margin:14px 0 0">${modes.find(m => m[0] === s.mode)[2]}</p>
       <div class="actions" style="margin-top:16px"><button class="primary" onclick="saveSchedule()">Save</button></div>
       <p class="muted" style="margin-top:14px">Current: <b>${current}</b>. Every start does one catch-up run, so memories written while the service was down are not missed.</p>
-    </div>`;
+    </div>
+    <div id="models-card"></div>`;
   scSync();
+  renderModelsCard();
 }
+
+/* ---------- Models and providers ---------- */
+const PURPOSES = [
+  ['reasoner', 'Reasoner', 'Extracts facts, relationships and patterns. Takes effect immediately.'],
+  ['triage', 'Triage', 'Cheap model in front of the extractor; unset means every cluster goes straight to the reasoner.'],
+  ['embedding', 'Embedding', 'Turns text into the vectors recall searches. Cannot change under a running instance.'],
+  ['reranker', 'Reranker', 'Cross-encoder that re-orders fused candidates. Takes effect after a restart.'],
+];
+const PROVIDER_PRESETS = [
+  ['deepinfra', 'DeepInfra', 'https://api.deepinfra.com/v1/openai'],
+  ['mistral', 'Mistral', 'https://api.mistral.ai/v1'],
+];
+function money(v) { return typeof v === 'number' && v > 0 ? '$' + v.toFixed(2) : 'price unknown'; }
+function modelLabel(m) {
+  const bits = [];
+  if (m.context) bits.push((m.context / 1000).toFixed(0) + 'k ctx');
+  if (m.input_per_mtok || m.output_per_mtok) bits.push(money(m.input_per_mtok) + ' in / ' + money(m.output_per_mtok) + ' out per Mtok');
+  if ((m.capabilities || []).length) bits.push(m.capabilities.slice(0, 4).join(', '));
+  return m.id + (bits.length ? ' — ' + bits.join(' · ') : '');
+}
+async function renderModelsCard() {
+  const el = document.getElementById('models-card');
+  if (!el) return;
+  let purposes = [], providers = [];
+  try {
+    purposes = await api('/models');
+    providers = await api('/providers');
+  } catch (e) {
+    el.innerHTML = `<div class="card"><h3>Models</h3><p class="muted">${esc(e.message)}</p></div>`;
+    return;
+  }
+  const rows = purposes.map(p => {
+    const spec = PURPOSES.find(x => x[0] === p.purpose) || [p.purpose, p.purpose, ''];
+    const source = p.source === 'dashboard'
+      ? `<span class="badge pending">dashboard</span> <span class="mono">${esc(p.provider)}</span>`
+      : '<span class="badge active">env</span>';
+    const model = p.model ? `<span class="mono">${esc(p.model)}</span>` : '<span class="muted">not configured</span>';
+    const env = p.source === 'dashboard' && p.env ? `<div class="muted">env: <span class="mono">${esc(p.env)}</span></div>` : '';
+    const note = p.restart_required ? '<div class="muted">a change here needs a restart</div>' : '';
+    // The embedding model is read-only here on purpose: stored vectors carry its
+    // dimensions, so changing it is a re-embed job, not a dropdown.
+    const btn = p.purpose === 'embedding'
+      ? '<span class="muted">read-only</span>'
+      : `<button onclick="modelDialog('${p.purpose}')">change</button>`;
+    return `<tr><td><b>${esc(spec[1])}</b><div class="muted">${esc(spec[2])}</div></td>
+      <td>${source}${env}</td><td>${model}${note}</td><td class="row-actions">${btn}</td></tr>`;
+  }).join('');
+  const provRows = providers.map(p => `<tr><td><b>${esc(p.name)}</b><div class="muted mono">${esc(p.slug)}</div></td>
+      <td class="mono wrap">${esc(p.base_url)}</td>
+      <td>${p.key_hint ? `<span class="badge active">key ${esc(p.key_hint)}</span>` : '<span class="badge abandoned">no key</span>'}</td>
+      <td class="row-actions"><button onclick="providerTest('${p.slug}')">test</button><button onclick="providerForm('${p.slug}')">edit</button></td></tr>`).join('');
+  const presetButtons = PROVIDER_PRESETS.map(([slug, name, url]) => {
+    const exists = providers.some(p => p.slug === slug);
+    return `<button onclick="providerPreset('${slug}','${name}','${url}')">${exists ? 'edit' : 'add'} ${esc(name)}</button>`;
+  }).join(' ');
+  el.innerHTML = `<div class="card">
+      <h3>Models</h3>
+      <p class="muted">What each part of consolidation calls. The environment stays the default; a choice made here overrides it and is shown next to it, never instead of it.</p>
+      ${table(['Purpose', 'Source', 'Model', ''], [rows])}
+    </div>
+    <div class="card">
+      <h3>Providers</h3>
+      <p class="muted">OpenAI-compatible endpoints. The key is write-only: it is stored and never shown again, only its last four characters.</p>
+      ${table(['Provider', 'Base URL', 'Key', ''], [provRows])}
+      <div class="actions" style="margin-top:14px">${presetButtons}</div>
+    </div>`;
+}
+function providerPreset(slug, name, url) { providerForm(slug, name, url); }
+async function providerForm(slug, name, url) {
+  let p = { slug: slug || '', name: name || '', base_url: url || '', key_hint: '' };
+  if (!name) {
+    try { const list = await api('/providers'); const found = list.find(x => x.slug === slug); if (found) p = found; } catch (e) {}
+  }
+  const d = document.getElementById('dlg');
+  d.innerHTML = `<h3>Provider</h3>
+    <div class="label">Slug</div><input id="pv-slug" value="${esc(p.slug)}" ${slug ? 'readonly' : ''} style="width:100%">
+    <div class="label">Name</div><input id="pv-name" value="${esc(p.name)}" style="width:100%">
+    <div class="label">Base URL</div><input id="pv-url" value="${esc(p.base_url)}" style="width:100%">
+    <div class="label">API key ${p.key_hint ? `<span class="muted">(stored: ${esc(p.key_hint)} — leave empty to keep it)</span>` : ''}</div>
+    <input id="pv-key" type="password" autocomplete="off" style="width:100%">
+    <div class="actions"><button onclick="dlgClose()">Cancel</button><button class="primary" onclick="providerSave()">Save</button></div>`;
+  d.showModal();
+}
+async function providerSave() {
+  const body = {
+    slug: document.getElementById('pv-slug').value.trim(),
+    name: document.getElementById('pv-name').value.trim(),
+    base_url: document.getElementById('pv-url').value.trim(),
+    api_key: document.getElementById('pv-key').value,
+  };
+  try {
+    await api('/providers', { method: 'POST', body: JSON.stringify(body) });
+    dlgClose(); renderModelsCard(); toast('Provider saved');
+  } catch (e) { toast(e.message, true); }
+}
+async function providerTest(slug) {
+  try {
+    const r = await api('/providers/' + encodeURIComponent(slug) + '/test', { method: 'POST' });
+    toast(r.ok ? `${slug}: ${r.models} models · ${r.message}` : `${slug}: ${r.message}`, !r.ok);
+  } catch (e) { toast(e.message, true); }
+}
+async function modelDialog(purpose) {
+  const spec = PURPOSES.find(x => x[0] === purpose) || [purpose, purpose, ''];
+  let providers = [];
+  try { providers = await api('/providers'); } catch (e) { toast(e.message, true); return; }
+  if (!providers.length) { toast('Add a provider first', true); return; }
+  const opts = providers.map(p => `<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  const d = document.getElementById('dlg');
+  d.innerHTML = `<h3>${esc(spec[1])} model</h3>
+    <p class="muted">${esc(spec[2])}</p>
+    <div class="label">Provider</div><select id="md-provider" style="width:100%" onchange="mdLoad()">${opts}</select>
+    <div class="actions" style="margin:10px 0"><button onclick="mdLoad(true)">Fetch models</button></div>
+    <div class="label">Model</div><select id="md-model" style="width:100%" onchange="mdDetail()"><option value="">fetch the list first</option></select>
+    <div id="md-detail" class="muted" style="margin-top:10px"></div>
+    <div class="actions"><button onclick="dlgClose()">Cancel</button><button class="primary" onclick="mdSave('${purpose}')">Save</button>
+      <button onclick="mdClear('${purpose}')">Use env</button></div>`;
+  d.showModal();
+  mdLoad();
+}
+async function mdLoad() {
+  const slug = document.getElementById('md-provider').value;
+  const sel = document.getElementById('md-model');
+  try {
+    const models = await api('/providers/' + encodeURIComponent(slug) + '/models');
+    sel.innerHTML = models.map(m => `<option value="${esc(m.id)}" title="${esc(m.description || '')}">${esc(modelLabel(m))}</option>`).join('') || '<option value="">no models returned</option>';
+    mdDetail();
+  } catch (e) {
+    sel.innerHTML = '<option value="">could not fetch models</option>';
+    toast(e.message, true);
+  }
+}
+function mdDetail() {
+  const sel = document.getElementById('md-model');
+  const el = document.getElementById('md-detail');
+  const opt = sel.options[sel.selectedIndex];
+  el.textContent = opt ? (opt.title || '') : '';
+}
+async function mdSave(purpose) {
+  const provider = document.getElementById('md-provider').value;
+  const model = document.getElementById('md-model').value;
+  if (!model) { toast('Pick a model', true); return; }
+  try {
+    const r = await api('/models/' + encodeURIComponent(purpose), { method: 'PUT', body: JSON.stringify({ provider, model }) });
+    dlgClose(); renderModelsCard();
+    toast(r.live ? 'Saved and in use' : (r.error ? 'Saved, not live yet: ' + r.error : 'Saved'));
+  } catch (e) { toast(e.message, true); }
+}
+async function mdClear(purpose) {
+  try {
+    await api('/models/' + encodeURIComponent(purpose), { method: 'DELETE' });
+    dlgClose(); renderModelsCard(); toast('Back to the environment value');
+  } catch (e) { toast(e.message, true); }
+}
+
+
 
 function scSync() {
   const mode = document.getElementById('sc-mode').value;

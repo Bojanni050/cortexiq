@@ -189,6 +189,29 @@ global, because a purge can remove the namespace itself.
 There is no undo for a purge, and there is no soft-delete sweep: tombstones stay
 in place.
 
+## Models and providers
+
+The four models consolidation uses (reasoner, triage, embedding, reranker) are
+visible in **Settings → Models**, with the environment value next to whatever was
+chosen in the dashboard, so an override never hides the deployment's own setting.
+
+- Providers live in `llm_providers` (migration 39), alongside the model chosen per
+  purpose in `llm_bindings`. A purpose without a row keeps the environment value,
+  which is why an empty table changes nothing.
+- API keys are **write-only**: they are stored and never returned by the API. The
+  dashboard sees `…` and the last four characters, enough to tell which key is
+  loaded. An empty key on an update means "keep the stored one", so editing a
+  name cannot silently erase a credential.
+- **Fetch models** asks the provider itself, so pricing, context length and
+  capabilities are theirs and not our guesses: DeepInfra's public catalogue
+  (`/models/list`) returned 397 models, 230 of them chat-completions with prices.
+  Mistral's `/v1/models` needs the key; a rejected key is reported as such and the
+  key is never echoed.
+- Reasoner and triage take effect immediately. The **embedding model is
+  read-only**: stored vectors carry its dimensions, so switching it is a re-embed
+  job, and the API refuses with `409` rather than letting recall degrade quietly.
+  The reranker is changeable but needs a restart.
+
 ## Open decisions
 
 Closed on 2026-10-26 by measurement: the candidate cap stays `0`, and fact dedup

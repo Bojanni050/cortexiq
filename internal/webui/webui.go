@@ -17,6 +17,7 @@ import (
 
 	"github.com/Bojanni050/cortexiq/internal/auth"
 	"github.com/Bojanni050/cortexiq/internal/brain"
+	"github.com/Bojanni050/cortexiq/internal/llmreg"
 	"github.com/Bojanni050/cortexiq/internal/models"
 	"github.com/Bojanni050/cortexiq/internal/schedule"
 	"github.com/Bojanni050/cortexiq/internal/scope"
@@ -28,6 +29,13 @@ var staticFS embed.FS
 // Handler serves the dashboard UI and the /api/v1 JSON endpoints.
 type Handler struct {
 	Brain *brain.Brain
+	// Registry holds the providers and per-purpose model choices made in the
+	// dashboard. When nil, the model endpoints report that they are unavailable
+	// rather than falling back to the environment silently.
+	Registry *llmreg.Store
+	// Models is what the environment configured, shown next to a dashboard
+	// choice so an override never hides the deployment's own settings.
+	Models ModelEnv
 	// Auth, when enabled, requires a Bearer token on every /api/v1 call and
 	// carries the token's read/write scope. The static dashboard shell itself
 	// holds no data and stays public.
@@ -73,6 +81,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/stats", h.stats)
 	api.HandleFunc("/api/v1/settings/schedule", h.schedule)
 	api.HandleFunc("/api/v1/metrics", h.metrics)
+	api.HandleFunc("/api/v1/providers", h.providers)
+	api.HandleFunc("/api/v1/providers/", h.providerItem)
+	api.HandleFunc("/api/v1/models", h.models)
+	api.HandleFunc("/api/v1/models/", h.modelItem)
 	mux.Handle("/api/v1/", auth.Require(h.Auth, readOnlyWeb(api)))
 }
 
@@ -168,6 +180,10 @@ func errStatus(err error) int {
 	// retraction: a second one would say the same thing twice.
 	case errors.Is(err, brain.ErrAlreadyRetracted):
 		return http.StatusConflict
+	case errors.Is(err, llmreg.ErrProviderNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, llmreg.ErrModelRequired), errors.Is(err, llmreg.ErrPurposeUnknown):
+		return http.StatusBadRequest
 	case errors.Is(err, brain.ErrReadOnly):
 		return http.StatusForbidden
 	default:

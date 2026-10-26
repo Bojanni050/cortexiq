@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Bojanni050/cortexiq/internal/llmreg"
 	"github.com/Bojanni050/cortexiq/internal/webui"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -42,7 +43,18 @@ func serveHTTP(ctx context.Context, cmd *cli.Command) error {
 	addr := net.JoinHostPort(host, port)
 
 	mux := http.NewServeMux()
-	ui := &webui.Handler{Brain: bc.Brain, Auth: bc.Auth}
+	ui := &webui.Handler{
+		Brain:    bc.Brain,
+		Auth:     bc.Auth,
+		Registry: llmreg.NewStore(bc.Pool),
+		Models: webui.ModelEnv{
+			Reasoner:  bc.Config.ReasonerModel,
+			Triage:    bc.Config.TriageModel,
+			Embedding: bc.Config.EmbeddingModel,
+			Reranker:  bc.Config.RerankerModel,
+			MaxTokens: bc.Config.ReasonerMaxTokens,
+		},
+	}
 	if !bc.Auth.Enabled() {
 		log.Println("WARNING: no API token configured; the dashboard API is unauthenticated")
 	}

@@ -215,6 +215,11 @@ type TriageReasoner interface {
 // consolidation exactly as it was.
 func (b *Brain) SetTriage(t TriageReasoner) { b.triage = t }
 
+// SetReasoner swaps the model behind consolidation without a restart. The
+// budget wrapper is applied again, so a runtime swap cannot escape the
+// per-run call limit.
+func (b *Brain) SetReasoner(r reasoner.Reasoner) { b.reasoner = budgetReasoner{inner: r} }
+
 func New(pool *pgxpool.Pool, e embedder.Embedder, r reasoner.Reasoner, q *queries.Queries, cfg Config) (*Brain, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("brain: pool is required")
