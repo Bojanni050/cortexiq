@@ -59,18 +59,43 @@ in `internal/version`.
 
 ## Switched off, on purpose
 
-| Setting | Value | Why |
+| Setting | Production | Why |
 |---|---|---|
-| `CORTEXIQ_GRAPH_RECALL` | `false` | Measured on a synthetic 22-question set only (hit@3 0.86 → 0.95). Not yet measured on real memories. |
+| `CORTEXIQ_GRAPH_RECALL` | `true` | On, and it was on without this page saying so. Measured on 37 real queries (2026-10-26): it nearly doubles MRR on relation questions and lowers it on topical ones. See below. |
+| `CORTEXIQ_RERANKER_MODEL` | `jina-reranker-v3.5` | On. It re-scores the top ~100 fused candidates and costs roughly 300 ms of a ~525 ms recall, so it owns the top of the list. |
+| `CORTEXIQ_RECALL_MIN_SIMILARITY` | `0.40` | Drops weak vector-only hits. Model dependent. |
 | `CORTEXIQ_CONSOLIDATION_CANDIDATE_CAP` | `0` | Threshold-only clustering is the known-good behaviour. The lexical arm reached 20/20 on rewordings in eval, but the extra members widen provenance. |
 | `CORTEXIQ_ROUTE_RECALL` | `false` | Only widens recall; never measured in production. |
-| `CORTEXIQ_RERANKER_MODEL` | empty | Cross-encoder reranking adds a dependency (Jina/SiliconFlow/Ollama). Not decided. |
 | `CORTEXIQ_RECALL_MMR_LAMBDA` | `0` | Available per call; off by default so ranking stays plain fusion. |
-| `CORTEXIQ_RECALL_MIN_SIMILARITY` | `0` | Default cutoff depends on the embedding model; a wrong value silently drops good hits. |
 
-The first two are the ones most likely to be switched on by accident because
-they look like ordinary configuration. They are not: both need a measurement on
-real memories first.
+These are the values read from `/opt/cortexiq/.env` on 2026-10-26, not defaults
+from the code. The candidate cap is the one most likely to be switched on by
+accident because it looks like ordinary configuration; it needs a measurement
+on real memories first.
+
+### What the graph arm actually does (37 real queries, 2026-10-26)
+
+| Set | n | graph off (MRR) | graph on (MRR) | better / worse |
+|---|---|---|---|---|
+| Topic questions | 19 | 0.496 | 0.423 | 2 / 4 |
+| Entity and relation questions | 18 | 0.257 | 0.425 | 9 / 2 |
+| All | 37 | 0.380 | 0.424 | 11 / 6 |
+
+So the arm is not wrong, it is undiscriminating: where a question names two
+entities it is worth a lot, and where the question is topical it drags in
+neighbours that happen to share an entity. The mechanism is in `relevant()`:
+a vector-only result must clear `min_similarity`, but a graph-only result skips
+that check entirely, so unrelated neighbours enter the list and push real
+answers down. Two candidate fixes, neither taken: gate the arm on the question
+naming two or more entities, or give graph-only results a similarity floor. The
+37 labels are hand-written and the thresholds were compared after the fact, so
+treat the second fix as a hypothesis to measure, not a conclusion.
+
+Fixed alongside it: a recall that asked for facts *and* episodes returned facts
+only. Episodes were handed whatever slots the facts left over, and facts fill the
+limit. Each type now searches with its own budget and the merged list is sorted
+by score, so the better answer wins regardless of type.
+
 
 ## Tests and CI
 
@@ -113,8 +138,12 @@ in place.
 
 1. `CORTEXIQ_CONSOLIDATION_CANDIDATE_CAP`: turn on after measuring on real
    memories, or leave at 0.
-2. Graph recall: needs a real question set before it is on by default.
-3. RRF arm weights: currently equal; no data yet to tune them.
+2. Graph recall: it is on in production and measured. Decide between gating it
+   on relation-shaped questions and giving graph-only results a similarity
+   floor — or accept the noise and keep it as is.
+3. RRF arm weights: the sweep over the 37 queries says the graph arm at any
+   weight above 0 is worse before reranking, but the reranker decides the top
+   anyway, so tuning weights now would be work without a measurable effect.
 4. Cross-encoder reranker: a new external dependency, not just code.
 
 ## Known rough edges
@@ -123,6 +152,10 @@ in place.
   "the API as of v0.x".
 - Windows: `go test ./...` can fail with `unlinkat ... test.exe` when a test
   binary is still running. Retry; it is not a test failure.
+- The integration suite wants a clean database. `TestGlobalMentalModelReadsAllNamespaces`
+  builds a global model from a cross-namespace recall, so facts left behind by
+  earlier runs can push the expected one out of the top N and fail the test.
+  Use a fresh database for a full run, not the one used for manual poking.
 - `docs/handoff-2026-10-18.md` still lists tags, Reflect and mental models as
   "not built". They shipped on 2026-10-23; the handoff stays as the record of
   that day.

@@ -359,11 +359,15 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		stage("facts_fused", len(results))
 	}
 
-	// Search episodes for remaining slots
-	if episodeLimit := limit - len(results); episodes && episodeLimit > 0 {
-		epCandidates := episodeLimit
+	// Episodes get a budget of their own rather than the slots facts left over.
+	// Handing them the remainder meant asking for both kinds returned facts
+	// only: facts filled the limit, the remainder was zero, and this branch never
+	// ran. The final sort merges both by score, so neither type needs a reserved
+	// share — but both need to be present before that sort can judge them.
+	if episodes {
+		epCandidates := limit
 		if kwQuery != "" || recency || temporal {
-			epCandidates = episodeLimit * 3
+			epCandidates = limit * 3
 			if epCandidates > maxCandidates {
 				epCandidates = maxCandidates
 			}
@@ -423,7 +427,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			eps = applyMMR(eps, vec, mmrLambda, epCandidates)
 			stage("episodes_mmr", len(eps))
 		}
-		results = append(results, applyBoosts(eps, episodeLimit, now, recallCfg)...)
+		results = append(results, applyBoosts(eps, limit, now, recallCfg)...)
 		stage("episodes_fused", len(eps))
 	}
 

@@ -682,6 +682,39 @@ func TestIntegrationRecallFindsFailuresAndGoalsByType(t *testing.T) {
 	}
 }
 
+// Asking for facts and episodes together must not return facts only. Episodes
+// used to receive whatever slots the facts left over, and facts fill the limit,
+// so that branch never ran: a mixed request was a facts request with extra
+// words. Each type now searches with its own budget and the merged list is
+// sorted by score, so the better answer wins regardless of type.
+func TestIntegrationRecallEpisodesCompeteWithFacts(t *testing.T) {
+	e := newEnv(t, nil)
+	for _, c := range []string{
+		"alpha bravo charlie", "delta echo foxtrot", "golf hotel india",
+		"juliet kilo lima", "mike november oscar",
+	} {
+		e.insertFact(t, c, nil)
+	}
+	ep, err := e.b.Remember(e.ctx, e.ns, "the nightly backup runs at 04:15", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := e.b.RecallWith(e.ctx, []string{e.ns}, "when does the nightly backup run", 5, RecallOptions{Types: []string{"fact", "episode"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) > 5 {
+		t.Fatalf("limit 5 returned %d results", len(res))
+	}
+	for _, r := range res {
+		if r.Type == "episode" && r.EpisodeID != nil && *r.EpisodeID == ep {
+			return
+		}
+	}
+	t.Fatalf("the episode was crowded out by unrelated facts: %+v", res)
+}
+
 // With routing on, a query that points to failures finds them without naming a
 // type; with routing off (the default) the same query does not.
 func TestIntegrationRecallRoutesToFailures(t *testing.T) {
