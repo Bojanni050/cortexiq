@@ -10,8 +10,8 @@ Last updated: 2026-10-26, after the `v0.1.2` deploy.
 
 | | |
 |---|---|
-| Latest release | `v0.1.4`, 2026-10-27 |
-| Release commit | `669d6d5` |
+| Latest release | `v0.1.5`, 2026-10-27 |
+| Release commit | `e659405` |
 | How to check | `cortexiq version` (works without a database) |
 
 A binary built from a working tree reports `cortexiq dev (built from source)`.
@@ -21,7 +21,7 @@ in `internal/version`.
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  `strato-vps`, in `/opt/cortexiq`, running `v0.1.4` (`cortexiq version` inside the
+  `strato-vps`, in `/opt/cortexiq`, running `v0.1.5` (`cortexiq version` inside the
   container is the source of truth; the binary lives at `/cortexiq` and the image
   has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
   Both containers run image `sha256:a7038c59c5e1…`. Migrations `00038`
@@ -197,6 +197,16 @@ global, because a purge can remove the namespace itself.
 
 There is no undo for a purge, and there is no soft-delete sweep: tombstones stay
 in place.
+
+- A model chosen in the dashboard is stored in `llm_bindings`, and from `v0.1.5`
+  the database wins over the environment **at startup**, not only in the process
+  that accepted the change. Before that, a binding looked enabled and then did
+  nothing in the next consolidation run, because that runs in its own process.
+- Triage was tried on `/test` after `v0.1.5`: two fresh episodes, one durable and
+  one chatter, gave `episodes_read: 2`, `episodes_skipped: 1` — the chatter was
+  refused before extraction. `llm_calls` went from 5 to 6, because the triage call
+  is also a call; the saving is in tokens, not in calls. One skipped episode out of
+  two proves the wire is live, not the saving; that needs weeks of real sessions.
 
 ## Models and providers
 
