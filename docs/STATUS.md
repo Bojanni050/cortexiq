@@ -34,6 +34,15 @@ in `internal/version`.
 - `build: .` is no longer in the prod compose. The old locally built
   `cortexiq:local` image is still on the server as a rollback artifact until it
   is pruned; nothing pulls it any more.
+- Registry tags: only the exact version (`0.1.0`, `0.1.1`, …). There is no
+  `latest` and no floating `0.1`, on purpose — with a moving tag, "which version
+  runs here" becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the
+  compose file, so a missing value fails the deploy instead of silently pulling
+  something old.
+- A `latest` tag does exist in GHCR from the first release, frozen at `0.1.0`
+  and never moved again. Deleting it needs the `delete:packages` scope on a
+  GitHub token (the local `gh` login has neither read nor delete for packages),
+  so that is a two-minute job in the package settings; until then, ignore it.
 - This page may be one documentation-only commit ahead of the deployed binary;
   compare with `cortexiq version` rather than assuming.
 - Storage: Postgres + pgvector. At the last count: 9,526 memories, 65.9 MB,

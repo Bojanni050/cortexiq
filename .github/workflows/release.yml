@@ -86,10 +86,11 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
+          # Only the exact version. No "latest" and no floating "0.1": a tag that
+          # moves turns "which version runs here" into a guess, and deployment
+          # pins CORTEXIQ_IMAGE_TAG explicitly.
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
 
       - name: Build and Push
         uses: docker/build-push-action@v7
