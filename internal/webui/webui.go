@@ -66,6 +66,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/mental-models", h.mentalModels)
 	api.HandleFunc("/api/v1/mental-models/", h.mentalModelItem)
 	api.HandleFunc("/api/v1/runs", h.runs)
+	api.HandleFunc("/api/v1/retractions", h.retractions)
+	api.HandleFunc("/api/v1/purge-log", h.purgeLog)
 	api.HandleFunc("/api/v1/consolidation", h.consolidation)
 	api.HandleFunc("/api/v1/graph", h.graph)
 	api.HandleFunc("/api/v1/stats", h.stats)
@@ -157,10 +159,15 @@ func errStatus(err error) int {
 		errors.Is(err, brain.ErrNamespacesRequired),
 		errors.Is(err, brain.ErrNamespaceNotFound),
 		errors.Is(err, brain.ErrMentalModelNotGrounded),
-		errors.Is(err, brain.ErrMentalModelRefreshInFlight):
+		errors.Is(err, brain.ErrMentalModelRefreshInFlight),
+		errors.Is(err, brain.ErrReasonRequired):
 		return http.StatusBadRequest
 	case errors.Is(err, brain.ErrResolutionRequired):
 		return http.StatusBadRequest
+	// The target is still there and still readable, but it already carries a
+	// retraction: a second one would say the same thing twice.
+	case errors.Is(err, brain.ErrAlreadyRetracted):
+		return http.StatusConflict
 	case errors.Is(err, brain.ErrReadOnly):
 		return http.StatusForbidden
 	default:
@@ -360,18 +367,29 @@ func (h *Handler) episodeItem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	if action != "" || r.Method != http.MethodDelete {
-		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
-		return
+	switch action {
+	case "":
+		if r.Method != http.MethodDelete {
+			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+			return
+		}
+		counts, err := h.Brain.PurgeEpisode(r.Context(), id, brain.PurgeOptions{
+			Reason: "deleted from the dashboard",
+			Actor:  "dashboard",
+		})
+		if !hdl(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "purged", "removed": counts})
+	case "retract":
+		// The dashboard works from an id: retracting by query would let a
+		// near-duplicate episode answer for the one the reader clicked.
+		h.doRetract(w, r, func(reason, actor string) (*brain.Retraction, error) {
+			return h.Brain.RetractEpisodeByID(r.Context(), id, reason, actor)
+		})
+	default:
+		writeErr(w, http.StatusNotFound, errors.New("not found"))
 	}
-	counts, err := h.Brain.PurgeEpisode(r.Context(), id, brain.PurgeOptions{
-		Reason: "deleted from the dashboard",
-		Actor:  "dashboard",
-	})
-	if !hdl(w, err) {
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "purged", "removed": counts})
 }
 
 func (h *Handler) facts(w http.ResponseWriter, r *http.Request) {
@@ -460,9 +478,73 @@ func (h *Handler) factItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	case "retract":
+		h.doRetract(w, r, func(reason, actor string) (*brain.Retraction, error) {
+			return h.Brain.RetractFact(r.Context(), id, reason, actor)
+		})
 	default:
 		writeErr(w, http.StatusNotFound, errors.New("not found"))
 	}
+}
+
+// retractBody is what the dashboard sends when it withdraws a memory. The
+// reason is required: brain rejects a retraction without one, because it would
+// then be indistinguishable from a forget.
+type retractBody struct {
+	Reason string `json:"reason"`
+	Actor  string `json:"actor"`
+}
+
+// doRetract runs the shared part of both retract handlers: read the reason, pick
+// the actor, and answer with the recorded retraction.
+func (h *Handler) doRetract(w http.ResponseWriter, r *http.Request, retract func(reason, actor string) (*brain.Retraction, error)) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	var body retractBody
+	if err := readBody(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	actor := strings.TrimSpace(body.Actor)
+	if actor == "" {
+		actor = "dashboard"
+	}
+	res, err := retract(body.Reason, actor)
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// retractions lists recorded withdrawals. They are the counterweight to a purge:
+// the claim is gone from memory but not from the record.
+func (h *Handler) retractions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	items, err := h.Brain.Retractions(r.Context(), namespacesParam(r), intQuery(r, "limit"))
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+// purgeLog lists hard deletes. It is deliberately global and not filtered by
+// namespace: a purge record outlives the namespace it happened in, which may
+// itself have been purged since.
+func (h *Handler) purgeLog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	items, err := h.Brain.PurgeLog(r.Context(), intQuery(r, "limit"))
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {

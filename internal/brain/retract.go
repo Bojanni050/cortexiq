@@ -64,6 +64,32 @@ func (b *Brain) RetractEpisode(ctx context.Context, namespaceSlugs []string, que
 	return b.recordRetraction(ctx, "episode", id, nsID, content, reason, actor, true)
 }
 
+// RetractEpisodeByID withdraws one episode by id. Callers that already hold the
+// id — the dashboard, a previous listing — do not need to search for the memory
+// first, and must not: two episodes can be close enough for a query to land on
+// the wrong one.
+func (b *Brain) RetractEpisodeByID(ctx context.Context, episodeID int64, reason, actor string) (*Retraction, error) {
+	if err := validateReason(reason); err != nil {
+		return nil, err
+	}
+
+	var (
+		nsID    int64
+		content string
+	)
+	err := b.pool.QueryRow(ctx,
+		`SELECT namespace_id, content FROM episodes WHERE id = $1`, episodeID,
+	).Scan(&nsID, &content)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrEpisodeNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load episode to retract: %w", err)
+	}
+
+	return b.recordRetraction(ctx, "episode", episodeID, nsID, content, reason, actor, true)
+}
+
 // RetractFact withdraws a stored fact by id.
 func (b *Brain) RetractFact(ctx context.Context, factID int64, reason, actor string) (*Retraction, error) {
 	if err := validateReason(reason); err != nil {

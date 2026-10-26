@@ -190,6 +190,8 @@ func TestErrStatus(t *testing.T) {
 		{brain.ErrInvalidPath, http.StatusBadRequest},
 		{brain.ErrNamespacesRequired, http.StatusBadRequest},
 		{brain.ErrNamespaceNotFound, http.StatusBadRequest},
+		{brain.ErrReasonRequired, http.StatusBadRequest},
+		{brain.ErrAlreadyRetracted, http.StatusConflict},
 		{brain.ErrReadOnly, http.StatusForbidden},
 		{errors.New("connection refused"), http.StatusInternalServerError},
 	}

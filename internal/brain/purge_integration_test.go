@@ -83,6 +83,40 @@ func TestIntegrationRetractEpisodeByQuery(t *testing.T) {
 	}
 }
 
+func TestIntegrationRetractEpisodeByID(t *testing.T) {
+	e := newEnv(t, nil)
+	const claim = "the backup runs at 03:00"
+	epID, err := e.b.Remember(e.ctx, e.ns, claim, nil)
+	if err != nil {
+		t.Fatalf("Remember: %v", err)
+	}
+
+	r, err := e.b.RetractEpisodeByID(e.ctx, epID, "it runs at 03:43", "dashboard")
+	if err != nil {
+		t.Fatalf("RetractEpisodeByID: %v", err)
+	}
+	if r.TargetID != epID || r.TargetType != "episode" {
+		t.Fatalf("retraction = %+v; want episode #%d", r, epID)
+	}
+	if r.Content != claim {
+		t.Fatalf("retraction content = %q; want the withdrawn claim", r.Content)
+	}
+
+	// The dashboard has ids, so the id path must not fall back to a search.
+	var deleted bool
+	if err := e.b.pool.QueryRow(e.ctx,
+		`SELECT deleted_at IS NOT NULL FROM episodes WHERE id = $1`, epID).Scan(&deleted); err != nil {
+		t.Fatalf("read episode: %v", err)
+	}
+	if !deleted {
+		t.Fatal("episode retracted by id is still live")
+	}
+
+	if _, err := e.b.RetractEpisodeByID(e.ctx, 1<<40, "nope", "dashboard"); !errors.Is(err, ErrEpisodeNotFound) {
+		t.Fatalf("retract of a missing episode err = %v; want ErrEpisodeNotFound", err)
+	}
+}
+
 func TestIntegrationPurgeEpisodeLeavesNoTrace(t *testing.T) {
 	e := newEnv(t, nil)
 	const claim = "the vendor contract renews in January"

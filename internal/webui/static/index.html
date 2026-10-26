@@ -254,6 +254,7 @@ const icons = {
   runs: '<path d="M3 12a9 9 0 1 0 2.6-6.4"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   metrics: '<path d="M4 19V5M4 19h16"/><path d="m7 15 3-4 3 2 5-7"/>',
+  lifecycle: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/>',
   stats: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
 };
 const svg = k => `<svg viewBox="0 0 24 24">${icons[k]}</svg>`;
@@ -272,6 +273,7 @@ const tabs = [
   ['links', 'Causal Links', 'Cause and effect between facts'],
   ['namespaces', 'Namespaces', 'How memory is organised'],
   ['runs', 'Runs', 'Recent consolidation runs and what changed'],
+  ['lifecycle', 'Lifecycle', 'What was retracted and what was purged, newest first'],
   ['settings', 'Settings', 'When new memories are consolidated into facts'],
   ['metrics', 'Metrics', 'Runtime, consolidation and LLM usage metrics'],
   ['stats', 'Stats', 'What the memory store holds: totals, size and date range'],
@@ -805,7 +807,7 @@ async function renderEpisodes() {
       <td class="tagcell">${tagChips(e.tags)}</td>
       <td class="mono">${esc(nsSlug(e.namespace_id))}</td>
       <td class="muted">${when(e)}</td>
-      <td class="row-actions"><button class="danger" onclick="purge('episodes', ${e.id})">purge</button></td>
+      <td class="row-actions"><button onclick="retractDialog('episodes', ${e.id})">retract</button><button class="danger" onclick="purge('episodes', ${e.id})">purge</button></td>
     </tr>`,
   });
 }
@@ -851,7 +853,7 @@ async function renderFacts() {
       <td>${relations(f)}</td>
       <td>${pct(f.confidence)}</td>
       <td class="muted">${ts(f.created_at)}</td>
-      <td class="row-actions"><button class="danger" onclick="purge('facts', ${f.id})">purge</button></td>
+      <td class="row-actions"><button onclick="retractDialog('facts', ${f.id})">retract</button><button class="danger" onclick="purge('facts', ${f.id})">purge</button></td>
     </tr>`,
   });
 }
@@ -1561,6 +1563,27 @@ async function purge(kind, id) {
   if (!confirm(`Purge ${kind.slice(0, -1)} #${id}? This cannot be undone.`)) return;
   await api(`/${kind}/${id}`, { method: 'DELETE' }); refresh(); toast('Purged');
 }
+// retractDialog asks what was wrong before anything is touched: the reason is
+// the part that makes a retraction worth more than a delete.
+function retractDialog(kind, id) {
+  const d = document.getElementById('dlg');
+  d.innerHTML = `<h3>Retract ${kind.slice(0, -1)} #${id}</h3>
+    <p class="muted" style="margin:0 0 12px">The memory stops being recalled, but the claim and what you
+      write here stay in the record, so a later reader finds the correction instead of a hole.
+      If it was not wrong and you just want it gone, purge it instead.</p>
+    <label>What was wrong, and what is true instead?</label><textarea id="rt-reason"></textarea>
+    <div class="actions"><button onclick="dlgClose()">Cancel</button><button class="primary" onclick="retract('${kind}', ${id})">Retract</button></div>`;
+  d.showModal();
+  document.getElementById('rt-reason').focus();
+}
+async function retract(kind, id) {
+  const reason = document.getElementById('rt-reason').value.trim();
+  if (!reason) { toast('A retraction needs a reason', true); return; }
+  try {
+    await api(`/${kind}/${id}/retract`, { method: 'POST', body: JSON.stringify({ reason }) });
+    dlgClose(); refresh(); toast('Retracted');
+  } catch (e) { toast(e.message, true); }
+}
 async function del(kind, id) {
   if (!confirm(`Delete ${kind.slice(0, -1)} #${id}?`)) return;
   await api(`/${kind}/${id}`, { method: 'DELETE' }); refresh(); toast('Deleted');
@@ -1571,6 +1594,56 @@ function dlgClose() {
   // The toast may have been parked inside the dialog to stay above its
   // backdrop; put it back so later messages are visible again.
   document.body.appendChild(document.getElementById('toast'));
+}
+
+// Lifecycle is the audit trail of the two verbs that leave a record. They are
+// merged into one timeline because the question a reader has is "what happened
+// to this memory", not "which table is it in".
+async function renderLifecycle() {
+  const [retractions, purges] = await Promise.all([
+    apiList('/retractions' + nsQS('&limit=200')),
+    apiList('/purge-log?limit=200'),
+  ]);
+  const events = retractions.map(r => ({
+    kind: 'retracted', at: r.created_at, target_type: r.target_type, target_id: r.target_id,
+    ns: r.namespace_id, content: r.content, reason: r.reason, by: r.retracted_by, details: null,
+  })).concat(purges.map(p => ({
+    kind: 'purged', at: p.purged_at, target_table: p.target_table, target_id: p.target_id,
+    ns: p.namespace_id, content: '', reason: p.reason, by: p.requested_by, details: p.details,
+  }))).sort((a, b) => new Date(b.at) - new Date(a.at));
+
+  // A retraction can still quote the claim; a purge cannot, by design.
+  const what = ev => {
+    if (ev.kind === 'retracted') return `<span class="wrap">${esc(ev.content)}</span>`;
+    const parts = Object.entries(ev.details || {}).filter(([, v]) => v)
+      .map(([k, v]) => `${v} ${v === 1 && k.endsWith('s') ? k.slice(0, -1) : k}`);
+    return parts.length ? `<span class="muted">${esc(parts.join(' · '))}</span>` : '<span class="muted">—</span>';
+  };
+  // Purge rows name their table in the plural ("episodes #258"); a single row
+  // reads better in the singular, like the retraction rows next to it.
+  const target = ev => ev.kind === 'retracted'
+    ? `${ev.target_type} #${ev.target_id}`
+    : `${ev.target_table.replace(/s$/, '')} #${ev.target_id}`;
+
+  document.getElementById('content').innerHTML =
+    `<div class="card"><h3>Retractions and purges</h3>
+      <p class="muted" style="margin:0 0 12px">
+        Newest first, up to 200 of each. <b>Retracted</b> means the memory was wrong: it is hidden and
+        the claim plus the reason stay here. <b>Purged</b> means it is gone, embedding included; the log
+        records that it happened and never what it said. Retractions follow the namespace selector;
+        purge records are global, because a purge can take the namespace with it.
+      </p>` +
+      table(['When', 'What', 'Target', 'Namespace', 'Content or counts', 'Reason', 'By'],
+        events.map(ev => `<tr>
+          <td class="muted">${ts(ev.at)}</td>
+          <td><span class="badge ${ev.kind === 'purged' ? 'abandoned' : 'pending'}">${ev.kind}</span></td>
+          <td class="mono">${esc(target(ev))}</td>
+          <td class="mono">${esc(ev.ns == null ? 'gone' : nsSlug(ev.ns))}</td>
+          <td>${what(ev)}</td>
+          <td class="wrap">${esc(ev.reason)}</td>
+          <td class="mono">${esc(ev.by)}</td>
+        </tr>`)) +
+    '</div>';
 }
 
 async function renderRuns() {
@@ -1910,8 +1983,8 @@ async function saveSchedule() {
 
 const renderers = { overview: renderOverview, graph: renderGraph, episodes: renderEpisodes, recall: renderRecall, facts: renderFacts,
   goals: renderGoals, mental: renderMentalModels, hypotheses: renderHypotheses, contradictions: renderContradictions,
-  failures: renderFailures, links: renderLinks, namespaces: renderNamespaces, runs: renderRuns, settings: renderSettings,
-  metrics: renderMetrics, stats: renderStats };
+  failures: renderFailures, links: renderLinks, namespaces: renderNamespaces, runs: renderRuns, lifecycle: renderLifecycle,
+  settings: renderSettings, metrics: renderMetrics, stats: renderStats };
 
 async function refresh(opts) {
   const quiet = !!(opts && opts.quiet);
