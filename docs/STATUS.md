@@ -24,8 +24,17 @@ in `internal/version`.
   `strato-vps`, in `/opt/cortexiq`, running `v0.1.4` (`cortexiq version` inside the
   container is the source of truth; the binary lives at `/cortexiq` and the image
   has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
-  Both containers run image `sha256:a7038c59c5e1…`. Migration `00038` applied on
-  the 2026-10-26 restart and needs nothing on later upgrades.
+  Both containers run image `sha256:a7038c59c5e1…`. Migrations `00038`
+  (retractions and the purge log) and `00039` (providers and model bindings)
+  applied on the 2026-10-26 and 2026-10-27 restarts; both are idempotent and both
+  start empty.
+- The MCP server hands its prime directive to a client at connect time, in the
+  `initialize` result's `instructions` field (6445 characters on `v0.1.4`). A
+  client reads that once per connection, so it has to reconnect after an upgrade
+  to pick up a change. Hermes does not depend on it: its `cortexiq` memory
+  provider recalls before a turn and captures after it, and writes only when a
+  session actually runs — which is why the silence from 24 to 27 October was
+  usage, not a broken integration.
 - Deploying: production pulls the image CI built —
   `ghcr.io/bojanni050/cortexiq:${CORTEXIQ_IMAGE_TAG}`. To deploy, bump
   `CORTEXIQ_IMAGE_TAG` in `/opt/cortexiq/.env` to the new release and run
