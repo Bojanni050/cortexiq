@@ -10,8 +10,8 @@ Last updated: 2026-10-26, after the `v0.1.2` deploy.
 
 | | |
 |---|---|
-| Latest release | `v0.1.3`, 2026-10-26 |
-| Release commit | `57f770e` |
+| Latest release | `v0.1.4`, 2026-10-27 |
+| Release commit | `669d6d5` |
 | How to check | `cortexiq version` (works without a database) |
 
 A binary built from a working tree reports `cortexiq dev (built from source)`.
@@ -21,10 +21,10 @@ in `internal/version`.
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  `strato-vps`, in `/opt/cortexiq`, running `v0.1.3` (`cortexiq version` inside the
+  `strato-vps`, in `/opt/cortexiq`, running `v0.1.4` (`cortexiq version` inside the
   container is the source of truth; the binary lives at `/cortexiq` and the image
   has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
-  Both containers run image `sha256:f9916442d6ac…`. Migration `00038` applied on
+  Both containers run image `sha256:a7038c59c5e1…`. Migration `00038` applied on
   the 2026-10-26 restart and needs nothing on later upgrades.
 - Deploying: production pulls the image CI built —
   `ghcr.io/bojanni050/cortexiq:${CORTEXIQ_IMAGE_TAG}`. To deploy, bump
