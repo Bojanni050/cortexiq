@@ -89,6 +89,13 @@ jobs:
           # Only the exact version. No "latest" and no floating "0.1": a tag that
           # moves turns "which version runs here" into a guess, and deployment
           # pins CORTEXIQ_IMAGE_TAG explicitly.
+          #
+          # flavor: latest=false is not redundant. metadata-action's default
+          # flavor is latest=auto, which adds `latest` to every semver tag on its
+          # own — removing type=raw,value=latest did not stop it, and v0.1.1
+          # shipped with a `latest` tag because of that.
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}}
 

@@ -37,10 +37,17 @@ in `internal/version`.
   `cortexiq:local` image is still on the server as a rollback artifact until it
   is pruned; nothing pulls it any more.
 - Registry tags: only the exact version (`0.1.0`, `0.1.1`, …). There is no
-  `latest` and no floating `0.1`, on purpose — with a moving tag, "which version
-  runs here" becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the
-  compose file, so a missing value fails the deploy instead of silently pulling
+  floating `0.1`, on purpose — with a moving tag, "which version runs here"
+  becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the compose
+  file, so a missing value fails the deploy instead of silently pulling
   something old.
+- Correcting an earlier claim on this page: `v0.1.1` was published with a
+  `latest` tag after all. `docker/metadata-action` defaults to `latest=auto`,
+  which adds `latest` to every semver tag by itself; deleting the explicit
+  `type=raw,value=latest` did not remove that default. The workflow now sets
+  `flavor: latest=false`, so releases after `v0.1.1` carry one tag. The `latest`
+  that exists today points at `0.1.1` and disappears when that version is
+  deleted — a tag cannot be removed on its own, only whole versions can.
 - GHCR still holds the `0.1.0` version, which carries both the `0.1.0` tag and a
   `latest` tag left over from the first release. Nothing pulls either of them
   since production moved to `0.1.1`, so deleting that version is now safe — and
