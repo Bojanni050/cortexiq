@@ -4,14 +4,14 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-10-26, after the `v0.1.0` deploy.
+Last updated: 2026-10-26, after the `v0.1.1` deploy.
 
 ## Build
 
 | | |
 |---|---|
-| Latest release | `v0.1.0`, 2026-10-26 |
-| Release commit | `f8847f3` |
+| Latest release | `v0.1.1`, 2026-10-26 |
+| Release commit | `62bb195` |
 | How to check | `cortexiq version` (works without a database) |
 
 A binary built from a working tree reports `cortexiq dev (built from source)`.
@@ -21,9 +21,11 @@ in `internal/version`.
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  `strato-vps`, in `/opt/cortexiq`, running `v0.1.0` (`cortexiq version` inside the
-  container is the source of truth). Migration `00038` applied on the 2026-10-26
-  restart.
+  `strato-vps`, in `/opt/cortexiq`, running `v0.1.1` (`cortexiq version` inside the
+  container is the source of truth; the binary lives at `/cortexiq` and the image
+  has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
+  Both containers run image `sha256:956c6125a975…`. Migration `00038` applied on
+  the 2026-10-26 restart and needs nothing on later upgrades.
 - Deploying: production pulls the image CI built —
   `ghcr.io/bojanni050/cortexiq:${CORTEXIQ_IMAGE_TAG}`. To deploy, bump
   `CORTEXIQ_IMAGE_TAG` in `/opt/cortexiq/.env` to the new release and run
@@ -39,10 +41,12 @@ in `internal/version`.
   runs here" becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the
   compose file, so a missing value fails the deploy instead of silently pulling
   something old.
-- A `latest` tag does exist in GHCR from the first release, frozen at `0.1.0`
-  and never moved again. Deleting it needs the `delete:packages` scope on a
-  GitHub token (the local `gh` login has neither read nor delete for packages),
-  so that is a two-minute job in the package settings; until then, ignore it.
+- GHCR still holds the `0.1.0` version, which carries both the `0.1.0` tag and a
+  `latest` tag left over from the first release. Nothing pulls either of them
+  since production moved to `0.1.1`, so deleting that version is now safe — and
+  it is the only way to get rid of `latest`, because a version is a digest and
+  both tags point at the same one. The local `gh` login has no `read:packages`
+  or `delete:packages` scope, so this is a manual step in the package settings.
 - This page may be one documentation-only commit ahead of the deployed binary;
   compare with `cortexiq version` rather than assuming.
 - Storage: Postgres + pgvector. At the last count: 9,526 memories, 65.9 MB,
@@ -67,7 +71,7 @@ real memories first.
 
 | | |
 |---|---|
-| Test functions | 304 across 57 files |
+| Test functions | 305 across 57 files |
 | Unit tests | run everywhere, no database needed |
 | Integration tests | `internal/brain`, need `CORTEXIQ_TEST_DSN`; CI runs them against `pgvector/pgvector:pg16` and fails if any was skipped |
 | Race detector | CI job `race`, `go test -race ./...` — green since its first run on 2026-10-26 |
@@ -90,6 +94,12 @@ the wiring layers — a bug there breaks startup or the dashboard, not recall.
   the matching `embedding_cache` text, retractions of the target, and writes a
   `purge_log` row without content. `purge namespace` refuses to run with child
   namespaces and needs the slug twice.
+
+Drop the dashboard in and all three are reachable there since `v0.1.1`: `retract`
+sits next to `purge` on every memory row (with the same "a reason is required"
+rule as the API), and the Lifecycle tab shows retractions and purges in one
+timeline. Retraction records follow the namespace selector; purge records are
+global, because a purge can remove the namespace itself.
 
 There is no undo for a purge, and there is no soft-delete sweep: tombstones stay
 in place.

@@ -81,6 +81,8 @@ cortexiq purge-log                                        # audit trail: what, w
 
 MCP clients use one tool with a `mode`: `forget` (default), `retract` or `purge`, plus `reason` for the last two.
 
+The dashboard offers the same choice on every memory row: `retract` next to `purge`, with a reason the API also insists on. The **Lifecycle** tab puts retractions and purges in one timeline — what was withdrawn, why, and by whom — so the audit trail does not require a shell.
+
 ## What is not worth storing
 
 
