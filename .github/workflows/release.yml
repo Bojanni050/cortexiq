@@ -31,7 +31,9 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.25.0'
+          # Reads the go directive from go.mod, so a release never builds with an
+          # older toolchain than the module requires.
+          go-version-file: go.mod
           cache: true
 
       - name: Build Binary
