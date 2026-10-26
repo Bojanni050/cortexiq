@@ -4,14 +4,14 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-10-26.
+Last updated: 2026-10-26, after the `v0.1.0` deploy.
 
 ## Build
 
 | | |
 |---|---|
-| Version | unreleased; first tag is `v0.1.0` |
-| Commit | `155a38a` plus the unreleased retract/purge work |
+| Latest release | `v0.1.0`, 2026-10-26 |
+| Release commit | `f8847f3` |
 | How to check | `cortexiq version` (works without a database) |
 
 A binary built from a working tree reports `cortexiq dev (built from source)`.
@@ -20,9 +20,17 @@ in `internal/version`.
 
 ## What runs where
 
-- Production: the `cortexiq-cortexiq-1` container on `strato-vps`, deployed before
-  the 2026-10-18 handoff. `main` is ahead of it; check before assuming a feature
-  is live.
+- Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
+  `strato-vps`, in `/opt/cortexiq`, running `v0.1.0` (`cortexiq version` inside the
+  container is the source of truth). Migration `00038` applied on the 2026-10-26
+  restart.
+- Deploying: the image is built on the server, not pulled from GHCR —
+  `docker compose -f docker-compose.prod.yml build --build-arg VERSION=vX --build-arg COMMIT=<sha>`
+  then `up -d`. An image built without those args reports `dev`, so pass them.
+  Migrations run on startup. The release workflow additionally publishes a
+  multi-arch image to GHCR.
+- This page may be one documentation-only commit ahead of the deployed binary;
+  compare with `cortexiq version` rather than assuming.
 - Storage: Postgres + pgvector. At the last count: 9,526 memories, 65.9 MB,
   1,019 facts, 281 episodes, 24 namespaces.
 
@@ -48,8 +56,8 @@ real memories first.
 | Test functions | 304 across 57 files |
 | Unit tests | run everywhere, no database needed |
 | Integration tests | `internal/brain`, need `CORTEXIQ_TEST_DSN`; CI runs them against `pgvector/pgvector:pg16` and fails if any was skipped |
-| Race detector | CI job `race`, `go test -race ./...` |
-| Coverage | 43.2% overall, gated by `.github/coverage-baseline.txt` (ratchet, cannot drop) |
+| Race detector | CI job `race`, `go test -race ./...` — green since its first run on 2026-10-26 |
+| Coverage | 43.5% overall, gated by `.github/coverage-baseline.txt` (ratchet, cannot drop) |
 
 Coverage is measured with the database attached. Without it `internal/brain`
 reports 26% instead of 67%, so a coverage number from a bare `go test ./...` is
@@ -78,7 +86,8 @@ in place.
    memories, or leave at 0.
 2. Graph recall: needs a real question set before it is on by default.
 3. RRF arm weights: currently equal; no data yet to tune them.
-4. Rollout: `main` is ahead of the production container.
+4. Deploy path: build on the server as today, or switch production to the GHCR
+   image so the running binary is the exact one CI built.
 5. Cross-encoder reranker: a new external dependency, not just code.
 
 ## Known rough edges
