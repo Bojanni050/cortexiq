@@ -15,6 +15,7 @@ import (
 	"github.com/Bojanni050/cortexiq/internal/config"
 	"github.com/Bojanni050/cortexiq/internal/db"
 	"github.com/Bojanni050/cortexiq/internal/embedder"
+	"github.com/Bojanni050/cortexiq/internal/llmreg"
 	"github.com/Bojanni050/cortexiq/internal/observability"
 	"github.com/Bojanni050/cortexiq/internal/queries"
 	"github.com/Bojanni050/cortexiq/internal/reasoner"
@@ -155,6 +156,15 @@ func New(ctx context.Context) (*Context, error) {
 		br.SetTriage(triage)
 	}
 
+	// A model chosen in the dashboard is a row, and a row has to be read again
+	// after a restart or it lasts only as long as the process that accepted it.
+	// The database therefore wins over the environment at startup, exactly as it
+	// does when the change is made live.
+	if err := applyModelBindings(ctx, pool, br, cfg); err != nil {
+		pool.Close()
+		return nil, err
+	}
+
 	return &Context{
 		Config:   cfg,
 		Brain:    br,
@@ -268,4 +278,48 @@ func buildReasoner(cfg *config.Config) (reasoner.Reasoner, error) {
 		cfg.ReasonerMaxTokens,
 		cfg.ReasonerJSONMode,
 	)
+}
+
+// applyModelBindings points the brain at the models the dashboard stored. Only
+// the purposes that can change under a running process are applied; embedding and
+// reranker are deliberately left to their startup configuration.
+func applyModelBindings(ctx context.Context, pool *pgxpool.Pool, br *brain.Brain, cfg *config.Config) error {
+	bindings, err := llmreg.NewStore(pool).Bindings(ctx)
+	if err != nil {
+		return fmt.Errorf("load model bindings: %w", err)
+	}
+	if len(bindings) == 0 {
+		return nil
+	}
+	providers, err := llmreg.NewStore(pool).Providers(ctx)
+	if err != nil {
+		return fmt.Errorf("load providers: %w", err)
+	}
+	bySlug := make(map[string]llmreg.Provider, len(providers))
+	for _, p := range providers {
+		bySlug[p.Slug] = p
+	}
+	for purpose, b := range bindings {
+		if purpose != llmreg.PurposeReasoner && purpose != llmreg.PurposeTriage {
+			continue
+		}
+		p, ok := bySlug[b.Provider]
+		if !ok {
+			return fmt.Errorf("model binding for %s names provider %q, which does not exist", purpose, b.Provider)
+		}
+		maxTokens := cfg.ReasonerMaxTokens
+		if purpose == llmreg.PurposeTriage {
+			maxTokens = triageMaxTokens
+		}
+		client, err := reasoner.NewOpenAI(p.BaseURL, p.APIKey, b.Model, maxTokens, true)
+		if err != nil {
+			return fmt.Errorf("build %s model %q: %w", purpose, b.Model, err)
+		}
+		if purpose == llmreg.PurposeTriage {
+			br.SetTriage(client)
+			continue
+		}
+		br.SetReasoner(client)
+	}
+	return nil
 }
