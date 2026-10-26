@@ -64,14 +64,44 @@ in `internal/version`.
 | `CORTEXIQ_GRAPH_RECALL` | `false` | Off by default since the 37-query measurement: on, it costs topical questions more than it gains on relational ones. Any call can still ask for it with `"graph": true`; the capability is intact, only the default changed. See below. |
 | `CORTEXIQ_RERANKER_MODEL` | `jina-reranker-v3.5` | On. It re-scores the top ~100 fused candidates and costs roughly 300 ms of a ~525 ms recall, so it owns the top of the list. |
 | `CORTEXIQ_RECALL_MIN_SIMILARITY` | `0.40` | Drops weak vector-only hits. Model dependent. |
-| `CORTEXIQ_CONSOLIDATION_CANDIDATE_CAP` | `0` | Threshold-only clustering is the known-good behaviour. The lexical arm reached 20/20 on rewordings in eval, but the extra members widen provenance. |
+| `CORTEXIQ_CONSOLIDATION_CANDIDATE_CAP` | `0` | Measured on 272 real episodes (2026-10-26): the lexical arm would add a member to 271 of them, but the near-threshold pairs are mostly state changes (v0.1.2 → v0.1.3, bug found → bug fixed, volume not shared → shared), not restatements. Left at 0. |
+| `CORTEXIQ_CONSOLIDATION_DEDUP_THRESHOLD` | `0.98` | Auto-merge only near-identical facts. On 932 real facts, every pair between 0.85 and 0.98 differed in a number, an entity or a state. |
+| `CORTEXIQ_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD` | `0.85` | Below this, an LLM verdict was always "different"; above it the pair is worth asking. Narrowed from 0.75, which sent a third of all facts through the model. |
 | `CORTEXIQ_ROUTE_RECALL` | `false` | Only widens recall; never measured in production. |
 | `CORTEXIQ_RECALL_MMR_LAMBDA` | `0` | Available per call; off by default so ranking stays plain fusion. |
 
 These are the values read from `/opt/cortexiq/.env` on 2026-10-26, not defaults
-from the code. The candidate cap is the one most likely to be switched on by
-accident because it looks like ordinary configuration; it needs a measurement
-on real memories first.
+from the code. Two of them used to be accidents rather than decisions: the
+candidate cap looked like ordinary configuration nobody had measured, and the
+dedup thresholds were in the file twice, so the effective values came from
+whichever line happened to be last (see below).
+
+### Consolidation: what merges, and what does not (272 episodes, 932 facts)
+
+Both consolidation decisions were measured on production data, read-only, rather
+than argued from the synthetic corpus:
+
+- **Episode clusters.** At the 0.85 similarity threshold only **9 pairs** of the
+  272 active episodes reach each other at all, so clusters are effectively single
+  episodes today. Turning on the lexical arm (candidate cap > 0) would add a
+  member to **271 of 272** episodes, but the pairs just under the threshold are
+  mostly state changes — a plugin at `v0.1.2` that broke versus `v0.1.3` that
+  fixed it, a bug found versus the same bug fixed, "no shared volume" versus
+  "shared volume is live". Merging those would erase the sequence. The synthetic
+  result that promised 20/20 on rewordings did not transfer, because its "same"
+  pairs were restatements. Cap stays `0`.
+- **Fact dedup.** Of 91,290 same-namespace fact pairs, **0** reach 0.98, 33 reach
+  0.85, 99 reach 0.80 and 267 reach 0.75. Read by hand, the 33 near-identical
+  pairs are mostly not duplicates either: hit@1 0.75 next to hit@3 0.97, port
+  8445 (UI) next to port 8444 (MCP), Hindsight cold-load next to CortexIQ
+  cold-load. Cosine on this corpus says "same subject", not "same fact".
+
+The `.env` had `CORTEXIQ_CONSOLIDATION_DEDUP_THRESHOLD` twice — `0.85` and then
+`0.98` — and the container took the last one, while the review floor sat at
+`0.75`. Net effect: nothing ever auto-merged (no pair reaches 0.98 anyway) and
+336 facts, 36% of the corpus, were each sent to the model for a verdict whose
+answer was almost always "different". The duplicate line is gone; the values are
+now `0.98` and `0.85`, so a review happens only where it can change something.
 
 ### What the graph arm actually does (37 real queries, 2026-10-26)
 
@@ -152,16 +182,18 @@ in place.
 
 ## Open decisions
 
-1. `CORTEXIQ_CONSOLIDATION_CANDIDATE_CAP`: turn on after measuring on real
-   memories, or leave at 0.
-2. Graph recall: decided — off by default, opt-in per call, on the evidence
+Closed on 2026-10-26 by measurement: the candidate cap stays `0`, and fact dedup
+runs at `0.98` with reviews from `0.85` (see the consolidation section above).
+What is left:
+
+1. Graph recall: decided — off by default, opt-in per call, on the evidence
    above. Still open is whether to gate it on question shape, which needs labels
    from questions you actually could not answer, not more invented ones.
-3. RRF arm weights: the sweep says the graph arm at any weight above 0 is worse
+2. RRF arm weights: the sweep says the graph arm at any weight above 0 is worse
    before reranking, and with the arm off by default the point is moot. The
    reranker decides the top anyway, so tuning weights would be work with no
    measurable effect.
-4. Cross-encoder reranker: a new external dependency, not just code.
+3. Cross-encoder reranker: a new external dependency, not just code.
 
 ## Known rough edges
 
