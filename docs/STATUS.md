@@ -10,8 +10,8 @@ Last updated: 2026-10-26, after the `v0.1.2` deploy.
 
 | | |
 |---|---|
-| Latest release | `v0.1.2`, 2026-10-26 |
-| Release commit | `fa2ebb3` |
+| Latest release | `v0.1.3`, 2026-10-26 |
+| Release commit | `57f770e` |
 | How to check | `cortexiq version` (works without a database) |
 
 A binary built from a working tree reports `cortexiq dev (built from source)`.
@@ -21,10 +21,10 @@ in `internal/version`.
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  `strato-vps`, in `/opt/cortexiq`, running `v0.1.2` (`cortexiq version` inside the
+  `strato-vps`, in `/opt/cortexiq`, running `v0.1.3` (`cortexiq version` inside the
   container is the source of truth; the binary lives at `/cortexiq` and the image
   has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
-  Both containers run image `sha256:eac152ad97ee…`. Migration `00038` applied on
+  Both containers run image `sha256:f9916442d6ac…`. Migration `00038` applied on
   the 2026-10-26 restart and needs nothing on later upgrades.
 - Deploying: production pulls the image CI built —
   `ghcr.io/bojanni050/cortexiq:${CORTEXIQ_IMAGE_TAG}`. To deploy, bump
@@ -61,7 +61,7 @@ in `internal/version`.
 
 | Setting | Production | Why |
 |---|---|---|
-| `CORTEXIQ_GRAPH_RECALL` | `true` | On, and it was on without this page saying so. Measured on 37 real queries (2026-10-26): it nearly doubles MRR on relation questions and lowers it on topical ones. See below. |
+| `CORTEXIQ_GRAPH_RECALL` | `false` | Off by default since the 37-query measurement: on, it costs topical questions more than it gains on relational ones. Any call can still ask for it with `"graph": true`; the capability is intact, only the default changed. See below. |
 | `CORTEXIQ_RERANKER_MODEL` | `jina-reranker-v3.5` | On. It re-scores the top ~100 fused candidates and costs roughly 300 ms of a ~525 ms recall, so it owns the top of the list. |
 | `CORTEXIQ_RECALL_MIN_SIMILARITY` | `0.40` | Drops weak vector-only hits. Model dependent. |
 | `CORTEXIQ_CONSOLIDATION_CANDIDATE_CAP` | `0` | Threshold-only clustering is the known-good behaviour. The lexical arm reached 20/20 on rewordings in eval, but the extra members widen provenance. |
@@ -81,19 +81,31 @@ on real memories first.
 | Entity and relation questions | 18 | 0.257 | 0.425 | 9 / 2 |
 | All | 37 | 0.380 | 0.424 | 11 / 6 |
 
-So the arm is not wrong, it is undiscriminating: where a question names two
-entities it is worth a lot, and where the question is topical it drags in
-neighbours that happen to share an entity. The mechanism is in `relevant()`:
-a vector-only result must clear `min_similarity`, but a graph-only result skips
-that check entirely, so unrelated neighbours enter the list and push real
-answers down. The neighbour branch now requires the same floor: a neighbour has
-to be at least a weak semantic match to the query, not merely share an entity.
-The filter lives in the SQL and only applies when a floor is configured, which
-production has (0.40). Whether it recovers the topical queries is the next
-measurement; the 37 labels are hand-written, so this is a hypothesis with a
-mechanism, not a proven improvement. The alternative — running the arm only when
-the question names two or more entities — stays open, because entity counts did
-not separate the two sets cleanly.
+Measured twice, before and after the neighbour floor (v0.1.3). The floor did its
+job — results reachable only through the graph arm fell from 9 to 1 — and no
+rank moved, because the neighbours it removed were already ranked below the fold
+at the limits people use. The topical loss has a different cause, and it is not
+junk: a fact that shares an entity with the question gets both a vector rank and
+a graph rank, so equal-weight fusion counts it twice and a plausible neighbour
+outranks a better answer.
+
+So the arm is not wrong, its default was. `CORTEXIQ_GRAPH_RECALL` is `false` in
+production since 2026-10-26, and callers that need the arm pass `"graph": true`
+per request — which works regardless of the global default, verified against the
+same instance: a plain recall now matches graph-off exactly (no graph stage in
+the trace at all, MRR 0.496 on topic questions), while the 18 relational
+questions still reach MRR 0.425 when the caller asks for the arm.
+
+The floor stays. Not because it moved a rank in this measurement, but because
+production runs `CORTEXIQ_MAX_RESULT_SIZE=10000`: at a large limit those
+neighbours do surface, and there the floor is the difference between a hub list
+and a pile.
+
+Gating the arm on question shape — only run it when the question names two or
+more entities — remains open. Entity counts did not separate the two sets
+cleanly (on the topic set, gating at three or more entities scored 0.538 against
+0.554 for always-off), and thresholds tuned on 37 hand-written labels prove
+little.
 
 Fixed alongside it: a recall that asked for facts *and* episodes returned facts
 only. Episodes were handed whatever slots the facts left over, and facts fill the
@@ -105,7 +117,7 @@ by score, so the better answer wins regardless of type.
 
 | | |
 |---|---|
-| Test functions | 305 across 57 files |
+| Test functions | 307 across 57 files |
 | Unit tests | run everywhere, no database needed |
 | Integration tests | `internal/brain`, need `CORTEXIQ_TEST_DSN`; CI runs them against `pgvector/pgvector:pg16` and fails if any was skipped |
 | Race detector | CI job `race`, `go test -race ./...` — green since its first run on 2026-10-26 |
@@ -142,12 +154,13 @@ in place.
 
 1. `CORTEXIQ_CONSOLIDATION_CANDIDATE_CAP`: turn on after measuring on real
    memories, or leave at 0.
-2. Graph recall: it is on in production and measured, and neighbours now have a
-   similarity floor. Re-run the 37 queries after the next deploy; if topical
-   questions are still worse, gate the arm on relation-shaped questions.
-3. RRF arm weights: the sweep over the 37 queries says the graph arm at any
-   weight above 0 is worse before reranking, but the reranker decides the top
-   anyway, so tuning weights now would be work without a measurable effect.
+2. Graph recall: decided — off by default, opt-in per call, on the evidence
+   above. Still open is whether to gate it on question shape, which needs labels
+   from questions you actually could not answer, not more invented ones.
+3. RRF arm weights: the sweep says the graph arm at any weight above 0 is worse
+   before reranking, and with the arm off by default the point is moot. The
+   reranker decides the top anyway, so tuning weights would be work with no
+   measurable effect.
 4. Cross-encoder reranker: a new external dependency, not just code.
 
 ## Known rough edges
