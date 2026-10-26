@@ -387,6 +387,22 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 			episodeIDs = append(episodeIDs, e.ID)
 		}
 
+		// Triage refuses work the extractor should not be given: a cluster of
+		// acknowledgements holds no facts, and asked anyway the extractor will
+		// sometimes read one into it. A triage episode counts as skipped so the
+		// checkpoint moves past it, exactly like a fragment.
+		if b.triage != nil {
+			tv, err := b.triage.Triage(ctx, texts)
+			llmCalls++
+			if err != nil {
+				errs = append(errs, fmt.Sprintf("triage: %v", err))
+			} else if tv != nil && tv.Verdict == reasoner.TriageChatter {
+				skipped += len(cluster)
+				markDone(cluster)
+				continue
+			}
+		}
+
 		facts, err := b.reasoner.ReasonStructured(ctx, texts, subject)
 		llmCalls++
 		if err != nil {

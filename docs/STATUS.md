@@ -67,6 +67,7 @@ in `internal/version`.
 | `CORTEXIQ_CONSOLIDATION_CANDIDATE_CAP` | `0` | Measured on 272 real episodes (2026-10-26): the lexical arm would add a member to 271 of them, but the near-threshold pairs are mostly state changes (v0.1.2 → v0.1.3, bug found → bug fixed, volume not shared → shared), not restatements. Left at 0. |
 | `CORTEXIQ_CONSOLIDATION_DEDUP_THRESHOLD` | `0.98` | Auto-merge only near-identical facts. On 932 real facts, every pair between 0.85 and 0.98 differed in a number, an entity or a state. |
 | `CORTEXIQ_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD` | `0.85` | Below this, an LLM verdict was always "different"; above it the pair is worth asking. Narrowed from 0.75, which sent a third of all facts through the model. |
+| `CORTEXIQ_TRIAGE_MODEL` | unset | Optional cheap classifier that runs before extraction and can refuse a cluster of acknowledgements. Unset sends everything to the reasoner. It fails open (unusable answer = durable), so enabling it risks cost, not memories. |
 | `CORTEXIQ_ROUTE_RECALL` | `false` | Only widens recall; never measured in production. |
 | `CORTEXIQ_RECALL_MMR_LAMBDA` | `0` | Available per call; off by default so ranking stays plain fusion. |
 
@@ -102,6 +103,14 @@ The `.env` had `CORTEXIQ_CONSOLIDATION_DEDUP_THRESHOLD` twice — `0.85` and the
 336 facts, 36% of the corpus, were each sent to the model for a verdict whose
 answer was almost always "different". The duplicate line is gone; the values are
 now `0.98` and `0.85`, so a review happens only where it can change something.
+
+Extraction itself had no such gate: every episode that survived the fragment
+filter went to the reasoner, including sessions that are mostly "ok" and
+"thanks". `CORTEXIQ_TRIAGE_MODEL` adds Hindsight's triage idea — a cheaper model
+classifies the cluster first and may refuse it. It is off here, because there is
+no cheap model configured and because the honest saving is unmeasured; a triage
+answer that cannot be parsed counts as durable, so the worst case is a wasted
+call rather than a lost memory.
 
 ### What the graph arm actually does (37 real queries, 2026-10-26)
 

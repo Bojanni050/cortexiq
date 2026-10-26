@@ -183,6 +183,7 @@ type Brain struct {
 	pool     *pgxpool.Pool
 	embedder embedder.Embedder
 	reasoner reasoner.Reasoner
+	triage   TriageReasoner
 	queries  *queries.Queries
 	config   Config
 
@@ -201,6 +202,18 @@ type Brain struct {
 	mmMu         sync.Mutex
 	mmRefreshing map[int64]struct{}
 }
+
+// TriageReasoner classifies a cluster of episodes before the extractor reads
+// it. It is kept as its own small interface, rather than another method on
+// Reasoner, because it is served by a cheaper model and may be absent.
+type TriageReasoner interface {
+	Triage(ctx context.Context, texts []string) (*reasoner.TriageResult, error)
+}
+
+// SetTriage installs the cheap classifier that runs before extraction. It is
+// called once at startup, before the server takes work; leaving it unset keeps
+// consolidation exactly as it was.
+func (b *Brain) SetTriage(t TriageReasoner) { b.triage = t }
 
 func New(pool *pgxpool.Pool, e embedder.Embedder, r reasoner.Reasoner, q *queries.Queries, cfg Config) (*Brain, error) {
 	if pool == nil {

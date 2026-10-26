@@ -27,6 +27,10 @@ type Config struct {
 	OpenAIBaseURL  string `env:"CORTEXIQ_OPENAI_BASE_URL,required"`
 	EmbeddingModel string `env:"CORTEXIQ_EMBEDDING_MODEL,required"`
 	ReasonerModel  string `env:"CORTEXIQ_REASONER_MODEL,required"`
+	// TriageModel, when set, is a cheaper model that decides whether a cluster of
+	// episodes is worth extracting at all. Empty disables triage and every
+	// episode goes to the extractor, as before.
+	TriageModel string `env:"CORTEXIQ_TRIAGE_MODEL" envDefault:""`
 
 	// Reasoner request tuning. MaxTokens caps output tokens per call (0 =
 	// unlimited); it guards against verbose/reasoning models burning output

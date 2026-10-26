@@ -141,6 +141,20 @@ func New(ctx context.Context) (*Context, error) {
 		return nil, fmt.Errorf("build brain: %w", err)
 	}
 
+	// Triage is optional and served by its own, cheaper model: it decides whether
+	// a cluster of episodes is worth extracting at all. Anything wrong with this
+	// client must not stop the brain from running, because triage failing open
+	// (everything durable) is always a safe degradation — but a bad model name
+	// would fail on every run, so a construction error still stops startup.
+	if cfg.TriageModel != "" {
+		triage, err := reasoner.NewOpenAI(cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.TriageModel, triageMaxTokens, true)
+		if err != nil {
+			pool.Close()
+			return nil, fmt.Errorf("build triage reasoner: %w", err)
+		}
+		br.SetTriage(triage)
+	}
+
 	return &Context{
 		Config:   cfg,
 		Brain:    br,
@@ -241,6 +255,10 @@ func buildEmbedder(cfg *config.Config) (embedder.Embedder, error) {
 		cfg.VectorDim,
 	)
 }
+
+// triageMaxTokens bounds the cheap classifier's answer: a verdict and one short
+// sentence. Anything longer is a model that ignored the schema.
+const triageMaxTokens = 200
 
 func buildReasoner(cfg *config.Config) (reasoner.Reasoner, error) {
 	return reasoner.NewOpenAI(
