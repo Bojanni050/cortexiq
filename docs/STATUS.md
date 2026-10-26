@@ -4,14 +4,14 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-10-26, after the `v0.1.1` deploy.
+Last updated: 2026-10-26, after the `v0.1.2` deploy.
 
 ## Build
 
 | | |
 |---|---|
-| Latest release | `v0.1.1`, 2026-10-26 |
-| Release commit | `62bb195` |
+| Latest release | `v0.1.2`, 2026-10-26 |
+| Release commit | `fa2ebb3` |
 | How to check | `cortexiq version` (works without a database) |
 
 A binary built from a working tree reports `cortexiq dev (built from source)`.
@@ -21,10 +21,10 @@ in `internal/version`.
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  `strato-vps`, in `/opt/cortexiq`, running `v0.1.1` (`cortexiq version` inside the
+  `strato-vps`, in `/opt/cortexiq`, running `v0.1.2` (`cortexiq version` inside the
   container is the source of truth; the binary lives at `/cortexiq` and the image
   has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
-  Both containers run image `sha256:956c6125a975…`. Migration `00038` applied on
+  Both containers run image `sha256:eac152ad97ee…`. Migration `00038` applied on
   the 2026-10-26 restart and needs nothing on later upgrades.
 - Deploying: production pulls the image CI built —
   `ghcr.io/bojanni050/cortexiq:${CORTEXIQ_IMAGE_TAG}`. To deploy, bump
@@ -34,26 +34,24 @@ in `internal/version`.
   produced (compare `.Image` with the tag's digest). Rolling back is setting the
   previous tag. Migrations run on startup.
 - `build: .` is no longer in the prod compose. The old locally built
-  `cortexiq:local` image is still on the server as a rollback artifact until it
-  is pruned; nothing pulls it any more.
-- Registry tags: only the exact version (`0.1.0`, `0.1.1`, …). There is no
-  floating `0.1`, on purpose — with a moving tag, "which version runs here"
+  `cortexiq:local` image and `0.1.0`/`0.1.1` stay on the server as rollback
+  artifacts, about 90 MB together; nothing pulls them. The local `latest` tag was
+  untagged, so nothing on the server suggests a moving tag.
+- Registry tags: exactly one tag per release (`0.1.2`, `0.1.3`, …) and nothing
+  else. GHCR holds a single version today — `0.1.2`, the one production pulls.
+  No `latest`, no floating `0.1`: with a moving tag, "which version runs here"
   becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the compose
   file, so a missing value fails the deploy instead of silently pulling
   something old.
-- Correcting an earlier claim on this page: `v0.1.1` was published with a
-  `latest` tag after all. `docker/metadata-action` defaults to `latest=auto`,
-  which adds `latest` to every semver tag by itself; deleting the explicit
-  `type=raw,value=latest` did not remove that default. The workflow now sets
-  `flavor: latest=false`, so releases after `v0.1.1` carry one tag. The `latest`
-  that exists today points at `0.1.1` and disappears when that version is
-  deleted — a tag cannot be removed on its own, only whole versions can.
-- GHCR still holds the `0.1.0` version, which carries both the `0.1.0` tag and a
-  `latest` tag left over from the first release. Nothing pulls either of them
-  since production moved to `0.1.1`, so deleting that version is now safe — and
-  it is the only way to get rid of `latest`, because a version is a digest and
-  both tags point at the same one. The local `gh` login has no `read:packages`
-  or `delete:packages` scope, so this is a manual step in the package settings.
+- Getting there took one correction. `v0.1.1` was published with a `latest` tag
+  even after the explicit `type=raw,value=latest` was removed, because
+  `docker/metadata-action` defaults to `flavor: latest=auto` and adds `latest`
+  itself. `v0.1.2` sets `flavor: latest=false`, and the result was checked at
+  the registry (`/v2/bojanni050/cortexiq/tags/list` with an anonymous pull
+  token) rather than in the GitHub UI. The old versions were then deleted; a tag
+  cannot be removed on its own, only the version it belongs to.
+- Untagged manifests still in the GHCR versions list are buildkit attestations,
+  not images; they are harmless.
 - This page may be one documentation-only commit ahead of the deployed binary;
   compare with `cortexiq version` rather than assuming.
 - Storage: Postgres + pgvector. At the last count: 9,526 memories, 65.9 MB,

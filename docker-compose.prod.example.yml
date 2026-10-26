@@ -65,11 +65,11 @@ services:
     restart: unless-stopped
 
   # Image comes from the release workflow (GHCR), built by CI from the tag.
-  # CORTEXIQ_IMAGE_TAG in .env names the release, for example 0.1.0. It is
+  # CORTEXIQ_IMAGE_TAG in .env names the release, for example 0.1.2. It is
   # required on purpose: there is no "latest" tag, so omitting it fails here
   # instead of running whatever happened to be pulled last.
   cortexiq:
-    image: ghcr.io/bojanni050/cortexiq:${CORTEXIQ_IMAGE_TAG:?set CORTEXIQ_IMAGE_TAG to a release tag, for example 0.1.0}
+    image: ghcr.io/bojanni050/cortexiq:${CORTEXIQ_IMAGE_TAG:?set CORTEXIQ_IMAGE_TAG to a release tag, for example 0.1.2}
     command: ["mcp", "serve", "--host", "0.0.0.0", "--port", "8080", "--with-consolidation"]
     ports:
       - "127.0.0.1:18100:8080"
@@ -80,7 +80,7 @@ services:
     restart: unless-stopped
 
   cortexiq-ui:
-    image: ghcr.io/bojanni050/cortexiq:${CORTEXIQ_IMAGE_TAG:?set CORTEXIQ_IMAGE_TAG to a release tag, for example 0.1.0}
+    image: ghcr.io/bojanni050/cortexiq:${CORTEXIQ_IMAGE_TAG:?set CORTEXIQ_IMAGE_TAG to a release tag, for example 0.1.2}
     command: ["http", "serve", "--host", "0.0.0.0", "--port", "9090"]
     ports:
       - "127.0.0.1:18101:9090"
