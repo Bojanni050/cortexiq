@@ -502,6 +502,37 @@ func TestIntegrationGraphRecallFollowsEntitiesAndNeighbours(t *testing.T) {
 	}
 }
 
+// A neighbour earns its place by sharing an entity, not by answering the
+// question. With a similarity floor configured, a neighbour whose content has
+// nothing to do with the query is no longer dragged in — which is the noise that
+// made the graph arm cost quality on topic questions.
+func TestIntegrationGraphRecallDropsDistantNeighbours(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.GraphRecall = true; c.MinRecallSimilarity = 0.999 })
+	direct := e.insertEntityFact(t, "pgvector", "De extensie levert HNSW-indexen voor nabijheidszoeken.", 0.8)
+	neighbour := e.insertEntityFact(t, "PostgreSQL", "Versie zestien draait op de productieserver.", 0.8)
+	e.insertRelationship(t, "pgvector", "extends", "PostgreSQL", 0.9)
+
+	res, _, err := e.b.RecallDetailed(e.ctx, []string{e.ns}, "wat doet pgvector eigenlijk", 10, RecallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keptDirect bool
+	for _, r := range res {
+		if r.FactID == nil {
+			continue
+		}
+		switch *r.FactID {
+		case direct:
+			keptDirect = true
+		case neighbour:
+			t.Fatalf("a neighbour with no similarity to the query was kept: %+v", r.Trace)
+		}
+	}
+	if !keptDirect {
+		t.Fatalf("the fact about the named entity was dropped by the floor: %+v", res)
+	}
+}
+
 // With the flag off, the graph arm does not run and the ranking is the old one.
 func TestIntegrationGraphRecallOffIsTheOldBehaviour(t *testing.T) {
 	e := newEnv(t, nil)

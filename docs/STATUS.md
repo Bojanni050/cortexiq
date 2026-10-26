@@ -86,10 +86,14 @@ entities it is worth a lot, and where the question is topical it drags in
 neighbours that happen to share an entity. The mechanism is in `relevant()`:
 a vector-only result must clear `min_similarity`, but a graph-only result skips
 that check entirely, so unrelated neighbours enter the list and push real
-answers down. Two candidate fixes, neither taken: gate the arm on the question
-naming two or more entities, or give graph-only results a similarity floor. The
-37 labels are hand-written and the thresholds were compared after the fact, so
-treat the second fix as a hypothesis to measure, not a conclusion.
+answers down. The neighbour branch now requires the same floor: a neighbour has
+to be at least a weak semantic match to the query, not merely share an entity.
+The filter lives in the SQL and only applies when a floor is configured, which
+production has (0.40). Whether it recovers the topical queries is the next
+measurement; the 37 labels are hand-written, so this is a hypothesis with a
+mechanism, not a proven improvement. The alternative — running the arm only when
+the question names two or more entities — stays open, because entity counts did
+not separate the two sets cleanly.
 
 Fixed alongside it: a recall that asked for facts *and* episodes returned facts
 only. Episodes were handed whatever slots the facts left over, and facts fill the
@@ -138,9 +142,9 @@ in place.
 
 1. `CORTEXIQ_CONSOLIDATION_CANDIDATE_CAP`: turn on after measuring on real
    memories, or leave at 0.
-2. Graph recall: it is on in production and measured. Decide between gating it
-   on relation-shaped questions and giving graph-only results a similarity
-   floor — or accept the noise and keep it as is.
+2. Graph recall: it is on in production and measured, and neighbours now have a
+   similarity floor. Re-run the 37 queries after the next deploy; if topical
+   questions are still worse, gate the arm on relation-shaped questions.
 3. RRF arm weights: the sweep over the 37 queries says the graph arm at any
    weight above 0 is worse before reranking, but the reranker decides the top
    anyway, so tuning weights now would be work without a measurable effect.

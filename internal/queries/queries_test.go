@@ -152,7 +152,7 @@ func TestRecallWindowTemplatesRender(t *testing.T) {
 			return q.RecallFactsKeywordWindow([]int64{7}, "project", 10, nil, &from, &to, Known{}, nil)
 		},
 		"fact graph": func() (string, []any, error) {
-			return q.RecallFactsGraphWindow([]int64{7}, "project", vec, 10, nil, &from, &to, Known{}, nil)
+			return q.RecallFactsGraphWindow([]int64{7}, "project", vec, 10, 0.4, nil, &from, &to, Known{}, nil)
 		},
 		"episode vector": func() (string, []any, error) {
 			return q.RecallEpisodesWindow([]int64{7}, vec, 10, nil, &from, &to, Known{})
@@ -220,7 +220,7 @@ func TestRecallTagFilterRendersInEveryArm(t *testing.T) {
 			return q.RecallFactsKeywordWindow([]int64{7}, "project", 10, nil, nil, nil, Known{}, tags)
 		},
 		"fact graph": func() (string, []any, error) {
-			return q.RecallFactsGraphWindow([]int64{7}, "project", vec, 10, nil, nil, nil, Known{}, tags)
+			return q.RecallFactsGraphWindow([]int64{7}, "project", vec, 10, 0, nil, nil, nil, Known{}, tags)
 		},
 		"fact temporal": func() (string, []any, error) {
 			return q.RecallFactsTemporal([]int64{7}, 10, nil, nil, nil, Known{}, tags)

@@ -143,12 +143,19 @@ func (q *Queries) RecallGoalsKeyword(namespaceIDs []int64, query string, limit i
 // ordered by cosine similarity of their embedding to vector (the query's), so
 // an entity with many facts puts the ones that answer the question first.
 func (q *Queries) RecallFactsGraph(namespaceIDs []int64, query string, vector pgvector.Vector, limit int, asOf *time.Time) (string, []any, error) {
-	return q.RecallFactsGraphWindow(namespaceIDs, query, vector, limit, asOf, nil, nil, Known{}, nil)
+	return q.RecallFactsGraphWindow(namespaceIDs, query, vector, limit, 0, asOf, nil, nil, Known{}, nil)
 }
 
-func (q *Queries) RecallFactsGraphWindow(namespaceIDs []int64, query string, vector pgvector.Vector, limit int, asOf, from, to *time.Time, known Known, tags []string) (string, []any, error) {
+// minSimilarity, when positive, keeps a neighbour only if its embedding is at
+// least that close to the query. Without it the arm adds every fact whose entity
+// a neighbour shares, however unrelated the fact itself is: a topic question that
+// happens to name one entity then collects that entity's whole neighbourhood.
+func (q *Queries) RecallFactsGraphWindow(namespaceIDs []int64, query string, vector pgvector.Vector, limit int, minSimilarity float32, asOf, from, to *time.Time, known Known, tags []string) (string, []any, error) {
 	args := keywordArgs(namespaceIDs, query, limit, asOf)
 	args["vector"] = vector
+	if minSimilarity > 0 {
+		args["min_similarity"] = minSimilarity
+	}
 	setTags(args, tags)
 	setWindow(args, from, to)
 	setKnown(args, known)

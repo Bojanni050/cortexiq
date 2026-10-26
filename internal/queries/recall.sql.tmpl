@@ -177,6 +177,13 @@ candidates AS (
     FROM facts f
     JOIN neighbours n ON lower(f.entity) = n.name
     WHERE lower(f.entity) NOT IN (SELECT name FROM matched)
+{{if .Args.min_similarity}}
+    {{/* A neighbour earns its place by sharing an entity, not by answering the
+         question. Without this floor a topic question that names one entity
+         collects that entity's whole neighbourhood. */}}
+        AND f.embedding IS NOT NULL
+        AND (1 - (f.embedding <=> {{.Bind .Args.vector}})) >= {{.Bind .Args.min_similarity}}
+{{end}}
 )
 SELECT c.id, c.namespace_id, c.content, c.confidence, c.created_at, c.importance, c.tags, c.arm_score AS score
 FROM candidates c
