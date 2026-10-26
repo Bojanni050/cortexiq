@@ -90,9 +90,16 @@ func toolErrorResult(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 }
 
 func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
+	// WithInstructions is the field a client puts in front of the model on
+	// initialize; WithDescription only labels the server. Both carry the same
+	// text on purpose: the Prime Directive ("store without waiting to be asked")
+	// only ever reaches the model through instructions, and a server that merely
+	// describes itself gets a client that waits to be asked.
+	primeDirective := render("server_description")
 	mcpServer := server.NewMCPServer("cortexiq", "0.3.0",
 		server.WithToolCapabilities(true),
-		server.WithDescription(render("server_description")),
+		server.WithInstructions(primeDirective),
+		server.WithDescription(primeDirective),
 		server.WithToolHandlerMiddleware(toolErrorResult),
 	)
 
