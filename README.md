@@ -322,6 +322,10 @@ separately with `CORTEXIQ_TEMPORAL_ARM=false`.
 
 The REST API accepts the same explicit bounds on `POST /api/v1/recall`, for
 example `{"query":"project updates","from":"2025-03-01","to":"2025-04-01"}`.
+A known set of facts can be resolved by id with `GET /api/v1/facts?ids=5,9,18`,
+which ignores the other filters and includes deleted rows; the dashboard uses it to
+label causal links, whose facts can be older than any list page.
+
 For `GET /api/v1/facts` and `cortexiq facts`, `from`/`to` filter validity
 overlap and `as_of`, `known_from`, `known_to` filter knowledge time; the older `since`/`until` filters still mean `created_at`.
 
