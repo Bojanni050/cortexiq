@@ -4,14 +4,14 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-10-27, after the `v0.1.8` deploy.
+Last updated: 2026-10-27, after the `v0.1.9` deploy.
 
 ## Build
 
 | | |
 |---|---|
-| Latest release | `v0.1.8`, 2026-10-27 |
-| Release commit | `9b61905` |
+| Latest release | `v0.1.9`, 2026-10-27 |
+| Release commit | `ec43c43` |
 | How to check | `cortexiq version` (works without a database) |
 
 A binary built from a working tree reports `cortexiq dev (built from source)`.
@@ -21,14 +21,16 @@ in `internal/version`.
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  `strato-vps`, in `/opt/cortexiq`, running `v0.1.8` (`cortexiq version` inside the
+  `strato-vps`, in `/opt/cortexiq`, running `v0.1.9` (`cortexiq version` inside the
   container is the source of truth; the binary lives at `/cortexiq` and the image
   has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
-  Both containers run image `sha256:e518a5064879…`. Migrations `00038`
+  Both containers run image `sha256:80f56b92e9a6…`. Migrations `00038`
   (retractions and the purge log) and `00039` (providers and model bindings)
   applied on the 2026-10-26 and 2026-10-27 restarts, and `00040` (hygiene) on
-  the 2026-10-27 restart; `00041` drops what `00040` added and ships with the
-  next release. All of them are idempotent.
+  the 2026-10-27 restart. `00041` applied on the `v0.1.9` restart: it drops
+  twelve `hygiene_*` columns and the `hygiene_audit_log` table, so the schema is
+  back to what it was before `00040` — verified after the deploy (0 matching
+  columns, table gone, data intact). All of them are idempotent.
 - The MCP server hands its prime directive to a client at connect time, in the
   `initialize` result's `instructions` field (6445 characters on `v0.1.4`). A
   client reads that once per connection, so it has to reconnect after an upgrade
@@ -55,7 +57,7 @@ in `internal/version`.
   untagged, so nothing on the server suggests a moving tag.
 - Registry tags: exactly one tag per release (`0.1.2`, `0.1.3`, …) and nothing
   else. GHCR holds one tag per release and older versions are deleted, so the
-  registry never suggests a moving target; production pulls `0.1.8` today.
+  registry never suggests a moving target; production pulls `0.1.9` today.
   No `latest`, no floating `0.1`: with a moving tag, "which version runs here"
   becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the compose
   file, so a missing value fails the deploy instead of silently pulling
@@ -71,8 +73,8 @@ in `internal/version`.
   not images; they are harmless.
 - This page may be one documentation-only commit ahead of the deployed binary;
   compare with `cortexiq version` rather than assuming.
-- Storage: Postgres + pgvector. At the last count: 9,526 memories, 65.9 MB,
-  1,019 facts, 281 episodes, 24 namespaces.
+- Storage: Postgres + pgvector. At the `v0.1.9` deploy: 1,150 live facts,
+  325 episodes, 24 namespaces, 70 MB.
 
 ## Switched off, on purpose
 
@@ -85,7 +87,7 @@ in `internal/version`.
 | `CORTEXIQ_CONSOLIDATION_DEDUP_THRESHOLD` | `0.98` | Auto-merge only near-identical facts. On 932 real facts, every pair between 0.85 and 0.98 differed in a number, an entity or a state. |
 | `CORTEXIQ_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD` | `0.85` | Below this, an LLM verdict was always "different"; above it the pair is worth asking. Narrowed from 0.75, which sent a third of all facts through the model. |
 | `CORTEXIQ_TRIAGE_MODEL` | unset | Optional cheap classifier that runs before extraction and can refuse a cluster of acknowledgements. Unset sends everything to the reasoner. It fails open (unusable answer = durable), so enabling it risks cost, not memories. |
-| `CORTEXIQ_WRITE_FILTER` | `off` | Ships in `v0.1.8` but opt-in: `warn` logs what it would refuse, `strict` refuses secrets and noise. Left off until the false-positive rate on real writes is known. The hygiene cleaner that shipped beside it was removed again: it audited noise the store's own decay already handles, and its archive flag was read by nothing. |
+| `CORTEXIQ_WRITE_FILTER` | `off` | Since `v0.1.8`, opt-in: `warn` logs what it would refuse, `strict` refuses secrets and noise. Left off until the false-positive rate on real writes is known. The hygiene cleaner that shipped beside it was removed in `v0.1.9`: it audited noise the store's own decay already handles, and its archive flag was read by nothing. |
 | `CORTEXIQ_ROUTE_RECALL` | `false` | Only widens recall; never measured in production. |
 | `CORTEXIQ_RECALL_MMR_LAMBDA` | `0` | Available per call; off by default so ranking stays plain fusion. |
 
