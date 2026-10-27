@@ -4,37 +4,37 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-10-27, after the `v0.1.9` deploy.
+Last updated: 2026-10-27, after the `v0.1.10` deploy.
 
 ## Build
 
 | | |
 |---|---|
-| Latest release | `v0.1.9`, 2026-10-27 |
-| Release commit | `ec43c43` |
+| Latest release | `v0.1.10`, 2026-10-27 |
+| Release commit | `caec750` |
 | How to check | `cortexiq version` (works without a database) |
 
 A binary built from a working tree reports `cortexiq dev (built from source)`.
 Release and Docker builds inject the tag, commit and build date; the values live
 in `internal/version`.
 
-Ahead of the next release: a write must name its namespace, and `connect` /
-`disconnect` / `token new` configure MCP clients (see "A namespace on every
-write" below). Prod does not carry this yet.
+Ahead of the next release: nothing named yet.
 
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  `strato-vps`, in `/opt/cortexiq`, running `v0.1.9` (`cortexiq version` inside the
+  `strato-vps`, in `/opt/cortexiq`, running `v0.1.10` (`cortexiq version` inside the
   container is the source of truth; the binary lives at `/cortexiq` and the image
   has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
-  Both containers run image `sha256:80f56b92e9a6…`. Migrations `00038`
+  Both containers run image `sha256:02a0e529a7b7…`. Migrations `00038`
   (retractions and the purge log) and `00039` (providers and model bindings)
   applied on the 2026-10-26 and 2026-10-27 restarts, and `00040` (hygiene) on
   the 2026-10-27 restart. `00041` applied on the `v0.1.9` restart: it drops
   twelve `hygiene_*` columns and the `hygiene_audit_log` table, so the schema is
   back to what it was before `00040` — verified after the deploy (0 matching
-  columns, table gone, data intact). All of them are idempotent.
+  columns, table gone, data intact). All of them are idempotent. The `v0.1.10`
+  restart applied none: it changed the binary only, and `goose_db_version` still
+  reads `41` afterwards.
 - The MCP server hands its prime directive to a client at connect time, in the
   `initialize` result's `instructions` field (6445 characters on `v0.1.4`). A
   client reads that once per connection, so it has to reconnect after an upgrade
@@ -60,10 +60,10 @@ write" below). Prod does not carry this yet.
   artifacts, about 90 MB together; nothing pulls them. The local `latest` tag was
   untagged, so nothing on the server suggests a moving tag.
 - Registry tags: exactly one tag per release (`0.1.2`, `0.1.3`, …) and nothing
-  else. Checked at the registry after `v0.1.9`: `0.1.2` through `0.1.9`, eight
-  tags for eight releases, no `latest` and no floating `0.1`. Past releases are
+  else. Checked at the registry after `v0.1.10`: `0.1.2` through `0.1.10`, nine
+  tags for nine releases, no `latest` and no floating `0.1`. Past releases are
   kept rather than deleted, so a rollback can still pull the tag it names;
-  production pulls `0.1.9` today. With a moving tag, "which version runs here"
+  production pulls `0.1.10` today. With a moving tag, "which version runs here"
   becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the compose
   file, so a missing value fails the deploy instead of silently pulling
   something old.
@@ -78,19 +78,22 @@ write" below). Prod does not carry this yet.
   not images; they are harmless.
 - This page may be one documentation-only commit ahead of the deployed binary;
   compare with `cortexiq version` rather than assuming.
-- Storage: Postgres + pgvector. At the `v0.1.9` deploy: 1,150 live facts,
+- Storage: Postgres + pgvector. At the `v0.1.10` deploy: 1,150 live facts,
   325 episodes, 24 namespaces, 70 MB.
 
 ## A namespace on every write
 
 A memory's namespace says where it belongs, and the `remember` tool used to
 default to `/` when a client left the parameter out: the memory landed among
-everything else and was found by nobody. It is now required. The tool refuses
-without one and names the tool that answers the question — `list_namespaces` —
-so the client can correct itself in the next call instead of guessing; an
-explicit `/` is still accepted for a memory that is genuinely global. The four
-record tools (`create_causal_link`, `create_hypothesis`, `create_goal`,
-`create_failure`) refuse the same way.
+everything else and was found by nobody. Since `v0.1.10` it is required. The tool
+refuses without one and names the tool that answers the question —
+`list_namespaces` — so the client can correct itself in the next call instead of
+guessing; an explicit `/` is still accepted for a memory that is genuinely
+global. The four record tools (`create_causal_link`, `create_hypothesis`,
+`create_goal`, `create_failure`) refuse the same way. A client that reaches the
+server without a namespace therefore stops working until it passes one, which is
+the intent; the bundled Hermes integration always passes a path, and the CLI
+keeps its own `/` default because a person typing a command can see the flag.
 
 The reason it is asked per write rather than answered once by configuration: the
 client knows which project it is working in and the server does not. A token that
