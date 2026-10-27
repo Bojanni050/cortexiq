@@ -4,14 +4,14 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-10-27, after the `v0.1.6` deploy.
+Last updated: 2026-10-27, after the `v0.1.7` deploy.
 
 ## Build
 
 | | |
 |---|---|
-| Latest release | `v0.1.6`, 2026-10-27 |
-| Release commit | `c107f8c` |
+| Latest release | `v0.1.7`, 2026-10-27 |
+| Release commit | `cfd8f00` |
 | How to check | `cortexiq version` (works without a database) |
 
 A binary built from a working tree reports `cortexiq dev (built from source)`.
@@ -21,10 +21,10 @@ in `internal/version`.
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  `strato-vps`, in `/opt/cortexiq`, running `v0.1.6` (`cortexiq version` inside the
+  `strato-vps`, in `/opt/cortexiq`, running `v0.1.7` (`cortexiq version` inside the
   container is the source of truth; the binary lives at `/cortexiq` and the image
   has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
-  Both containers run image `sha256:61d7ed372332…`. Migrations `00038`
+  Both containers run image `sha256:241e376a1d99…`. Migrations `00038`
   (retractions and the purge log) and `00039` (providers and model bindings)
   applied on the 2026-10-26 and 2026-10-27 restarts, `00040` and up are empty;
   all of them are idempotent.
@@ -52,7 +52,7 @@ in `internal/version`.
   untagged, so nothing on the server suggests a moving tag.
 - Registry tags: exactly one tag per release (`0.1.2`, `0.1.3`, …) and nothing
   else. GHCR holds one tag per release and older versions are deleted, so the
-  registry never suggests a moving target; production pulls `0.1.6` today.
+  registry never suggests a moving target; production pulls `0.1.7` today.
   No `latest`, no floating `0.1`: with a moving tag, "which version runs here"
   becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the compose
   file, so a missing value fails the deploy instead of silently pulling
