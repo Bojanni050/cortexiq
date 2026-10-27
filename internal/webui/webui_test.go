@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -276,5 +277,65 @@ func TestErrStatusMentalModels(t *testing.T) {
 		if got := errStatus(tc.err); got != tc.want {
 			t.Errorf("errStatus(%v) = %d, want %d", tc.err, got, tc.want)
 		}
+	}
+}
+
+func TestParseIDList(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		want    []int64
+		wantErr bool
+	}{
+		{name: "single", in: "5", want: []int64{5}},
+		{name: "several with spaces", in: "5, 9 ,5", want: []int64{5, 9}},
+		{name: "not a number", in: "5,abc", wantErr: true},
+		{name: "zero", in: "0", wantErr: true},
+		{name: "only separators", in: " , ", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseIDList(tc.in)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseIDList(%q) = %v, want an error", tc.in, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseIDList(%q): %v", tc.in, err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("parseIDList(%q) = %v, want %v", tc.in, got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("parseIDList(%q) = %v, want %v", tc.in, got, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// One dashboard page holds at most 100 links, and a link names two facts.
+func TestParseIDListCapsTheRequest(t *testing.T) {
+	ids := make([]string, 201)
+	for i := range ids {
+		ids[i] = strconv.Itoa(i + 1)
+	}
+	if _, err := parseIDList(strings.Join(ids, ",")); err == nil {
+		t.Fatal("201 ids should be refused")
+	}
+}
+
+// A malformed ids list is refused before the handler touches the database, so a
+// nil Brain still exercises the path.
+func TestFactsByIDsRejectsBadID(t *testing.T) {
+	h := &Handler{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/facts?ids=5,abc", nil)
+	rec := httptest.NewRecorder()
+	h.facts(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 }

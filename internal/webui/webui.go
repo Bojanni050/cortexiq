@@ -234,6 +234,38 @@ func intQuery(r *http.Request, name string) int {
 	return n
 }
 
+// parseIDList reads a comma-separated list of positive ids. The cap matches one
+// page of list rows: a dashboard page can name at most two facts per link, and a
+// larger list means the caller is asking for something other than labels.
+func parseIDList(raw string) ([]int64, error) {
+	const maxIDs = 200
+	parts := strings.Split(raw, ",")
+	if len(parts) > maxIDs {
+		return nil, fmt.Errorf("ids: at most %d per request", maxIDs)
+	}
+	seen := make(map[int64]bool, len(parts))
+	ids := make([]int64, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(p, 10, 64)
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("ids: %q is not a positive id", p)
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil, errors.New("ids: empty list")
+	}
+	return ids, nil
+}
+
 // pathID reads the id (and optional action) from /api/v1/<resource>/<id>[/<action>].
 // It used to index the whole path, so it read the resource name as the id and every
 // GET/DELETE/POST on an item answered "invalid id".
@@ -444,6 +476,27 @@ func (h *Handler) facts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	query := r.URL.Query()
+	// ids resolves a known set of facts regardless of age or ordering. The
+	// dashboard uses it for causal-link labels, which point at facts that may sit
+	// outside the newest page. It ignores every other filter on purpose.
+	if raw := query.Get("ids"); raw != "" {
+		ids, err := parseIDList(raw)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		items, err := h.Brain.FactsByIDs(r.Context(), ids)
+		if !hdl(w, err) {
+			return
+		}
+		out := make([]factJSON, 0, len(items))
+		for _, f := range items {
+			out = append(out, factToJSON(f))
+		}
+		total(w, len(out))
+		writeJSON(w, http.StatusOK, map[string]any{"items": out, "total": len(out)})
+		return
+	}
 	from, err := parseTimeBound(query.Get("from"))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid from: %w", err))

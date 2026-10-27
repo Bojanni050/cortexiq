@@ -745,10 +745,11 @@ function ago(iso) {
 //   enrich()      optional extra data the rows need (set up in the closure)
 async function listTab(tab, spec) {
   const offset = state.page[tab] || 0;
-  const [page, aux] = await Promise.all([
-    apiPage(spec.path(offset)),
-    spec.enrich ? spec.enrich() : Promise.resolve(null),
-  ]);
+  const page = await apiPage(spec.path(offset));
+  // enrich runs after the page and receives its rows: a label lookup needs the
+  // ids that are actually on screen (causal links point at arbitrary facts), and
+  // guessing which ones to preload cost a second request and got it wrong.
+  const aux = spec.enrich ? await spec.enrich(page.items) : null;
   state.lists[tab] = {items: page.items, total: page.total, offset: offset, spec: spec, aux: aux};
   paintTab(tab);
 }
@@ -1861,19 +1862,33 @@ async function failCreate() {
   dlgClose(); refresh(); toast('Failure recorded');
 }
 
+// factCache holds the text of facts named by causal links. A link can point at a
+// fact far older than the newest page of /facts, so its text is fetched by id
+// once and kept: null means the server does not have that fact any more.
+const factCache = new Map();
+
 async function renderLinks() {
-  const byId = new Map();
-  // Show the fact text; fall back to the bare id for facts that are no longer listed.
-  const fact = id => byId.has(id)
-    ? `<span class="mono">#${id}</span> ${esc(byId.get(id))}`
-    : `<span class="mono">#${id}</span> <span class="muted">(fact not available)</span>`;
+  // Show the fact text; a link can outlive its fact, so say that instead of
+  // leaving the row looking like a failed lookup.
+  const fact = id => factCache.get(id) != null
+    ? `<span class="mono">#${id}</span> ${esc(factCache.get(id))}`
+    : `<span class="mono">#${id}</span> <span class="muted">(fact no longer stored)</span>`;
   await listTab('links', {
     path: o => '/causal-links' + qs(o),
     headers: ['Cause', '', 'Effect', 'Confidence', 'Method', 'Created'],
     fields: ['id', 'cause_fact_id', 'effect_fact_id', 'method'],
-    enrich: async () => {
-      const facts = await apiList('/facts' + nsQS('&limit=1000'));
-      for (const f of facts) byId.set(f.id, f.content);
+    enrich: async items => {
+      const missing = new Set();
+      for (const l of items) {
+        if (!factCache.has(l.cause_fact_id)) missing.add(l.cause_fact_id);
+        if (!factCache.has(l.effect_fact_id)) missing.add(l.effect_fact_id);
+      }
+      if (!missing.size) return;
+      const ids = [...missing];
+      const facts = await apiList('/facts?ids=' + ids.join(','));
+      for (const f of facts) factCache.set(f.id, f.content);
+      // Remember what the server does not have, so a repaint does not ask again.
+      for (const id of ids) if (!factCache.has(id)) factCache.set(id, null);
     },
     row: l => `<tr>
       <td class="wrap">${fact(l.cause_fact_id)}</td>

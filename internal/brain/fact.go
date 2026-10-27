@@ -182,6 +182,46 @@ func (b *Brain) GetFact(ctx context.Context, factID int64) (*models.Fact, error)
 	return &f, nil
 }
 
+// FactsByIDs returns the facts named by ids. The dashboard needs this to label
+// causal links: a link names two facts, and those can be far older than the
+// newest page /facts returns (ORDER BY created_at DESC, capped at 1000 rows), so
+// looking the text up in that page turns every old link into "not available".
+//
+// Deleted facts are included on purpose. A link outlives the fact it points at,
+// and the caller decides how to show that rather than having it look like a
+// missing row. Embeddings are not selected: they are not needed here, and a row
+// without one would fail the scan.
+func (b *Brain) FactsByIDs(ctx context.Context, ids []int64) ([]models.Fact, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := b.pool.Query(ctx,
+		`SELECT id, namespace_id, content, confidence, entity, property, value,
+		        valid_from, valid_until, created_at, updated_at, deleted_at, tags
+		 FROM facts WHERE id = ANY($1)`,
+		ids,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("facts by ids: %w", err)
+	}
+	defer rows.Close()
+
+	var facts []models.Fact
+	for rows.Next() {
+		var f models.Fact
+		if err := rows.Scan(
+			&f.ID, &f.NamespaceID, &f.Content, &f.Confidence,
+			&f.Entity, &f.Property, &f.Value,
+			&f.ValidFrom, &f.ValidUntil,
+			&f.CreatedAt, &f.UpdatedAt, &f.DeletedAt, &f.Tags,
+		); err != nil {
+			return nil, fmt.Errorf("scan fact by id: %w", err)
+		}
+		facts = append(facts, f)
+	}
+	return facts, rows.Err()
+}
+
 // QueryRelationships returns relationships across namespaces matching the given slug paths.
 // Each path matches itself and all descendants.
 func (b *Brain) QueryRelationships(ctx context.Context, namespaceSlugs []string, page Pagination) ([]models.Relationship, error) {
