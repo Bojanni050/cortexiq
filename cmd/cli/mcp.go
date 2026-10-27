@@ -71,6 +71,26 @@ func splitList(raw string) []string {
 	return out
 }
 
+// ErrNamespaceRequired is what a write tool answers when it was handed no
+// namespace. It names the tool that answers "where does this belong" instead of
+// only saying what is missing: the client reads this text and can correct itself
+// in the next call, which a bare "namespace is required" does not allow.
+var ErrNamespaceRequired = errors.New(
+	`namespace is required: a memory filed without one disappears into everything else. ` +
+		`Call list_namespaces and pass the path this belongs to, for example /projects/myapp. ` +
+		`Pass "/" explicitly if it really belongs at the root.`)
+
+// requiredNamespace validates the namespace a write was handed. An explicit "/"
+// is a choice and is kept — the refusal catches the silence, it does not forbid
+// the root.
+func requiredNamespace(raw string) (string, error) {
+	ns := strings.TrimSpace(raw)
+	if ns == "" {
+		return "", ErrNamespaceRequired
+	}
+	return ns, nil
+}
+
 // toolErrorResult turns a failed tool into a normal tool result carrying the
 // error text. Without it the SDK answers a handler error with a JSON-RPC
 // -32603, and hosted clients (Claude connectors, Le Chat) replace that with a
@@ -140,7 +160,10 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("tags", mcp.Description(render("remember_tags"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		content := request.GetString("content", "")
-		namespace := request.GetString("namespace", "/")
+		namespace, err := requiredNamespace(request.GetString("namespace", ""))
+		if err != nil {
+			return nil, err
+		}
 		importance := float32(request.GetFloat("importance", float64(brain.DefaultImportance)))
 		occurredAt, err := parseAsOf(request.GetString("occurred_at", ""))
 		if err != nil {
@@ -912,9 +935,12 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		causeID := request.GetInt("cause_id", 0)
 		effectID := request.GetInt("effect_id", 0)
 		confidence := float32(request.GetFloat("confidence", 0.8))
-		namespace := request.GetString("namespace", "/")
+		namespace, err := requiredNamespace(request.GetString("namespace", ""))
+		if err != nil {
+			return nil, err
+		}
 
-		nsID, err := bc.Brain.NamespaceIDForWrite(ctx, namespace)
+		nsID, err := bc.Brain.NamespaceIDByPath(ctx, namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -985,7 +1011,10 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		content := request.GetString("content", "")
 		verificationPlan := request.GetString("verification_plan", "")
 		confidence := float32(request.GetFloat("confidence", 0.5))
-		namespace := request.GetString("namespace", "/")
+		namespace, err := requiredNamespace(request.GetString("namespace", ""))
+		if err != nil {
+			return nil, err
+		}
 
 		var sourceFactIDs []int64
 		if raw := request.GetString("source_fact_ids", ""); raw != "" {
@@ -996,7 +1025,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			}
 		}
 
-		nsID, err := bc.Brain.NamespaceIDForWrite(ctx, namespace)
+		nsID, err := bc.Brain.NamespaceIDByPath(ctx, namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -1088,7 +1117,10 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		content := request.GetString("content", "")
 		priority := request.GetInt("priority", 0)
-		namespace := request.GetString("namespace", "/")
+		namespace, err := requiredNamespace(request.GetString("namespace", ""))
+		if err != nil {
+			return nil, err
+		}
 
 		var parentID *int64
 		if pid := request.GetInt("parent_id", 0); pid != 0 {
@@ -1096,7 +1128,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			parentID = &pid64
 		}
 
-		nsID, err := bc.Brain.NamespaceIDForWrite(ctx, namespace)
+		nsID, err := bc.Brain.NamespaceIDByPath(ctx, namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -1186,7 +1218,10 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		content := request.GetString("content", "")
 		reason := request.GetString("reason", "")
 		lesson := request.GetString("lesson", "")
-		namespace := request.GetString("namespace", "/")
+		namespace, err := requiredNamespace(request.GetString("namespace", ""))
+		if err != nil {
+			return nil, err
+		}
 
 		var goalID *int64
 		if gid := request.GetInt("goal_id", 0); gid != 0 {
@@ -1194,7 +1229,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			goalID = &gid64
 		}
 
-		nsID, err := bc.Brain.NamespaceIDForWrite(ctx, namespace)
+		nsID, err := bc.Brain.NamespaceIDByPath(ctx, namespace)
 		if err != nil {
 			return nil, err
 		}

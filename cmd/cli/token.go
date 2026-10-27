@@ -29,9 +29,7 @@ func tokenNewCmd(_ context.Context, cmd *cli.Command) error {
 	}
 	namespace := strings.TrimSpace(cmd.String("namespace"))
 	if namespace != "" {
-		if err := auth.ValidNamespace(namespace); err != nil {
-			return fmt.Errorf("--namespace %q: %w", namespace, err)
-		}
+		return errors.New("--namespace is gone on purpose: a token is per app, and an app works in more than one project. The client is asked for the namespace on every write and finds it with list_namespaces.")
 	}
 	scope := strings.TrimSpace(cmd.String("scope"))
 	switch scope {
@@ -45,7 +43,7 @@ func tokenNewCmd(_ context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	entry := auth.Token{Name: name, Secret: secret, Scope: scope, Namespace: namespace}
+	entry := auth.Token{Name: name, Secret: secret, Scope: scope}
 	line, err := json.Marshal(entry)
 	if err != nil {
 		return err
@@ -59,12 +57,9 @@ func tokenNewCmd(_ context.Context, cmd *cli.Command) error {
 	fmt.Println()
 	fmt.Println("  " + string(line))
 	fmt.Println()
-	if namespace != "" {
-		fmt.Printf("Writes this token makes without naming a namespace land in %s.\n\n", namespace)
-	} else {
-		fmt.Println("Without --namespace this token's writes land at the root when the caller names no namespace.")
-		fmt.Println()
-	}
+	fmt.Println("The token carries no namespace. A client works in more than one project, so it is")
+	fmt.Println("asked where each memory belongs and answers with list_namespaces.")
+	fmt.Println()
 	fmt.Println("Point a client at the server with:")
 	fmt.Println()
 	fmt.Printf("  cortexiq connect --token %s --url <your server>/mcp\n", secret)

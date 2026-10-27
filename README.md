@@ -311,18 +311,19 @@ alone. With `--env-ref` the file holds an environment reference rather than the
 secret. `cortexiq connect` picks the streamable HTTP endpoint (`/mcp`), which is
 what current clients speak.
 
-Give each app its own token, and let the token name the namespace its writes
-belong in:
+Give each app its own token:
 
 ```bash
-cortexiq token new --name opencode --namespace /tools/opencode
+cortexiq token new --name opencode
 ```
 
 That prints a secret (once — it is stored nowhere) and the entry to add to
-`CORTEXIQ_API_TOKENS` on the server. A client that omits `namespace` then files
-its memory where the token says, instead of all of them landing at the root; a
-call that names a path still writes where it asks. Without `--namespace` a token
-behaves exactly as before.
+`CORTEXIQ_API_TOKENS` on the server.
+
+A token deliberately carries no namespace. Memories are filed by project, and an
+app works in more than one of them, so a client is asked where each memory
+belongs with every write: `remember` refuses without a namespace and points at
+`list_namespaces`, which is the tool that answers the question.
 
 ### Time-aware recall
 

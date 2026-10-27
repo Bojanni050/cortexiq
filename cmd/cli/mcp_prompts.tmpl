@@ -332,10 +332,9 @@ Optional exclusive end of a half-open [from,to) event/valid-time window (RFC3339
 {{end}}
 
 {{define "remember_namespace"}}
-Where to store this. Must be an existing namespace path verified via list_namespaces.
-If not found, call create_namespace first. Default: / (root — only for truly uncategorized memories).
+Where to store this, and it is required: a memory filed without one disappears into everything else and is found by nobody.
 
-When your token is bound to a namespace, leaving this out files the memory there, which is usually what you want: omit it rather than guessing a path.
+Call list_namespaces first and pass the path this belongs to. If the namespace does not exist yet, call create_namespace. Use / (root) only for a memory that is genuinely global, and pass it explicitly.
 
 The namespace says WHERE the memory belongs; tags say WHAT it is about. They are not a substitute for each other.
 {{end}}
@@ -775,8 +774,8 @@ COST OF NOT CALLING: You answer structural questions without the graph. Shallow 
 
 
 {{define "namespace_param"}}
-Namespace path. Must exist — call list_namespaces to verify first.
-If not found, call create_namespace before proceeding. Default: / (root), or the namespace your token is bound to.
+Namespace path. Required for a write: call list_namespaces and pass the path this belongs to.
+If not found, call create_namespace before proceeding. Use / (root) only for genuinely global records.
 {{end}}
 
 

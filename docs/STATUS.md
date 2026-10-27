@@ -18,9 +18,9 @@ A binary built from a working tree reports `cortexiq dev (built from source)`.
 Release and Docker builds inject the tag, commit and build date; the values live
 in `internal/version`.
 
-Ahead of the next release: a token can bind a namespace, and `connect` /
-`disconnect` / `token new` configure MCP clients (see "One token per app"
-below). Prod does not carry this yet.
+Ahead of the next release: a write must name its namespace, and `connect` /
+`disconnect` / `token new` configure MCP clients (see "A namespace on every
+write" below). Prod does not carry this yet.
 
 ## What runs where
 
@@ -81,24 +81,30 @@ below). Prod does not carry this yet.
 - Storage: Postgres + pgvector. At the `v0.1.9` deploy: 1,150 live facts,
   325 episodes, 24 namespaces, 70 MB.
 
-## One token per app
+## A namespace on every write
 
-A memory's namespace says where it belongs, and until now an MCP client that left
-the `namespace` parameter out filed everything at the root, where most memories
-live anyway. A token can now name a namespace: writes that do not place
-themselves keep it, and a write that names a path still wins. It is a default,
-not an allowlist — the read-side allowlist was removed on purpose and this does
-not bring it back. The point is that "which app wrote this" becomes answerable
-without asking the app, and one token per app is what puts it there.
+A memory's namespace says where it belongs, and the `remember` tool used to
+default to `/` when a client left the parameter out: the memory landed among
+everything else and was found by nobody. It is now required. The tool refuses
+without one and names the tool that answers the question — `list_namespaces` —
+so the client can correct itself in the next call instead of guessing; an
+explicit `/` is still accepted for a memory that is genuinely global. The four
+record tools (`create_causal_link`, `create_hypothesis`, `create_goal`,
+`create_failure`) refuse the same way.
+
+The reason it is asked per write rather than answered once by configuration: the
+client knows which project it is working in and the server does not. A token that
+carried a namespace was built and then dropped — an app works in more than one
+project, so a default per app files the same project's knowledge under two names
+depending on which editor wrote it. Namespaces belong to projects; tokens belong
+to apps. Keeping those on separate axes is the point.
 
 ```
-cortexiq token new --name opencode --namespace /tools/opencode
+cortexiq token new --name opencode
 ```
 
 generates the secret and prints the entry to paste into `CORTEXIQ_API_TOKENS` on
-the server, then a restart. The secret is shown once and stored nowhere; a
-namespace that the server would refuse at start-up is refused here instead.
-Without `--namespace`, a token behaves exactly as before.
+the server, then a restart. The secret is shown once and stored nowhere.
 
 `cortexiq connect` writes the server entry into the clients on the machine.
 Cursor's `mcp.json` is edited directly — plain JSON, and a file that turns out to
@@ -116,11 +122,10 @@ Four commands run without a database — `version`, `connect`, `disconnect` and
 `token` — because configuring a laptop that has no CortexIQ of its own must not
 require one.
 
-This also fixed a real defect: `create_causal_link`, `create_hypothesis`,
-`create_goal` and `create_failure` resolved `/` to *every* namespace and then
-indexed the first element, so a record meant for the root could be filed under
-an arbitrary namespace. They now go through the same resolution the write path
-uses.
+The same work fixed a real defect: those four record tools resolved `/` to
+*every* namespace and then indexed the first element, so a record meant for the
+root could be filed under an arbitrary namespace. They now resolve exactly one
+path, and refuse when they are handed none.
 
 ## Switched off, on purpose
 

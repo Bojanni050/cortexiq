@@ -779,7 +779,11 @@ func main() {
 						Usage: "Generate a token and print the CORTEXIQ_API_TOKENS entry for it",
 						Flags: []cli.Flag{
 							&cli.StringFlag{Name: "name", Aliases: []string{"n"}, Usage: "Name for the token, e.g. the app it belongs to (required)"},
-							&cli.StringFlag{Name: "namespace", Usage: "Namespace this token's writes default to, e.g. /tools/opencode"},
+							// Removed on purpose, but still accepted so a caller who
+							// read the earlier version gets the reason instead of
+							// "flag provided but not defined". Hidden, so nobody
+							// discovers a flag that only refuses.
+							&cli.StringFlag{Name: "namespace", Hidden: true, Usage: "Removed: a token is per app, a namespace is per project"},
 							&cli.StringFlag{Name: "scope", Value: "rw", Usage: "rw (read-write) or ro (read-only)"},
 						},
 						Action: tokenNewCmd,

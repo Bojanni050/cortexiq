@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"github.com/Bojanni050/cortexiq/internal/scope"
@@ -21,12 +20,6 @@ type Token struct {
 	Name   string `json:"name"`
 	Secret string `json:"token"`
 	Scope  string `json:"scope"` // "rw" (default) or "ro"
-	// Namespace is where this token's writes land when the caller does not name
-	// one. It answers "which app wrote this" without asking the app: the MCP
-	// remember tool defaults to "/", so a client that leaves the parameter out
-	// used to file everything at the root. A token per app makes that impossible.
-	// Not an allowlist — a write that names a path keeps it.
-	Namespace string `json:"namespace"`
 	// LegacyNamespaces parses the removed namespace allowlist, which is no
 	// longer enforced. It is kept so start-up can point at a config that still
 	// carries it instead of dropping the restriction silently. Omitted from
@@ -77,11 +70,6 @@ func ParseSet(spec, fallback string) (*Set, error) {
 		default:
 			return nil, fmt.Errorf("token %d (%q) has invalid scope %q (want rw or ro)", i, t.Name, t.Scope)
 		}
-		if t.Namespace != "" {
-			if err := validNamespace(t.Namespace); err != nil {
-				return nil, fmt.Errorf("token %d (%q) has invalid namespace %q: %w", i, t.Name, t.Namespace, err)
-			}
-		}
 		if len(t.LegacyNamespaces) > 0 {
 			name := t.Name
 			if name == "" {
@@ -92,35 +80,6 @@ func ParseSet(spec, fallback string) (*Set, error) {
 	}
 	return &Set{tokens: tokens, legacy: legacy}, nil
 }
-
-// validNamespace checks the shape of a token's namespace at start-up. The brain
-// validates the path again on every write; this exists so a typo fails at boot
-// instead of on the first write that needs the default. The "/" path is
-// rejected on purpose: it is exactly what a caller gets without a binding, so
-// accepting it would look like configuration while changing nothing.
-func validNamespace(ns string) error {
-	if !strings.HasPrefix(ns, "/") {
-		return fmt.Errorf("must start with /")
-	}
-	if ns == "/" {
-		return fmt.Errorf("must name a namespace, not the root")
-	}
-	for _, seg := range strings.Split(strings.TrimPrefix(ns, "/"), "/") {
-		if !namespaceSegmentRe.MatchString(seg) {
-			return fmt.Errorf("each segment must be lowercase letters, digits, _ or - (got %q)", seg)
-		}
-	}
-	return nil
-}
-
-// ValidNamespace exposes the start-up check so a token can be created from the
-// command line without printing a configuration line the server would refuse on
-// its next start.
-func ValidNamespace(ns string) error { return validNamespace(ns) }
-
-// namespaceSegmentRe mirrors the namespace slug rule in the brain, so a token
-// namespace that passes start-up cannot fail the write path later on syntax.
-var namespaceSegmentRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
 // Enabled reports whether any token is configured.
 func (s *Set) Enabled() bool { return s != nil && len(s.tokens) > 0 }
@@ -171,9 +130,8 @@ func Require(set *Set, next http.Handler) http.Handler {
 			return
 		}
 		ctx := scope.With(r.Context(), scope.Principal{
-			Name:      token.Name,
-			ReadOnly:  token.Scope == "ro",
-			Namespace: token.Namespace,
+			Name:     token.Name,
+			ReadOnly: token.Scope == "ro",
 		})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

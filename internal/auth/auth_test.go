@@ -3,7 +3,6 @@ package auth
 import (
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"testing"
 
 	"github.com/Bojanni050/cortexiq/internal/scope"
@@ -36,46 +35,6 @@ func TestRequireToken(t *testing.T) {
 		if rec.Code != tt.want {
 			t.Errorf("%s: got %d, want %d", tt.name, rec.Code, tt.want)
 		}
-	}
-}
-
-func TestParseSetRejectsBadNamespace(t *testing.T) {
-	bad := []string{
-		`projects/x`,         // no leading slash
-		`/`,                  // the root is what a caller already gets
-		`/Projects/X`,        // segments are lowercase slugs
-		`/projects//x`,       // empty segment
-		`/projects/x y`,      // whitespace
-		`/projects/../other`, // traversal
-	}
-	for _, ns := range bad {
-		spec := `[{"name":"a","token":"t","namespace":` + strconv.Quote(ns) + `}]`
-		if _, err := ParseSet(spec, ""); err == nil {
-			t.Errorf("namespace %q must be rejected at start-up", ns)
-		}
-	}
-	if _, err := ParseSet(`[{"name":"a","token":"t","namespace":"/projects/cortexiq"}]`, ""); err != nil {
-		t.Fatalf("a valid namespace must parse: %v", err)
-	}
-}
-
-// The token's namespace must reach the principal: that is the only path from
-// configuration to where a write actually lands.
-func TestRequireCarriesNamespace(t *testing.T) {
-	set, err := ParseSet(`[{"name":"opencode","token":"t1","namespace":"/projects/cortexiq"}]`, "")
-	if err != nil {
-		t.Fatalf("ParseSet: %v", err)
-	}
-	var got scope.Principal
-	handler := Require(set, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got, _ = scope.From(r.Context())
-	}))
-	req := httptest.NewRequest(http.MethodPost, "/sse", nil)
-	req.Header.Set("Authorization", "Bearer t1")
-	handler.ServeHTTP(httptest.NewRecorder(), req)
-
-	if got.Namespace != "/projects/cortexiq" {
-		t.Fatalf("principal namespace = %q, want /projects/cortexiq", got.Namespace)
 	}
 }
 

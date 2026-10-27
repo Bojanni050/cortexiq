@@ -102,8 +102,6 @@ func (b *Brain) RememberWithDecision(ctx context.Context, namespaceSlug, content
 	// namespace to exist, so it runs after the ID is resolved below.
 	socialFilter := b.config.SocialFilter
 
-	namespaceSlug = writeNamespace(ctx, namespaceSlug)
-
 	if err := validatePath(namespaceSlug); err != nil {
 		return 0, decision, err
 	}
