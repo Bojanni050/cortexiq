@@ -1279,9 +1279,15 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 
 // readOnlyTools are the MCP tools a read-only token may call. Everything else
 // (remember, consolidate, create_*, delete_*, ...) is rejected before it reaches
-// the server.
+// the server. init belongs to the rejected side: it creates the /self scaffold.
+//
+// reflect is here although it costs a model call: it reads, and it writes
+// nothing, so refusing it would leave a read-only token unable to ask a question
+// of the memory it is allowed to read. Its absence was reported as a 403 on a
+// read tool, which is exactly the confusion this list exists to avoid.
 var readOnlyTools = map[string]bool{
 	"recall":              true,
+	"reflect":             true,
 	"query_facts":         true,
 	"query_relationships": true,
 	"list_namespaces":     true,

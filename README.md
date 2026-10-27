@@ -416,7 +416,11 @@ listing others.
 - `scope`: `rw` (default, read and write) or `ro` (read only). Read-only tokens
   may only run read operations; the dashboard allows `GET`/`HEAD` and
   `POST /api/v1/recall`, and the MCP server allows only read tools (`recall`,
-  `query_*`, `list_*`, `get_context`, `trace_causal_chain`).
+  `reflect`, `query_*`, `list_*`, `get_context`, `trace_causal_chain`,
+  `memory_stats`). `reflect` is on that list although it costs a model call: it
+  writes nothing, and without it a read-only client cannot ask a question of the
+  memory it is allowed to read. `init` is not, because it creates the `/self`
+  scaffold — a read-only token that reports 403 there is working as intended.
 - `name`: only used in logs and error messages.
 
 Point any MCP-compatible client at that URL. Example configs:
