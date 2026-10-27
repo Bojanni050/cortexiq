@@ -4,14 +4,14 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-10-26, after the `v0.1.2` deploy.
+Last updated: 2026-10-27, after the `v0.1.6` deploy.
 
 ## Build
 
 | | |
 |---|---|
-| Latest release | `v0.1.5`, 2026-10-27 |
-| Release commit | `e659405` |
+| Latest release | `v0.1.6`, 2026-10-27 |
+| Release commit | `c107f8c` |
 | How to check | `cortexiq version` (works without a database) |
 
 A binary built from a working tree reports `cortexiq dev (built from source)`.
@@ -21,13 +21,13 @@ in `internal/version`.
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  `strato-vps`, in `/opt/cortexiq`, running `v0.1.5` (`cortexiq version` inside the
+  `strato-vps`, in `/opt/cortexiq`, running `v0.1.6` (`cortexiq version` inside the
   container is the source of truth; the binary lives at `/cortexiq` and the image
   has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
-  Both containers run image `sha256:a7038c59c5e1…`. Migrations `00038`
+  Both containers run image `sha256:61d7ed372332…`. Migrations `00038`
   (retractions and the purge log) and `00039` (providers and model bindings)
-  applied on the 2026-10-26 and 2026-10-27 restarts; both are idempotent and both
-  start empty.
+  applied on the 2026-10-26 and 2026-10-27 restarts, `00040` and up are empty;
+  all of them are idempotent.
 - The MCP server hands its prime directive to a client at connect time, in the
   `initialize` result's `instructions` field (6445 characters on `v0.1.4`). A
   client reads that once per connection, so it has to reconnect after an upgrade
@@ -35,6 +35,10 @@ in `internal/version`.
   provider recalls before a turn and captures after it, and writes only when a
   session actually runs — which is why the silence from 24 to 27 October was
   usage, not a broken integration.
+- The dashboard (`/ui`) is three columns: navigation, the content, and a context
+  column that lists the facts an episode produced or the episodes behind a fact.
+  It collapses from the topbar or its own × and becomes a drawer below 1360px;
+  the choice is kept in that browser, not on the server.
 - Deploying: production pulls the image CI built —
   `ghcr.io/bojanni050/cortexiq:${CORTEXIQ_IMAGE_TAG}`. To deploy, bump
   `CORTEXIQ_IMAGE_TAG` in `/opt/cortexiq/.env` to the new release and run
@@ -47,7 +51,8 @@ in `internal/version`.
   artifacts, about 90 MB together; nothing pulls them. The local `latest` tag was
   untagged, so nothing on the server suggests a moving tag.
 - Registry tags: exactly one tag per release (`0.1.2`, `0.1.3`, …) and nothing
-  else. GHCR holds a single version today — `0.1.2`, the one production pulls.
+  else. GHCR holds one tag per release and older versions are deleted, so the
+  registry never suggests a moving target; production pulls `0.1.6` today.
   No `latest`, no floating `0.1`: with a moving tag, "which version runs here"
   becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the compose
   file, so a missing value fails the deploy instead of silently pulling
@@ -250,6 +255,10 @@ What is left:
 
 - No semantic versioning history before `v0.1.0`, so nothing can depend on
   "the API as of v0.x".
+- A row without an embedding stops the whole namespace run: scanning it into a
+  non-pointer vector fails with `unsupported data type: <nil>`, logged per query
+  rather than per row. Production writes always embed, so this reaches
+  hand-seeded or imported rows, not normal traffic.
 - Windows: `go test ./...` can fail with `unlinkat ... test.exe` when a test
   binary is still running. Retry; it is not a test failure.
 - The integration suite wants a clean database. `TestGlobalMentalModelReadsAllNamespaces`
