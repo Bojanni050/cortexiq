@@ -153,6 +153,71 @@ func (b *Brain) ListTags(ctx context.Context, namespaces []string, since *time.T
 	return out, rows.Err()
 }
 
+// TagCoverage says how much of a namespace carries tags at all. Counting it is
+// the only way to see the gap: ListTags can only report tags that exist, so a
+// namespace where nobody tags looks exactly like a namespace with no memories,
+// and a filter on "beslissing" silently misses every write that was never
+// tagged. Live rows only, and the count ignores `since` — it answers what the
+// store looks like now, not what happened in a period.
+type TagCoverage struct {
+	FactsTagged      int `json:"facts_tagged"`
+	FactsUntagged    int `json:"facts_untagged"`
+	EpisodesTagged   int `json:"episodes_tagged"`
+	EpisodesUntagged int `json:"episodes_untagged"`
+}
+
+// Tagged and Untagged are the totals the four counts add up to.
+func (c TagCoverage) Tagged() int   { return c.FactsTagged + c.EpisodesTagged }
+func (c TagCoverage) Untagged() int { return c.FactsUntagged + c.EpisodesUntagged }
+
+// TagCoverage counts how many live facts and episodes carry at least one tag.
+// An empty namespace list counts across all namespaces.
+func (b *Brain) TagCoverage(ctx context.Context, namespaces []string) (TagCoverage, error) {
+	var nsIDs []int64
+	if len(namespaces) > 0 {
+		var err error
+		nsIDs, err = b.resolveNamespaceIDs(ctx, namespaces)
+		if err != nil {
+			return TagCoverage{}, err
+		}
+	}
+	rows, err := b.pool.Query(ctx, `
+		SELECT is_fact,
+		       count(*) FILTER (WHERE tagged)::int,
+		       count(*) FILTER (WHERE NOT tagged)::int
+		FROM (
+		    SELECT true AS is_fact, cardinality(tags) > 0 AS tagged
+		      FROM facts
+		     WHERE deleted_at IS NULL
+		       AND ($1::bigint[] IS NULL OR namespace_id = ANY($1))
+		    UNION ALL
+		    SELECT false, cardinality(tags) > 0
+		      FROM episodes
+		     WHERE deleted_at IS NULL
+		       AND ($1::bigint[] IS NULL OR namespace_id = ANY($1))
+		) s
+		GROUP BY is_fact`, nsIDs)
+	if err != nil {
+		return TagCoverage{}, fmt.Errorf("brain: tag coverage: %w", err)
+	}
+	defer rows.Close()
+
+	var out TagCoverage
+	for rows.Next() {
+		var isFact bool
+		var tagged, untagged int
+		if err := rows.Scan(&isFact, &tagged, &untagged); err != nil {
+			return TagCoverage{}, fmt.Errorf("brain: tag coverage: %w", err)
+		}
+		if isFact {
+			out.FactsTagged, out.FactsUntagged = tagged, untagged
+		} else {
+			out.EpisodesTagged, out.EpisodesUntagged = tagged, untagged
+		}
+	}
+	return out, rows.Err()
+}
+
 // TagTrend is one tag's count inside one month: how much of that tag was
 // recorded then. It answers "how does this tag develop over time", which a
 // single since-bounded total cannot.

@@ -297,6 +297,7 @@ How much this memory matters, 0 to 1. Default 0.5 (neutral). Use ~0.8-1.0 for de
 {{define "remember_tags"}}
 Optional comma-separated tags describing what this memory is about, not where it belongs (the namespace does that). Use lowercase words: 'beslissing', 'bugfix', 'observatie', 'klant-x', 'sprint-42'. Facts consolidated from this memory inherit its tags, so tags keep filtering after the raw memory is gone.
 At most 8 tags, each up to 32 characters of lowercase letters, digits, '-' or '_'. Call list_tags first to reuse tags that already exist instead of inventing near-duplicates.
+Leave them out only when the memory genuinely is about nothing in particular: the response then says it was stored untagged and names the tags this namespace already uses, so the next write can pick instead of guess. There is no way to add a tag afterwards.
 {{end}}
 
 {{define "recall_tags"}}
@@ -304,7 +305,7 @@ Optional comma-separated tags to narrow the search: only memories carrying all o
 {{end}}
 
 {{define "list_tags_description"}}
-Lists the tags in use, most used first, with how many facts and episodes carry each one. Call this before writing tags, so you reuse the existing vocabulary instead of creating near-duplicates such as 'bug', 'Bug' and 'bugs'.
+Lists the tags in use, most used first, with how many facts and episodes carry each one, plus a coverage count of how many live memories carry no tag at all. Call this before writing tags, so you reuse the existing vocabulary instead of creating near-duplicates such as 'bug', 'Bug' and 'bugs'. A high untagged count means filtering by tag is not yet answering for the whole store.
 {{end}}
 
 {{define "list_tags_namespaces"}}

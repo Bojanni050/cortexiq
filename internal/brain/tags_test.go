@@ -219,6 +219,65 @@ func TestIntegrationListTagsCounts(t *testing.T) {
 	}
 }
 
+// The vocabulary can only report tags that exist, so on its own it cannot tell
+// an untagged namespace from an empty one. Coverage is what shows the gap, and
+// it must count facts and episodes separately: a fact inherits its episode's
+// tags, so the two counts move for different reasons.
+func TestIntegrationTagCoverage(t *testing.T) {
+	e := newEnv(t, nil)
+
+	tagged, err := e.b.RememberWith(e.ctx, e.ns, "pgvector stores embeddings inside postgres", RememberOptions{
+		Tags: []string{"beslissing", "pgvector"},
+	})
+	if err != nil {
+		t.Fatalf("RememberWith(tagged): %v", err)
+	}
+	untagged, err := e.b.RememberWith(e.ctx, e.ns, "the queue is kafka not rabbitmq", RememberOptions{})
+	if err != nil {
+		t.Fatalf("RememberWith(untagged): %v", err)
+	}
+	if _, err := e.b.storeFact(e.ctx, e.nsID, &reasoner.StructuredFact{
+		Entity:   "pgvector",
+		Property: "stores",
+		Value:    "embeddings",
+		Summary:  "pgvector stores embeddings inside postgres",
+	}, []int64{tagged}); err != nil {
+		t.Fatalf("storeFact(tagged): %v", err)
+	}
+	if _, err := e.b.storeFact(e.ctx, e.nsID, &reasoner.StructuredFact{
+		Entity:   "queue",
+		Property: "is",
+		Value:    "kafka",
+		Summary:  "the queue is kafka not rabbitmq",
+	}, []int64{untagged}); err != nil {
+		t.Fatalf("storeFact(untagged): %v", err)
+	}
+
+	got, err := e.b.TagCoverage(e.ctx, []string{e.ns})
+	if err != nil {
+		t.Fatalf("TagCoverage: %v", err)
+	}
+	if got.FactsTagged != 1 || got.FactsUntagged != 1 {
+		t.Errorf("facts = %d tagged / %d untagged, want 1 / 1", got.FactsTagged, got.FactsUntagged)
+	}
+	if got.EpisodesTagged != 1 || got.EpisodesUntagged != 1 {
+		t.Errorf("episodes = %d tagged / %d untagged, want 1 / 1", got.EpisodesTagged, got.EpisodesUntagged)
+	}
+	if got.Tagged() != 2 || got.Untagged() != 2 {
+		t.Errorf("totals = %d tagged / %d untagged, want 2 / 2", got.Tagged(), got.Untagged())
+	}
+
+	// Across every namespace the same rows are still counted, whatever else the
+	// database holds, so the numbers can only grow.
+	all, err := e.b.TagCoverage(e.ctx, nil)
+	if err != nil {
+		t.Fatalf("TagCoverage(all): %v", err)
+	}
+	if all.Tagged() < got.Tagged() || all.Untagged() < got.Untagged() {
+		t.Errorf("coverage over all namespaces = %+v, smaller than %+v", all, got)
+	}
+}
+
 // The dashboard list endpoints filter server-side; a client-side filter would
 // only narrow the current page. This covers the two paths the UI uses.
 func TestIntegrationListFiltersByTag(t *testing.T) {

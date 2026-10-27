@@ -130,6 +130,54 @@ The same work fixed a real defect: those four record tools resolved `/` to
 root could be filed under an arbitrary namespace. They now resolve exactly one
 path, and refuse when they are handed none.
 
+## A tag is asked for, not demanded
+
+A namespace says where a memory lies; its tags say what it is about, and they
+outlive it — consolidation replaces the raw episode with facts that inherit the
+union of its tags, so a tag keeps filtering after the memory it came from is
+gone. The namespace is a gate. Tags are not, and the difference is not
+sentiment: a memory without a namespace is unfindable, a memory without a tag is
+still findable, and a tag invented to satisfy a gate ("overig", "algemeen")
+fragments exactly the vocabulary that `NormalizeTags` exists to protect. That
+function already rejects what would drift — more than 8 tags, longer than 32
+characters, anything outside lowercase letters, digits, `-` and `_` — and one
+near-duplicate filter ("beslissing" against "Beslissing" against "beslissingen")
+costs more than one forced tag.
+
+What the write path does instead is answer. A `remember` without tags comes back
+carrying `"untagged": true` and a hint that names the tags that namespace already
+uses, on the turn where the writer is still looking:
+
+```json
+{"id": 3, "tags": [], "untagged": true,
+ "hint": "Stored without tags. … This namespace already uses: beslissing, bugfix."}
+```
+
+That is the enforcement: the tool descriptions ask for tags and point at
+`list_tags`, and the response says so when they were left out, with the real
+vocabulary instead of a generic reminder. A response is read on the turn where a
+client can still act on it; a rule in a document is read when someone remembers
+to write it.
+
+Coverage is counted for the same reason. `list_tags` — and `cortexiq tags` —
+return the vocabulary *and* how many live memories carry no tag at all:
+
+```json
+{"coverage": {"facts_tagged": 0, "facts_untagged": 0,
+              "episodes_tagged": 2, "episodes_untagged": 2},
+ "tags": [{"tag": "beslissing", "facts": 0, "episodes": 2, "total": 2}]}
+```
+
+Twelve tags over two hundred memories and twelve tags over two thousand look
+identical in the vocabulary alone; the count is what shows the gap. It counts
+what is live now and ignores the period filter, because a period describes what
+was recorded and not what the store looks like.
+
+One thing tags cannot do: a memory that is already stored cannot be tagged. A
+client that reads the hint can only tag its next write — there is no `add_tags`
+tool and no CLI verb for it. Retro-tagging is the obvious next step, and it is
+not built.
+
 ## Switched off, on purpose
 
 | Setting | Production | Why |

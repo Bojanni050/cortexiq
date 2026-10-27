@@ -258,11 +258,11 @@ func main() {
 			},
 			{
 				Name:   "tags",
-				Usage:  "List the tag vocabulary with fact and episode counts (newest first)",
+				Usage:  "List the tag vocabulary with fact and episode counts, and how much of the store is tagged at all",
 				Action: tagsCmd,
 				Flags: []cli.Flag{
 					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to count (each includes descendants; default all)"},
-					&cli.StringFlag{Name: "since", Usage: "Only count memories stored on or after this time (RFC3339 or YYYY-MM-DD)"},
+					&cli.StringFlag{Name: "since", Usage: "Only count memories stored on or after this time (RFC3339 or YYYY-MM-DD); coverage always counts everything that is live now"},
 					&cli.IntFlag{Name: "limit", Value: 100, Usage: "Max tags"},
 				},
 			},

@@ -170,10 +170,14 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			return nil, fmt.Errorf("invalid occurred_at: %w", err)
 		}
 
+		tags, err := brain.NormalizeTags(splitList(request.GetString("tags", "")))
+		if err != nil {
+			return nil, err
+		}
 		id, decision, err := bc.Brain.RememberWithDecision(ctx, namespace, content, brain.RememberOptions{
 			OccurredAt: occurredAt,
 			Importance: importance,
-			Tags:       splitList(request.GetString("tags", "")),
+			Tags:       tags,
 		})
 		if errors.Is(err, brain.ErrSocialCloser) {
 			return skippedResult(err)
@@ -190,7 +194,18 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		if err != nil {
 			return nil, err
 		}
-		result := map[string]any{"id": id, "message": "Memory remembered successfully"}
+		stored := tags
+		if stored == nil {
+			stored = []string{}
+		}
+		result := map[string]any{"id": id, "tags": stored, "message": "Memory remembered successfully"}
+		if len(tags) == 0 {
+			// The memory is stored; what is missing is the tag. Say so on the turn
+			// where the writer can still act on it, and hand over the vocabulary
+			// this namespace already uses so the next write reuses it.
+			result["untagged"] = true
+			result["hint"] = untaggedHint(ctx, bc.Brain, namespace)
+		}
 		if decision.Action == "warn" {
 			result["warning"] = "stored with warnings"
 			result["reasons"] = decision.Reasons
@@ -723,11 +738,16 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		if err != nil {
 			return nil, fmt.Errorf("invalid since: %w", err)
 		}
-		tags, err := bc.Brain.ListTags(ctx, splitList(request.GetString("namespaces", "")), since, request.GetInt("limit", 100))
+		namespaces := splitList(request.GetString("namespaces", ""))
+		tags, err := bc.Brain.ListTags(ctx, namespaces, since, request.GetInt("limit", 100))
 		if err != nil {
 			return nil, err
 		}
-		b, _ := json.Marshal(tags)
+		coverage, err := bc.Brain.TagCoverage(ctx, namespaces)
+		if err != nil {
+			return nil, err
+		}
+		b, _ := json.Marshal(map[string]any{"tags": tags, "coverage": coverage})
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
