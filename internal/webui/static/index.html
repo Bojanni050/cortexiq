@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CortexIQ Dashboard</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%237c8cff'/%3E%3Ctext x='16' y='22' font-family='Inter,sans-serif' font-size='18' font-weight='700' fill='white' text-anchor='middle'%3EC%3C/text%3E%3C/svg%3E">
+<link rel="icon" type="image/png" href="/ui/brand/mark-96.png">
+<meta name="theme-color" content="#0b0f0e">
 <script>
 try { const t = localStorage.getItem('cq.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
 try { if (localStorage.getItem('cq.ctx') === 'closed') document.documentElement.classList.add('ctx-collapsed'); } catch (e) {}
@@ -12,25 +13,25 @@ try { if (localStorage.getItem('cq.ctx') === 'closed') document.documentElement.
 <style>
 :root {
   color-scheme: dark;
-  --bg: #0a0d14;
-  --bg-soft: #0d1119;
-  --panel: #111722;
-  --panel-2: #161d2a;
-  --panel-3: #1b2331;
-  --border: #222b3b;
-  --border-2: #303b51;
-  --fg: #eef1f8;
-  --fg-2: #c8d0de;
-  --muted: #9aa5b8;
-  --dim: #6c778c;
-  --accent: #7c8cff;
-  --accent-2: #b18cff;
-  --accent-soft: rgba(124,140,255,.15);
-  --accent-line: rgba(124,140,255,.45);
-  --green: #3ddc97;
-  --red: #ff7b7b;
-  --yellow: #f5c451;
-  --blue: #66b3ff;
+  --bg: #0b0f0e;
+  --bg-soft: #0e1412;
+  --panel: #131a17;
+  --panel-2: #17201c;
+  --panel-3: #1c2621;
+  --border: #22302a;
+  --border-2: #32423a;
+  --fg: #edf2ee;
+  --fg-2: #c5d2ca;
+  --muted: #97a79e;
+  --dim: #6b7c73;
+  --accent: #3fa287;
+  --accent-2: #96a14f;
+  --accent-soft: rgba(63,162,135,.15);
+  --accent-line: rgba(63,162,135,.42);
+  --green: #4dc49a;
+  --red: #e58279;
+  --yellow: #d6ae5c;
+  --blue: #74a9c7;
   --hover: rgba(255,255,255,.045);
   --hover-2: rgba(255,255,255,.075);
   --inset: rgba(255,255,255,.02);
@@ -44,38 +45,38 @@ try { if (localStorage.getItem('cq.ctx') === 'closed') document.documentElement.
   --font: ui-sans-serif, "Inter", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
   --mono: ui-monospace, "JetBrains Mono", "Cascadia Code", Consolas, monospace;
   --bg-image:
-    radial-gradient(1000px 560px at 88% -12%, rgba(124,140,255,.11), transparent 62%),
-    radial-gradient(760px 460px at -6% 108%, rgba(177,140,255,.07), transparent 60%);
+    radial-gradient(1000px 560px at 88% -12%, rgba(63,162,135,.10), transparent 62%),
+    radial-gradient(760px 460px at -6% 108%, rgba(150,161,79,.06), transparent 60%);
 }
 html[data-theme="light"] {
   color-scheme: light;
-  --bg: #f4f5fa;
-  --bg-soft: #fbfbfe;
+  --bg: #f5f7f2;
+  --bg-soft: #fbfcf9;
   --panel: #ffffff;
-  --panel-2: #f5f6fb;
-  --panel-3: #eceff6;
-  --border: #e1e5ef;
-  --border-2: #cfd5e3;
-  --fg: #161a24;
-  --fg-2: #3b4457;
-  --muted: #5e697e;
-  --dim: #8b95a9;
-  --accent: #5b5bd6;
-  --accent-2: #8b5cf6;
-  --accent-soft: rgba(91,91,214,.10);
-  --accent-line: rgba(91,91,214,.35);
-  --green: #0e9f6e;
-  --red: #d64545;
-  --yellow: #b7791f;
-  --blue: #2563c9;
+  --panel-2: #f3f7f2;
+  --panel-3: #e9efe9;
+  --border: #dde6dd;
+  --border-2: #c9d5c9;
+  --fg: #141d18;
+  --fg-2: #3a473f;
+  --muted: #5b6a61;
+  --dim: #86958c;
+  --accent: #14705f;
+  --accent-2: #7c8738;
+  --accent-soft: rgba(20,112,95,.09);
+  --accent-line: rgba(20,112,95,.32);
+  --green: #0f8a63;
+  --red: #c1493f;
+  --yellow: #a1721c;
+  --blue: #2a6e8f;
   --hover: rgba(16,24,40,.04);
   --hover-2: rgba(16,24,40,.07);
   --inset: rgba(16,24,40,.02);
   --shadow: 0 1px 2px rgba(16,24,40,.04), 0 10px 26px rgba(16,24,40,.05);
   --shadow-pop: 0 28px 80px rgba(16,24,40,.20);
   --bg-image:
-    radial-gradient(900px 520px at 92% -14%, rgba(124,140,255,.10), transparent 60%),
-    radial-gradient(700px 420px at -8% 106%, rgba(177,140,255,.08), transparent 58%);
+    radial-gradient(900px 520px at 92% -14%, rgba(20,112,95,.07), transparent 60%),
+    radial-gradient(700px 420px at -8% 106%, rgba(124,135,56,.06), transparent 58%);
 }
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--border-2) transparent; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -100,15 +101,11 @@ aside.rail {
   padding: 18px 12px 14px;
   background: var(--bg-soft); border-right: 1px solid var(--border);
 }
-.brand { display: flex; align-items: center; gap: 11px; padding: 0 8px; }
-.logo {
-  width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center;
-  font-weight: 800; font-size: 16px; color: #fff;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  box-shadow: 0 8px 22px rgba(124,140,255,.32);
-}
-.brand b { font-size: 16px; letter-spacing: -.015em; display: block; }
-.brand small { display: block; color: var(--dim); font-size: 11.5px; margin-top: -1px; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; }
+.brand .mark { width: 40px; height: 40px; flex: none; object-fit: contain; padding: 4px; border-radius: 12px; background: #f1f3e9; box-shadow: 0 1px 0 rgba(255,255,255,.55) inset, 0 6px 16px rgba(0,0,0,.28); }
+html[data-theme="light"] .brand .mark { background: #fff; border: 1px solid var(--border); box-shadow: none; }
+.brand b { font-size: 15px; letter-spacing: .085em; text-transform: uppercase; font-weight: 700; display: block; }
+.brand small { display: block; color: var(--dim); font-size: 9px; letter-spacing: .22em; text-transform: uppercase; font-weight: 600; margin-top: 2px; }
 .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--dim); padding: 0 9px 5px; font-weight: 600; }
 
 .ns-picker { padding: 0 4px; }
@@ -181,7 +178,7 @@ button { font: inherit; }
 button.primary {
   background: linear-gradient(135deg, var(--accent), var(--accent-2)) !important;
   border-color: transparent !important; color: #fff !important;
-  box-shadow: 0 6px 18px rgba(124,140,255,.28);
+  box-shadow: 0 6px 18px rgba(63,162,135,.26);
 }
 button.primary:hover { filter: brightness(1.07); }
 button:active { transform: translateY(1px); }
@@ -260,7 +257,7 @@ td.wrap { max-width: 760px; white-space: pre-wrap; overflow-wrap: break-word; wo
   font: inherit; font-size: 12.5px; cursor: pointer; transition: all .15s;
 }
 .tagchip:hover { color: var(--fg); border-color: var(--border-2); }
-.tagchip.on { background: rgba(177,140,255,.14); border-color: rgba(177,140,255,.45); color: var(--accent-2); }
+.tagchip.on { background: rgba(150,161,79,.16); border-color: rgba(150,161,79,.45); color: var(--accent-2); }
 .tagchip em { font-style: normal; opacity: .65; font-size: 11px; font-variant-numeric: tabular-nums; }
 .taglegend { font-size: 11.5px; opacity: .5; }
 .tagreport { background: transparent; border: 0; color: var(--muted); font: inherit; font-size: 11.5px; cursor: pointer; padding: 2px 4px; text-decoration: underline dotted; }
@@ -376,7 +373,7 @@ dialog .err { color: var(--red); }
 #cy {
   height: calc(100vh - 260px); min-height: 500px; border: 1px solid var(--border);
   border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
-  background: radial-gradient(900px 520px at 30% 20%, rgba(124,140,255,.09), transparent 60%), radial-gradient(700px 400px at 85% 90%, rgba(177,140,255,.07), transparent 60%), var(--bg-soft);
+  background: radial-gradient(900px 520px at 30% 20%, rgba(63,162,135,.09), transparent 60%), radial-gradient(700px 400px at 85% 90%, rgba(150,161,79,.06), transparent 60%), var(--bg-soft);
 }
 .gpanel {
   position: absolute; top: 12px; right: 12px; width: 330px; max-height: calc(100% - 24px); overflow-y: auto;
@@ -473,7 +470,7 @@ dialog .err { color: var(--red); }
 <body>
 <div class="app">
   <aside class="rail">
-    <div class="brand"><div class="logo">C</div><div><b>CortexIQ</b><small>agent memory</small></div></div>
+    <div class="brand"><img class="mark" src="/ui/brand/mark-96.png" alt="" width="38" height="38"><div><b>CortexIQ</b><small>AI Memory System</small></div></div>
     <div class="ns-picker">
       <label class="label" for="ns-select">Namespace</label>
       <select id="ns-select" onchange="setNamespace(this.value)"></select>
@@ -2220,8 +2217,8 @@ function loadGraphLibs() {
 }
 
 const graphState = { q: '', canonical: '', limit: 150, minConf: 0, data: null };
-const NS_COLORS = ['#7c8cff', '#34d399', '#fbbf24', '#f472b6', '#60a5fa', '#a78bfa', '#fb923c', '#2dd4bf', '#f87171', '#a3e635'];
-const REL_COLORS = ['#7c8cff', '#34d399', '#fbbf24', '#f472b6', '#60a5fa', '#a78bfa', '#fb923c', '#2dd4bf', '#f87171', '#a3e635',
+const NS_COLORS = ['#3fa287', '#7fa04a', '#c9a86a', '#4f8f9e', '#9a8fb5', '#6aa17a', '#b07a5a', '#5b7f8f', '#a8b06a', '#8a7f6a'];
+const REL_COLORS = ['#3fa287', '#7fa04a', '#c9a86a', '#4f8f9e', '#9a8fb5', '#6aa17a', '#b07a5a', '#5b7f8f', '#a8b06a', '#8a7f6a',
   '#e879f9', '#22d3ee', '#facc15', '#4ade80', '#c084fc', '#fda4af'];
 const UNMAPPED_COLOR = '#5d677c';
 let relColor = () => UNMAPPED_COLOR;

@@ -339,3 +339,28 @@ func TestFactsByIDsRejectsBadID(t *testing.T) {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 }
+
+// The mark is served from the embedded filesystem: the dashboard should not
+// reach for a CDN, and a fresh install should not show a missing favicon.
+func TestBrandAssetsAreServed(t *testing.T) {
+	mux := http.NewServeMux()
+	(&Handler{}).Register(mux)
+
+	for _, name := range []string{"mark-96.png", "mark-192.png"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ui/brand/"+name, nil))
+		if rec.Code != http.StatusOK || rec.Body.Len() < 1000 {
+			t.Errorf("GET /ui/brand/%s = %d (%d bytes)", name, rec.Code, rec.Body.Len())
+		}
+		if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
+			t.Errorf("%s Content-Type = %q", name, ct)
+		}
+	}
+	for _, name := range []string{"mark.svg", "nope.png", "../index.html", "%2e%2e/index.html"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ui/brand/"+name, nil))
+		if rec.Code == http.StatusOK {
+			t.Errorf("GET /ui/brand/%s should not be served, got 200", name)
+		}
+	}
+}

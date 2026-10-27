@@ -23,7 +23,7 @@ import (
 	"github.com/Bojanni050/cortexiq/internal/scope"
 )
 
-//go:embed static/index.html static/vendor/*
+//go:embed static/index.html static/vendor/* static/brand/*
 var staticFS embed.FS
 
 // Handler serves the dashboard UI and the /api/v1 JSON endpoints.
@@ -49,6 +49,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/ui", h.serveIndex)
 	mux.HandleFunc("/ui/", h.serveIndex)
 	mux.HandleFunc("/ui/vendor/", h.serveVendor)
+	mux.HandleFunc("/ui/brand/", h.serveBrand)
 	api := http.NewServeMux()
 	api.HandleFunc("/api/v1/recall", h.recall)
 	api.HandleFunc("/api/v1/reflect", h.reflect)
