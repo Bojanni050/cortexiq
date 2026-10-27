@@ -119,15 +119,15 @@ var valueKeywords = []*regexp.Regexp{
 // its own value, so one strong signal is enough and several weak ones do not
 // compound into a false positive.
 const (
-	ScoreEmpty          = 1.0
-	ScoreSecret         = 0.9
-	ScoreTerminal       = 0.85
-	ScoreStackTrace     = 0.85
-	ScoreNoisePattern   = 0.8
-	ScoreTrivial        = 0.7
-	ScoreNoisySource    = 0.7
-	ScoreLikelyDump     = 0.65
-	ScoreLowImportance  = 0.5
+	ScoreEmpty         = 1.0
+	ScoreSecret        = 0.9
+	ScoreTerminal      = 0.85
+	ScoreStackTrace    = 0.85
+	ScoreNoisePattern  = 0.8
+	ScoreTrivial       = 0.7
+	ScoreNoisySource   = 0.7
+	ScoreLikelyDump    = 0.65
+	ScoreLowImportance = 0.5
 	// ScoreValueClamp is the ceiling a value keyword imposes on the score.
 	ScoreValueClamp = 0.3
 )
@@ -309,6 +309,13 @@ func Preview(content string, n int) string {
 		return out
 	}
 	return string(runes[:n]) + "…"
+}
+
+// Redact replaces every secret match with a placeholder carrying its label, so
+// the output can be stored or logged without leaking the value. Unlike Preview
+// it never truncates.
+func Redact(content string) string {
+	return redactSecrets(content)
 }
 
 // redactSecrets replaces every secret match with a placeholder carrying its

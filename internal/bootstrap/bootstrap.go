@@ -107,6 +107,24 @@ func New(ctx context.Context) (*Context, error) {
 	}
 
 	rerank := reranker.NewHTTP(cfg.RerankerBaseURL, cfg.RerankerAPIKey, cfg.RerankerModel)
+
+	// Custom write-ignore patterns are a process-wide setting (not per-namespace
+	// yet); they are compiled once here and installed before the brain serves
+	// any write.
+	if cfg.WriteIgnorePatterns != "" {
+		var patterns []string
+		for _, p := range strings.FieldsFunc(cfg.WriteIgnorePatterns, func(r rune) bool {
+			return r == '\n' || r == ','
+		}) {
+			if p = strings.TrimSpace(p); p != "" {
+				patterns = append(patterns, p)
+			}
+		}
+		if len(patterns) > 0 {
+			brain.SetWriteIgnorePatterns(patterns)
+		}
+	}
+
 	br, err := brain.New(pool, cachedEmb, reas, q, brain.Config{
 		BatchSize:                      cfg.ConsolidationBatchSize,
 		SimilarityThreshold:            cfg.ConsolidationSimilarityThreshold,
@@ -136,6 +154,8 @@ func New(ctx context.Context) (*Context, error) {
 		RerankCandidates:               cfg.RerankCandidates,
 		MinEpisodeLength:               cfg.ExtractionMinChars,
 		SocialFilter:                   cfg.SocialFilter,
+		WriteFilter:                    cfg.WriteFilter,
+		WriteFilterRedactSecrets:       cfg.WriteFilterRedactSecrets,
 	})
 	if err != nil {
 		pool.Close()

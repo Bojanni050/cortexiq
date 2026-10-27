@@ -51,20 +51,50 @@ func (b *Brain) RememberWithImportance(ctx context.Context, namespaceSlug, conte
 
 // RememberWith stores a new episode with all optional attributes set at once.
 func (b *Brain) RememberWith(ctx context.Context, namespaceSlug, content string, opts RememberOptions) (int64, error) {
+	id, _, err := b.RememberWithDecision(ctx, namespaceSlug, content, opts)
+	return id, err
+}
+
+// RememberWithDecision is RememberWith plus the write filter's verdict. The
+// returned WriteDecision is always populated (even when the filter is off, in
+// which case Action is "store"); callers that want to surface warnings to the
+// user (CLI, MCP, dashboard) use this variant, while RememberWith keeps the
+// simple (id, error) signature for callers that do not care.
+//
+// The filter runs BEFORE the embedding call: a write carrying a secret or a
+// terminal dump is rejected without paying for an embedding it never needed.
+// In warn mode with WriteFilterRedactSecrets the redacted form is stored
+// instead of the original, so the secret never reaches the database even when
+// the write is allowed through.
+func (b *Brain) RememberWithDecision(ctx context.Context, namespaceSlug, content string, opts RememberOptions) (int64, WriteDecision, error) {
+	var decision WriteDecision
 	if err := requireWrite(ctx); err != nil {
-		return 0, err
+		return 0, decision, err
 	}
 	if err := validateContent(content); err != nil {
-		return 0, err
+		return 0, decision, err
 	}
 	importance := opts.Importance
 	if importance < 0 || importance > 1 || importance != importance {
-		return 0, fmt.Errorf("importance must be between 0 and 1, got %v", importance)
+		return 0, decision, fmt.Errorf("importance must be between 0 and 1, got %v", importance)
 	}
 	tags, err := NormalizeTags(opts.Tags)
 	if err != nil {
-		return 0, err
+		return 0, decision, err
 	}
+
+	// The write filter is the second gate in front of every write path (after
+	// requireWrite), so the store never fills with leaked secrets or machine
+	// noise. It runs before the social filter and before the embedding call:
+	// a rejected write costs nothing.
+	decision = classifyWrite(content, importance, b.config.WriteFilter)
+	if err := applyWriteDecision(decision); err != nil {
+		return 0, decision, err
+	}
+	if decision.Action == "warn" && decision.Redacted != "" && b.config.WriteFilterRedactSecrets {
+		content = decision.Redacted
+	}
+
 	// The social filter is the one gate in front of every write path (MCP,
 	// HTTP, CLI), so the store never fills with "dank je wel" in the first
 	// place; see socialCloser. It is per-namespace overridable: a chat-like
@@ -73,19 +103,19 @@ func (b *Brain) RememberWith(ctx context.Context, namespaceSlug, content string,
 	socialFilter := b.config.SocialFilter
 
 	if err := validatePath(namespaceSlug); err != nil {
-		return 0, err
+		return 0, decision, err
 	}
 
 	nsID, err := b.resolveNamespaceID(ctx, namespaceSlug)
 	if err != nil {
-		return 0, err
+		return 0, decision, err
 	}
 
 	if eff, err := b.EffectiveNamespaceConfig(ctx, namespaceSlug); err == nil && eff != nil {
 		socialFilter = eff.SocialFilter()
 	}
 	if socialFilter && socialCloser(content) {
-		return 0, ErrSocialCloser
+		return 0, decision, ErrSocialCloser
 	}
 
 	occurred := time.Now().UTC()
@@ -95,7 +125,7 @@ func (b *Brain) RememberWith(ctx context.Context, namespaceSlug, content string,
 
 	vec, err := b.embedder.Embed(ctx, content)
 	if err != nil {
-		return 0, fmt.Errorf("embed: %w", err)
+		return 0, decision, fmt.Errorf("embed: %w", err)
 	}
 
 	var id int64
@@ -105,7 +135,7 @@ func (b *Brain) RememberWith(ctx context.Context, namespaceSlug, content string,
 		nsID, content, pgvector.NewVector(vec), b.embedder.Model(), occurred, importance, tagsOrEmpty(tags),
 	).Scan(&id)
 	if err != nil {
-		return 0, fmt.Errorf("insert episode: %w", err)
+		return 0, decision, fmt.Errorf("insert episode: %w", err)
 	}
 	// Let the consolidator pick this up right away, unless this is an eval
 	// write: /eval/ episodes exist to measure recall and must not turn into
@@ -113,7 +143,7 @@ func (b *Brain) RememberWith(ctx context.Context, namespaceSlug, content string,
 	if !strings.HasPrefix(namespaceSlug, "/eval/") {
 		b.noteEpisode(nsID)
 	}
-	return id, nil
+	return id, decision, nil
 }
 
 // findEpisode returns the episode closest to query across the given

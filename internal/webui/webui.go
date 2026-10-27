@@ -890,7 +890,7 @@ func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	id, err := h.Brain.RememberWith(r.Context(), rememberNamespace(body.Namespace, body.Namespaces), body.Content, brain.RememberOptions{
+	id, decision, err := h.Brain.RememberWithDecision(r.Context(), rememberNamespace(body.Namespace, body.Namespaces), body.Content, brain.RememberOptions{
 		OccurredAt: occurredAt,
 		Importance: importance,
 		Tags:       body.Tags,
@@ -905,10 +905,26 @@ func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if errors.Is(err, brain.ErrWriteFiltered) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"skipped":       true,
+			"reason":        err.Error(),
+			"secret_labels": decision.SecretLabels,
+			"noise_score":   decision.NoiseScore,
+		})
+		return
+	}
 	if !hdl(w, err) {
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "message": "Memory remembered successfully"})
+	resp := map[string]any{"id": id, "message": "Memory remembered successfully"}
+	if decision.Action == "warn" {
+		resp["warning"] = "stored with warnings"
+		resp["reasons"] = decision.Reasons
+		resp["secret_labels"] = decision.SecretLabels
+		resp["noise_score"] = decision.NoiseScore
+	}
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 // rememberNamespace picks the target namespace for a write: the first explicit

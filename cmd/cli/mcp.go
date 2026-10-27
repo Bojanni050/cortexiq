@@ -147,7 +147,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			return nil, fmt.Errorf("invalid occurred_at: %w", err)
 		}
 
-		id, err := bc.Brain.RememberWith(ctx, namespace, content, brain.RememberOptions{
+		id, decision, err := bc.Brain.RememberWithDecision(ctx, namespace, content, brain.RememberOptions{
 			OccurredAt: occurredAt,
 			Importance: importance,
 			Tags:       splitList(request.GetString("tags", "")),
@@ -155,10 +155,25 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		if errors.Is(err, brain.ErrSocialCloser) {
 			return skippedResult(err)
 		}
+		if errors.Is(err, brain.ErrWriteFiltered) {
+			b, _ := json.Marshal(map[string]any{
+				"skipped":       true,
+				"reason":        err.Error(),
+				"secret_labels": decision.SecretLabels,
+				"noise_score":   decision.NoiseScore,
+			})
+			return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+		}
 		if err != nil {
 			return nil, err
 		}
 		result := map[string]any{"id": id, "message": "Memory remembered successfully"}
+		if decision.Action == "warn" {
+			result["warning"] = "stored with warnings"
+			result["reasons"] = decision.Reasons
+			result["secret_labels"] = decision.SecretLabels
+			result["noise_score"] = decision.NoiseScore
+		}
 		b, _ := json.Marshal(result)
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})

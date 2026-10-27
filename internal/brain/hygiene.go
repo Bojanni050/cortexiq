@@ -14,16 +14,16 @@ import (
 // HygieneCandidate is one memory the auditor scored. It carries enough to act
 // on (table, id, namespace) and enough to review (preview, reasons, score).
 type HygieneCandidate struct {
-	Table        string   `json:"table"` // "episodes" or "facts"
-	ID           int64    `json:"id"`
-	NamespaceID  int64    `json:"namespace_id"`
-	Content      string   `json:"content"`
-	Preview      string   `json:"preview"`
-	Importance   float64  `json:"importance"`
-	NoiseScore   float64  `json:"noise_score"`
-	Reasons      []string `json:"reasons"`
-	SecretLabels []string `json:"secret_labels,omitempty"`
-	Suggested    string   `json:"suggested_action"`
+	Table        string    `json:"table"` // "episodes" or "facts"
+	ID           int64     `json:"id"`
+	NamespaceID  int64     `json:"namespace_id"`
+	Content      string    `json:"content"`
+	Preview      string    `json:"preview"`
+	Importance   float64   `json:"importance"`
+	NoiseScore   float64   `json:"noise_score"`
+	Reasons      []string  `json:"reasons"`
+	SecretLabels []string  `json:"secret_labels,omitempty"`
+	Suggested    string    `json:"suggested_action"`
 	OccurredAt   time.Time `json:"occurred_at,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 }
@@ -47,17 +47,17 @@ type HygieneAuditOptions struct {
 
 // HygieneAuditEntry is one row of the audit log.
 type HygieneAuditEntry struct {
-	ID                  int64     `json:"id"`
-	NamespaceID         int64     `json:"namespace_id"`
-	TargetTable         string    `json:"target_table"`
-	TargetID            int64     `json:"target_id"`
-	Action              string    `json:"action"`
-	Reasons             []string  `json:"reasons"`
-	NoiseScore          float64   `json:"noise_score"`
-	SecretLabels        []string  `json:"secret_labels"`
-	ContentPreview      string    `json:"content_preview"`
-	OriginalImportance  *float64  `json:"original_importance,omitempty"`
-	CreatedAt           time.Time `json:"created_at"`
+	ID                 int64     `json:"id"`
+	NamespaceID        int64     `json:"namespace_id"`
+	TargetTable        string    `json:"target_table"`
+	TargetID           int64     `json:"target_id"`
+	Action             string    `json:"action"`
+	Reasons            []string  `json:"reasons"`
+	NoiseScore         float64   `json:"noise_score"`
+	SecretLabels       []string  `json:"secret_labels"`
+	ContentPreview     string    `json:"content_preview"`
+	OriginalImportance *float64  `json:"original_importance,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
 }
 
 // HygieneCleanOptions controls one cleaning run. Cleaning is a dry run unless
@@ -74,20 +74,20 @@ type HygieneCleanOptions struct {
 
 // HygieneCleanResult summarises one cleaning run.
 type HygieneCleanResult struct {
-	Action     string         `json:"action"`
-	DryRun     bool           `json:"dry_run"`
+	Action     string             `json:"action"`
+	DryRun     bool               `json:"dry_run"`
 	Candidates []HygieneCandidate `json:"candidates"`
-	Counts     map[string]int `json:"counts"`
+	Counts     map[string]int     `json:"counts"`
 }
 
 // HygieneStatus summarises the audit log and the current archive/flag state.
 type HygieneStatus struct {
-	AuditLogCount    int            `json:"audit_log_count"`
-	ByAction         map[string]int `json:"by_action"`
-	ArchivedEpisodes int            `json:"archived_episodes"`
-	ArchivedFacts    int            `json:"archived_facts"`
-	FlaggedEpisodes  int            `json:"flagged_episodes"`
-	FlaggedFacts     int            `json:"flagged_facts"`
+	AuditLogCount    int                 `json:"audit_log_count"`
+	ByAction         map[string]int      `json:"by_action"`
+	ArchivedEpisodes int                 `json:"archived_episodes"`
+	ArchivedFacts    int                 `json:"archived_facts"`
+	FlaggedEpisodes  int                 `json:"flagged_episodes"`
+	FlaggedFacts     int                 `json:"flagged_facts"`
 	RecentEntries    []HygieneAuditEntry `json:"recent_entries,omitempty"`
 }
 
@@ -180,8 +180,8 @@ func (b *Brain) auditTable(ctx context.Context, table string, nsIDs []int64, opt
 	var out []HygieneCandidate
 	for rows.Next() {
 		var (
-			id, nsID  int64
-			content   string
+			id, nsID   int64
+			content    string
 			importance float64
 			occurredAt time.Time
 			createdAt  time.Time

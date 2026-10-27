@@ -98,6 +98,19 @@ type Config struct {
 	// test (ExtractionMinChars covers that): "prima, dank je wel, tot morgen" is
 	// long enough to look like content. Off stores every write again.
 	SocialFilter bool `env:"CORTEXIQ_SOCIAL_FILTER" envDefault:"true"`
+	// WriteFilter is the pre-write gate in front of every write path: "off"
+	// (default, no filtering), "warn" (store but report the reasons) or "strict"
+	// (reject secrets and terminal/stack-trace output). It runs before the
+	// embedding call, so a rejected write costs nothing.
+	WriteFilter string `env:"CORTEXIQ_WRITE_FILTER" envDefault:"off"`
+	// WriteFilterRedactSecrets, in warn mode, stores the redacted form of a
+	// write that contains a secret instead of the original, so the secret never
+	// reaches the database even when the write is allowed through.
+	WriteFilterRedactSecrets bool `env:"CORTEXIQ_WRITE_FILTER_REDACT_SECRETS" envDefault:"false"`
+	// WriteIgnorePatterns is a newline- or comma-separated list of regex
+	// patterns. A write whose content matches any of them is rejected in strict
+	// mode and warned about in warn mode. Matched case-insensitively.
+	WriteIgnorePatterns string `env:"CORTEXIQ_WRITE_IGNORE_PATTERNS" envDefault:""`
 	// HybridRecall adds full-text search to recall (fused with the vector ranking).
 	HybridRecall bool `env:"CORTEXIQ_HYBRID_RECALL" envDefault:"true"`
 	// GraphRecall adds a graph arm to fact recall: facts about an entity the query

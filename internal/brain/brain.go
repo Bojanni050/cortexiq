@@ -151,6 +151,15 @@ type Config struct {
 	// it would cost an embedding, give the extractor a claim nobody made and show
 	// up in recall as noise. It returns ErrSocialCloser and stores nothing.
 	SocialFilter bool
+	// WriteFilter is the pre-write gate in front of every write path (MCP, HTTP,
+	// CLI): "off" (default, no filtering), "warn" (store but report reasons) or
+	// "strict" (reject secrets and terminal/stack-trace output). See
+	// write_filter.go.
+	WriteFilter string
+	// WriteFilterRedactSecrets, in warn mode, stores the redacted form of a
+	// write that contains a secret instead of the original. Off (default)
+	// stores the original and only reports the warning.
+	WriteFilterRedactSecrets bool
 }
 
 const defaultRelationshipBatchSize = 5
@@ -175,6 +184,7 @@ func DefaultConfig() Config {
 		RelationshipBatchSize:          defaultRelationshipBatchSize,
 		MinEpisodeLength:               defaultMinEpisodeLength,
 		SocialFilter:                   true,
+		WriteFilter:                    WriteFilterOff,
 		HybridRecall:                   true,
 	}
 }

@@ -36,7 +36,7 @@ func rememberCmd(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	bc := getBootstrap(cmd)
-	id, err := bc.Brain.RememberWith(ctx, namespace, content, brain.RememberOptions{
+	id, decision, err := bc.Brain.RememberWithDecision(ctx, namespace, content, brain.RememberOptions{
 		OccurredAt: occurredAt,
 		Importance: float32(cmd.Float("importance")),
 		Tags:       cmd.StringSlice("tag"),
@@ -44,11 +44,25 @@ func rememberCmd(ctx context.Context, cmd *cli.Command) error {
 	if errors.Is(err, brain.ErrSocialCloser) {
 		return printJSON(map[string]any{"skipped": true, "reason": err.Error()})
 	}
+	if errors.Is(err, brain.ErrWriteFiltered) {
+		return printJSON(map[string]any{
+			"skipped":       true,
+			"reason":        err.Error(),
+			"secret_labels": decision.SecretLabels,
+			"noise_score":   decision.NoiseScore,
+		})
+	}
 	if err != nil {
 		return err
 	}
 
 	output := map[string]any{"id": id, "message": "Memory remembered successfully"}
+	if decision.Action == "warn" {
+		output["warning"] = "stored with warnings"
+		output["reasons"] = decision.Reasons
+		output["secret_labels"] = decision.SecretLabels
+		output["noise_score"] = decision.NoiseScore
+	}
 	return printJSON(output)
 }
 
