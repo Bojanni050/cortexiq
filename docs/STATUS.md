@@ -4,14 +4,14 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-10-27, after the `v0.1.11` deploy.
+Last updated: 2026-10-27, after the `v0.1.12` deploy.
 
 ## Build
 
 | | |
 |---|---|
-| Latest release | `v0.1.11`, 2026-10-27 |
-| Release commit | `2eaf18b` |
+| Latest release | `v0.1.12`, 2026-10-27 |
+| Release commit | `1443068` |
 | How to check | `cortexiq version` (works without a database) |
 
 A binary built from a working tree reports `cortexiq dev (built from source)`.
@@ -23,18 +23,18 @@ Ahead of the next release: nothing named yet.
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  `strato-vps`, in `/opt/cortexiq`, running `v0.1.11` (`cortexiq version` inside the
+  `strato-vps`, in `/opt/cortexiq`, running `v0.1.12` (`cortexiq version` inside the
   container is the source of truth; the binary lives at `/cortexiq` and the image
   has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
-  Both containers run image `sha256:fb83495846c3b5b4…`. Migrations `00038`
+  Both containers run image `sha256:722f33dff6453059…`. Migrations `00038`
   (retractions and the purge log) and `00039` (providers and model bindings)
   applied on the 2026-10-26 and 2026-10-27 restarts, and `00040` (hygiene) on
   the 2026-10-27 restart. `00041` applied on the `v0.1.9` restart: it drops
   twelve `hygiene_*` columns and the `hygiene_audit_log` table, so the schema is
   back to what it was before `00040` — verified after the deploy (0 matching
-  columns, table gone, data intact). All of them are idempotent. The `v0.1.10`
-  and `v0.1.11` restarts applied none: they changed the binary only, and
-  `goose_db_version` still reads `41` afterwards.
+  columns, table gone, data intact). All of them are idempotent. The `v0.1.10`,
+  `v0.1.11` and `v0.1.12` restarts applied none: they changed the binary only,
+  and `goose_db_version` still reads `41` afterwards.
 - The MCP server hands its prime directive to a client at connect time, in the
   `initialize` result's `instructions` field (6445 characters on `v0.1.4`). A
   client reads that once per connection, so it has to reconnect after an upgrade
@@ -60,10 +60,10 @@ Ahead of the next release: nothing named yet.
   artifacts, about 90 MB together; nothing pulls them. The local `latest` tag was
   untagged, so nothing on the server suggests a moving tag.
 - Registry tags: exactly one tag per release (`0.1.2`, `0.1.3`, …) and nothing
-  else. Checked at the registry after `v0.1.11`: `0.1.2` through `0.1.11`, ten
-  tags for ten releases, no `latest` and no floating `0.1`. Past releases are
+  else. Checked at the registry after `v0.1.12`: `0.1.2` through `0.1.12`, eleven
+  tags for eleven releases, no `latest` and no floating `0.1`. Past releases are
   kept rather than deleted, so a rollback can still pull the tag it names;
-  production pulls `0.1.11` today. With a moving tag, "which version runs here"
+  production pulls `0.1.12` today. With a moving tag, "which version runs here"
   becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the compose
   file, so a missing value fails the deploy instead of silently pulling
   something old.
@@ -78,8 +78,8 @@ Ahead of the next release: nothing named yet.
   not images; they are harmless.
 - This page may be one documentation-only commit ahead of the deployed binary;
   compare with `cortexiq version` rather than assuming.
-- Storage: Postgres + pgvector. At the `v0.1.11` deploy: 1,155 live facts,
-  318 episodes, 24 namespaces; 76 facts and 17 episodes carry at least one tag.
+- Storage: Postgres + pgvector. At the `v0.1.12` deploy: 1,166 live facts,
+  328 episodes, 24 namespaces; 82 facts and 17 episodes carry at least one tag.
 
 ## A namespace on every write
 
@@ -130,6 +130,17 @@ The same work fixed a real defect: those four record tools resolved `/` to
 root could be filed under an arbitrary namespace. They now resolve exactly one
 path, and refuse when they are handed none.
 
+A token's `scope` decides what it may call. `ro` reaches fourteen tools — the
+`recall`/`query_*`/`list_*` family plus `reflect`, `get_context`,
+`trace_causal_chain` and `memory_stats` — and is refused everything else with
+`403 {"error":"read-only token: tool not allowed"}`. `reflect` sat on the refused
+side until `v0.1.12` even though its handler only calls `Brain.Reflect` and the
+reflect path contains no insert: a read-only connection was denied the one tool
+that reads across everything it may see. `init` stays refused, because it creates
+the `/self` scaffold. The gate reads the `tools/call` body and nothing else, so
+`initialize`, `tools/list` and `ping` pass for every token — a client can ask
+what exists, and then learns the refusal at the call.
+
 ## A tag is asked for, not demanded
 
 A namespace says where a memory lies; its tags say what it is about, and they
@@ -161,17 +172,17 @@ to write it.
 
 Coverage is counted for the same reason. `list_tags` — and `cortexiq tags` —
 return the vocabulary *and* how many live memories carry no tag at all. This is
-production at the `v0.1.11` deploy, trimmed to one entry:
+production at the `v0.1.12` deploy, trimmed to one entry:
 
 ```json
-{"coverage": {"facts_tagged": 76, "facts_untagged": 1079,
-              "episodes_tagged": 17, "episodes_untagged": 301},
- "tags": [{"tag": "beslissing", "facts": 37, "episodes": 9, "total": 46}]}
+{"coverage": {"facts_tagged": 82, "facts_untagged": 1084,
+              "episodes_tagged": 17, "episodes_untagged": 302},
+ "tags": [{"tag": "beslissing", "facts": 43, "episodes": 9, "total": 52}]}
 ```
 
 Twelve tags over two hundred memories and twelve tags over two thousand look
 identical in the vocabulary alone; the count is what shows the gap. Here the gap
-is most of the store — 76 of 1,155 facts and 17 of 318 episodes carry a tag, and
+is most of the store — 82 of 1,166 facts and 17 of 328 episodes carry a tag, and
 that number was not visible at all before this release. It counts what is live
 now and ignores the period filter, because a period describes what was recorded
 and not what the store looks like.
