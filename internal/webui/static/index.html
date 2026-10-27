@@ -40,8 +40,8 @@ try { if (localStorage.getItem('cq.ctx') === 'closed') document.documentElement.
   --radius-xs: 8px;
   --shadow: 0 1px 0 rgba(255,255,255,.035) inset, 0 10px 28px rgba(0,0,0,.22);
   --shadow-pop: 0 28px 80px rgba(0,0,0,.55);
-  --nav-w: 250px;
-  --ctx-w: 372px;
+  --nav-w: 264px;
+  --ctx-w: 432px;
   --font: ui-sans-serif, "Inter", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
   --mono: ui-monospace, "JetBrains Mono", "Cascadia Code", Consolas, monospace;
   --bg-image:
@@ -84,7 +84,7 @@ html[data-theme="light"] {
 ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
 html { background: var(--bg); overflow-x: hidden; }
 body {
-  margin: 0; min-height: 100vh; overflow-x: hidden; font-family: var(--font); font-size: 15px; line-height: 1.55;
+  margin: 0; min-height: 100vh; overflow-x: hidden; font-family: var(--font); font-size: 16.5px; line-height: 1.6;
   color: var(--fg); background: var(--bg-image), var(--bg); background-attachment: fixed;
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
 }
@@ -93,7 +93,12 @@ a { color: var(--accent); }
 :focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
 
 /* ---------- shell ---------- */
-.app { display: grid; grid-template-columns: var(--nav-w) minmax(0, 1fr) var(--ctx-w); min-height: 100vh; }
+.app {
+  display: grid; grid-template-columns: var(--nav-w) minmax(0, 1fr) var(--ctx-w); min-height: 100vh;
+  /* The context column opens and closes by animating its own track, so the page
+     reflows smoothly instead of jumping when the rail is hidden. */
+  transition: grid-template-columns .34s cubic-bezier(.22,.61,.36,1);
+}
 
 aside.rail {
   position: sticky; top: 0; height: 100vh; overflow-y: auto;
@@ -104,14 +109,14 @@ aside.rail {
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; }
 .brand .mark { width: 40px; height: 40px; flex: none; object-fit: contain; padding: 4px; border-radius: 12px; background: #f1f3e9; box-shadow: 0 1px 0 rgba(255,255,255,.55) inset, 0 6px 16px rgba(0,0,0,.28); }
 html[data-theme="light"] .brand .mark { background: #fff; border: 1px solid var(--border); box-shadow: none; }
-.brand b { font-size: 15px; letter-spacing: .085em; text-transform: uppercase; font-weight: 700; display: block; }
-.brand small { display: block; color: var(--dim); font-size: 9px; letter-spacing: .22em; text-transform: uppercase; font-weight: 600; margin-top: 2px; }
-.label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--dim); padding: 0 9px 5px; font-weight: 600; }
+.brand b { font-size: 16px; letter-spacing: .085em; text-transform: uppercase; font-weight: 700; display: block; }
+.brand small { display: block; color: var(--dim); font-size: 9.5px; letter-spacing: .22em; text-transform: uppercase; font-weight: 600; margin-top: 2px; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--dim); padding: 0 9px 5px; font-weight: 600; }
 
 .ns-picker { padding: 0 4px; }
 #ns-select {
   width: 100%; background: var(--panel); color: var(--fg); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 10px 12px; font: inherit; font-size: 13.5px;
+  border-radius: var(--radius-sm); padding: 10px 12px; font: inherit; font-size: 14.5px;
 }
 #ns-select:disabled { opacity: .55; }
 nav { display: flex; flex-direction: column; overflow-y: auto; padding: 0 2px 4px; }
@@ -120,7 +125,7 @@ nav { display: flex; flex-direction: column; overflow-y: auto; padding: 0 2px 4p
 nav button {
   display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
   background: none; border: 0; color: var(--muted); padding: 8px 10px;
-  border-radius: var(--radius-sm); cursor: pointer; font: inherit; font-size: 13.5px;
+  border-radius: var(--radius-sm); cursor: pointer; font: inherit; font-size: 14.5px;
   font-weight: 500; position: relative; transition: background .15s, color .15s;
 }
 nav button svg { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -139,9 +144,9 @@ nav button.active svg { color: var(--accent); }
   background: color-mix(in srgb, var(--bg) 84%, transparent);
   backdrop-filter: blur(14px); border-bottom: 1px solid var(--border);
 }
-.topbar .crumbs { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--dim); margin-bottom: 5px; font-weight: 600; }
-.topbar h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -.025em; line-height: 1.2; }
-.topbar p { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; max-width: 70ch; }
+.topbar .crumbs { font-size: 11.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--dim); margin-bottom: 5px; font-weight: 600; }
+.topbar h1 { margin: 0; font-size: 25px; font-weight: 650; letter-spacing: -.025em; line-height: 1.2; }
+.topbar p { margin: 4px 0 0; color: var(--muted); font-size: 14.5px; max-width: 70ch; }
 .topbar-actions { display: flex; align-items: center; gap: 8px; flex: none; padding-bottom: 2px; }
 main { padding: 22px 30px 72px; width: 100%; min-width: 0; }
 #loading { height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); background-size: 50% 100%; background-repeat: no-repeat; animation: slide 1s infinite linear; display: none; }
@@ -154,10 +159,10 @@ main { padding: 22px 30px 72px; width: 100%; min-width: 0; }
 .toolbar input { flex: 1; min-width: 240px; }
 .toolbar.filters { align-items: center; gap: 18px; margin-top: -4px; }
 .toolbar.filters input { flex: none; min-width: 0; }
-.toolbar.filters label { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 13px; }
+.toolbar.filters label { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 14px; }
 input, textarea, select {
   background: var(--panel); color: var(--fg); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 9px 12px; font: inherit; font-size: 14px;
+  border-radius: var(--radius-sm); padding: 10px 13px; font: inherit; font-size: 15px;
   transition: border-color .15s, box-shadow .15s;
 }
 input::placeholder, textarea::placeholder { color: var(--dim); }
@@ -169,7 +174,7 @@ button { font: inherit; }
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   background: var(--panel-2); color: var(--fg); border: 1px solid var(--border-2);
   border-radius: var(--radius-sm); padding: 9px 15px; cursor: pointer; font-weight: 550;
-  font-size: 13.5px; white-space: nowrap; transition: background .15s, border-color .15s, transform .1s;
+  font-size: 14.5px; white-space: nowrap; transition: background .15s, border-color .15s, transform .1s;
 }
 .btn:hover, .toolbar > button:hover, .pager button:hover:not(:disabled), dialog .actions button:hover, .actions button:hover { background: var(--panel-3); border-color: var(--dim); }
 .btn:disabled, .toolbar > button:disabled { opacity: .5; cursor: default; }
@@ -187,7 +192,7 @@ button.danger:hover { background: color-mix(in srgb, var(--red) 10%, var(--panel
 .icon-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   background: var(--panel); border: 1px solid var(--border); color: var(--fg-2);
-  border-radius: var(--radius-sm); padding: 8px 11px; cursor: pointer; font-size: 13px; font-weight: 500;
+  border-radius: var(--radius-sm); padding: 9px 12px; cursor: pointer; font-size: 14px; font-weight: 500;
 }
 .icon-btn:hover { background: var(--panel-2); color: var(--fg); border-color: var(--border-2); }
 .icon-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -204,12 +209,12 @@ button.danger:hover { background: color-mix(in srgb, var(--red) 10%, var(--panel
 .stat:hover { border-color: var(--border-2); transform: translateY(-1px); }
 .stat .ico { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; margin-bottom: 15px; color: var(--tone, var(--accent)); background: color-mix(in srgb, var(--tone, var(--accent)) 14%, transparent); }
 .stat .ico svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.stat .num { font-size: 29px; font-weight: 700; letter-spacing: -.03em; line-height: 1.05; font-variant-numeric: tabular-nums; }
-.stat .lbl { color: var(--muted); font-size: 12.5px; margin-top: 7px; }
+.stat .num { font-size: 31px; font-weight: 700; letter-spacing: -.03em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.stat .lbl { color: var(--muted); font-size: 13.5px; margin-top: 7px; }
 
 /* ---------- cards & tables ---------- */
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 18px; }
-.card > h3 { margin: 0; padding: 16px 20px; font-size: 14.5px; font-weight: 600; border-bottom: 1px solid var(--border); letter-spacing: -.01em; }
+.card > h3 { margin: 0; padding: 16px 20px; font-size: 15.5px; font-weight: 600; border-bottom: 1px solid var(--border); letter-spacing: -.01em; }
 .card > p { padding: 0 20px; }
 .card > .card-body { padding: 16px 20px; }
 .card > .actions { padding: 0 20px 18px; margin-top: 0; }
@@ -220,9 +225,9 @@ body > .app main > #content > .tablewrap, #content > .tablewrap {
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
-th, td { text-align: left; padding: 13px 14px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: top; }
+th, td { text-align: left; padding: 14px 16px; border-bottom: 1px solid var(--border); font-size: 15.5px; vertical-align: top; }
 th {
-  color: var(--dim); font-weight: 650; font-size: 11px; text-transform: uppercase;
+  color: var(--dim); font-weight: 650; font-size: 11.5px; text-transform: uppercase;
   letter-spacing: .07em; background: var(--panel-2); white-space: nowrap;
 }
 tbody tr { transition: background .12s; }
@@ -232,12 +237,12 @@ tbody tr.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 va
 tr:last-child td { border-bottom: none; }
 td.wrap { max-width: 760px; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; min-width: 215px; }
 .tablewrap td.muted { white-space: nowrap; }
-.muted { color: var(--muted); font-size: 13px; }
-.mono { font-family: var(--mono); font-size: 12.5px; color: var(--muted); letter-spacing: -.01em; }
+.muted { color: var(--muted); font-size: 14px; }
+.mono { font-family: var(--mono); font-size: 13px; color: var(--muted); letter-spacing: -.01em; }
 .err { color: var(--red); }
 .badge {
   display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px;
-  font-size: 12px; font-weight: 550; color: var(--badge-c, var(--muted));
+  font-size: 12.5px; font-weight: 550; color: var(--badge-c, var(--muted));
   background: color-mix(in srgb, var(--badge-c, var(--muted)) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--badge-c, var(--muted)) 26%, transparent);
   white-space: nowrap;
@@ -254,7 +259,7 @@ td.wrap { max-width: 760px; white-space: pre-wrap; overflow-wrap: break-word; wo
 .tagchip {
   display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px; border-radius: 999px;
   border: 1px solid var(--border); background: var(--panel-2); color: var(--muted);
-  font: inherit; font-size: 12.5px; cursor: pointer; transition: all .15s;
+  font: inherit; font-size: 13px; cursor: pointer; transition: all .15s;
 }
 .tagchip:hover { color: var(--fg); border-color: var(--border-2); }
 .tagchip.on { background: rgba(150,161,79,.16); border-color: rgba(150,161,79,.45); color: var(--accent-2); }
@@ -266,64 +271,92 @@ td.wrap { max-width: 760px; white-space: pre-wrap; overflow-wrap: break-word; wo
 td.tagcell { white-space: nowrap; }
 .conf { display: inline-flex; align-items: center; gap: 9px; min-width: 92px; }
 .conf i { flex: 1; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
-.conf i b { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
-.conf span { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; width: 34px; text-align: right; }
+.conf i b { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transform-origin: left; }
+.ctx .conf i { height: 6px; }
+.ctx .conf i b { animation: confGrow .55s cubic-bezier(.22,.61,.36,1) both; }
+@keyframes confGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.conf span { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; width: 38px; text-align: right; }
 .row-actions { white-space: nowrap; }
 .row-actions button {
   background: transparent; border: 1px solid var(--border); color: var(--muted);
   border-radius: var(--radius-xs); padding: 4px 9px; margin-right: 3px; cursor: pointer;
-  font: inherit; font-size: 12px; transition: all .15s;
+  font: inherit; font-size: 13px; transition: all .15s;
 }
 .row-actions button:hover { color: var(--fg); border-color: var(--border-2); background: var(--panel-2); }
 .row-actions button.danger:hover { color: var(--red); border-color: rgba(255,123,123,.4); }
 .empty { padding: 52px 20px; text-align: center; color: var(--muted); }
 .empty .big { font-size: 28px; margin-bottom: 6px; opacity: .5; }
 .empty.error { color: var(--red); }
-.pager { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 14px 4px 0; font-size: 13px; color: var(--muted); }
+.pager { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 14px 4px 0; font-size: 14px; color: var(--muted); }
 .pager .pages { display: flex; gap: 8px; margin-left: auto; }
 
 /* ---------- context rail ---------- */
 .ctx {
   position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column;
-  background: var(--bg-soft); border-left: 1px solid var(--border); min-width: 0;
+  background: var(--bg-soft); border-left: 1px solid var(--border); min-width: 0; overflow: hidden;
+  transition: opacity .24s ease, transform .34s cubic-bezier(.22,.61,.36,1), border-color .24s ease;
 }
-.ctx-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 22px 18px 15px; border-bottom: 1px solid var(--border); }
-.ctx-head h2 { margin: 3px 0 0; font-size: 15.5px; font-weight: 650; letter-spacing: -.015em; }
+.ctx-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 24px 20px 16px; border-bottom: 1px solid var(--border); }
+.ctx-head h2 { margin: 4px 0 0; font-size: 17px; font-weight: 650; letter-spacing: -.015em; animation: ctxHead .3s cubic-bezier(.22,.61,.36,1) both; }
 .ctx-head .icon-btn { padding: 6px; border-color: transparent; background: none; }
 .ctx-head .icon-btn:hover { background: var(--hover); }
-.ctx-body { padding: 18px; overflow-y: auto; overscroll-behavior: contain; flex: 1; }
-.ctx-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 42px 10px; color: var(--muted); font-size: 13.5px; }
+.ctx-body { padding: 20px; overflow-y: auto; overscroll-behavior: contain; flex: 1; }
+/* Every direct child of the rail slides in on its own beat. innerHTML is
+   replaced on each pick, so the animation replays for the new memory. */
+.ctx-body > * { animation: ctxIn .38s cubic-bezier(.22,.61,.36,1) both; }
+.ctx-body > *:nth-child(2) { animation-delay: .06s; }
+.ctx-body > *:nth-child(3) { animation-delay: .12s; }
+.ctx-body > *:nth-child(4) { animation-delay: .18s; }
+.ctx-body > *:nth-child(5) { animation-delay: .24s; }
+@keyframes ctxIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+@keyframes ctxHead { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.ctx-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 42px 10px; color: var(--muted); font-size: 14.5px; }
 .ctx-empty .glyph {
   width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center;
   background: var(--accent-soft); color: var(--accent); margin-bottom: 14px;
 }
 .ctx-empty .glyph svg { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.ctx-empty b { color: var(--fg-2); font-weight: 600; display: block; margin-bottom: 4px; font-size: 14px; }
-.ctx-hint { margin-top: 20px; padding: 12px 14px; border: 1px dashed var(--border-2); border-radius: var(--radius-sm); font-size: 12.5px; color: var(--dim); text-align: left; width: 100%; }
+.ctx-empty b { color: var(--fg-2); font-weight: 600; display: block; margin-bottom: 5px; font-size: 15px; }
+.ctx-hint { margin-top: 20px; padding: 13px 15px; border: 1px dashed var(--border-2); border-radius: var(--radius-sm); font-size: 13.5px; color: var(--dim); text-align: left; width: 100%; }
 .ctx-hint kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--border-2); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; color: var(--muted); }
 .ctx-section { margin-top: 22px; }
 .ctx-section:first-child { margin-top: 0; }
 .ctx-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
-.ctx-section-head h3 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--dim); font-weight: 650; }
-.ctx-section-head .count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.ctx-quote { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 13px 14px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; font-size: 14px; }
+.ctx-section-head h3 { margin: 0; font-size: 11.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--dim); font-weight: 650; }
+.ctx-section-head .count { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ctx-quote { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 15px 16px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; font-size: 15.5px; }
 .ctx-quote.lead { border-left: 3px solid var(--accent); }
-.metagrid { display: grid; grid-template-columns: auto 1fr; gap: 7px 14px; margin: 14px 0 0; font-size: 12.5px; }
-.metagrid dt { color: var(--dim); text-transform: uppercase; letter-spacing: .06em; font-size: 10.5px; font-weight: 600; padding-top: 2px; }
-.metagrid dd { margin: 0; color: var(--fg-2); overflow-wrap: anywhere; }
-.ctx-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 13px; }
+/* Metadata that used to be table columns (tags, namespace, validity,
+   confidence) lives here, one labelled row per property. */
+.metagrid {
+  display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 1px;
+  margin: 0; background: var(--border); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden;
+}
+.metagrid dt {
+  display: flex; align-items: center; padding: 11px 12px; background: var(--panel-2);
+  color: var(--dim); text-transform: uppercase; letter-spacing: .07em; font-size: 10.5px; font-weight: 650;
+}
+.metagrid dd {
+  margin: 0; padding: 11px 13px; background: var(--panel); color: var(--fg-2);
+  font-size: 14px; overflow-wrap: anywhere; display: flex; flex-direction: column;
+  align-items: flex-start; gap: 6px;
+}
+.metagrid dd .conf { min-width: 0; width: 100%; align-self: stretch; }
+.ctx-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.ctx-tags .badge { font-size: 12.5px; }
 .ctx-fact {
   display: block; width: 100%; text-align: left; background: var(--panel); color: inherit;
   border: 1px solid var(--border); border-radius: 12px; padding: 12px 13px; margin-bottom: 8px;
   cursor: pointer; transition: border-color .15s, background .15s;
 }
 .ctx-fact:hover { border-color: var(--border-2); background: var(--panel-2); }
-.ctx-fact .body { font-size: 13.5px; line-height: 1.55; overflow-wrap: anywhere; }
+.ctx-fact .body { font-size: 14.5px; line-height: 1.6; overflow-wrap: anywhere; }
 .ctx-fact .meta { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
 .ctx-fact .meta .mono { font-size: 11.5px; }
 .ctx-fact .meta .spacer { flex: 1; }
-.ctx-note { font-size: 12.5px; color: var(--dim); line-height: 1.5; margin-top: 10px; }
-.ctx-link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-size: 12.5px; }
+.ctx-note { font-size: 13.5px; color: var(--dim); line-height: 1.55; margin-top: 12px; }
+.ctx-link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-size: 13.5px; }
 .ctx-link:hover { text-decoration: underline; }
 .skeleton { border-radius: 10px; background: linear-gradient(90deg, var(--panel) 25%, var(--panel-3) 37%, var(--panel) 63%); background-size: 400% 100%; animation: shimmer 1.3s ease infinite; height: 13px; margin-bottom: 10px; }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
@@ -411,17 +444,20 @@ dialog .err { color: var(--red); }
 @media (max-width: 1360px) {
   .app { grid-template-columns: 236px minmax(0, 1fr); }
   .ctx {
-    position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 92vw); z-index: 70;
-    transform: translateX(102%); transition: transform .22s ease; box-shadow: var(--shadow-pop);
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 92vw); z-index: 70;
+    transform: translateX(102%); opacity: 0; box-shadow: var(--shadow-pop);
+    transition: transform .34s cubic-bezier(.22,.61,.36,1), opacity .24s ease, border-color .24s ease;
     visibility: hidden;
   }
-  body.ctx-open .ctx { transform: none; visibility: visible; }
+  body.ctx-open .ctx { transform: none; opacity: 1; visibility: visible; }
   #ctx-scrim { position: fixed; inset: 0; z-index: 65; background: rgba(4,6,12,.5); display: none; }
   body.ctx-open #ctx-scrim { display: block; }
 }
 @media (min-width: 1361px) {
-  html.ctx-collapsed .app { grid-template-columns: var(--nav-w) minmax(0, 1fr); }
-  html.ctx-collapsed .ctx { display: none; }
+  html.ctx-collapsed .app { grid-template-columns: var(--nav-w) minmax(0, 1fr) 0px; }
+  html.ctx-collapsed .ctx {
+    opacity: 0; transform: translateX(30px); pointer-events: none; border-left-color: transparent;
+  }
 }
 @media (max-width: 1000px) and (min-width: 861px) {
   .rail { --nav-w: 236px; }
@@ -465,6 +501,10 @@ dialog .err { color: var(--red); }
 }
 
 .clamp { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  .app, .ctx, .ctx-body > *, .ctx-head h2, .ctx .conf i b { animation: none !important; transition: none !important; }
+}
 </style>
 </head>
 <body>
@@ -538,7 +578,7 @@ const tabs = [
   ['overview', 'Overview', 'A snapshot of what this memory knows'],
   ['episodes', 'Episodes', 'Raw memories, before they are consolidated into facts'],
   ['recall', 'Recall', 'Search the memory and see how each result was ranked'],
-  ['facts', 'Facts', 'Stored facts with confidence'],
+  ['facts', 'Facts', 'Stored facts — open one for its tags, validity and confidence'],
   ['graph', 'Graph', 'How entities relate: the knowledge graph (drag, zoom, click for details)'],
   ['goals', 'Goals', 'What the agent is working towards'],
   ['mental', 'Mental Models', 'Curated summaries searched first in reflect'],
@@ -1012,8 +1052,8 @@ const CTX_SKELETON = `<div class="skeleton" style="width:58%"></div>
   <div class="skeleton" style="width:90%"></div>`;
 const CTX_TIPS = {
   overview: ['Nothing selected', 'Pick an episode or fact from a list and its details land here.'],
-  episodes: ['Pick an episode', 'The facts that were consolidated from it show up here, next to the raw memory.'],
-  facts: ['Pick a fact', 'The episodes it was consolidated from show up here.'],
+  episodes: ['Pick an episode', 'Its tags, namespace and timestamps show up here, plus the facts consolidated from it.'],
+  facts: ['Pick a fact', 'Its tags, namespace, validity and confidence show up here, with the episodes it came from.'],
   recall: ['Nothing selected', 'Select a result to inspect the memory behind it.'],
   graph: ['Nothing selected', 'Click a node or an edge in the graph to inspect it.'],
   settings: ['No row detail', 'Settings apply to the whole installation; the controls live in the middle column.'],
@@ -1024,7 +1064,14 @@ const CTX_TIPS = {
 function ctxTitle(t) { document.getElementById('ctx-title').textContent = t; }
 function ctxShow(html, title) {
   if (title) ctxTitle(title);
-  document.getElementById('ctx-body').innerHTML = html;
+  const body = document.getElementById('ctx-body');
+  body.innerHTML = html;
+  body.scrollTop = 0;
+  // The title only changes its text, so restart its entrance animation by hand.
+  const head = document.getElementById('ctx-title');
+  head.style.animation = 'none';
+  void head.offsetWidth;
+  head.style.animation = '';
 }
 function ctxIdle() {
   const t = tabs.find(x => x[0] === state.tab) || tabs[0];
@@ -1136,18 +1183,22 @@ function renderEpisodeCtx(d) {
   const facts = d.facts || [];
   ctxTitle('Episode #' + e.id);
   const tags = (e.tags || []).length
-    ? `<div class="ctx-tags">${e.tags.map(t => `<span class="badge">${esc(t)}</span>`).join('')}</div>` : '';
+    ? `<div class="ctx-tags">${e.tags.map(t => `<span class="badge">${esc(t)}</span>`).join('')}</div>`
+    : '<span class="muted">—</span>';
   const backlog = facts.length ? '' : `<div class="ctx-note">Nothing has been extracted from this episode yet. It may still be waiting for a consolidation run, or the run found nothing worth keeping.</div>`;
   ctxShow(`
     <div class="ctx-section">
       <div class="ctx-quote lead">${esc(e.content)}</div>
+      <div class="ctx-note">An episode is immutable: consolidation reads it and writes facts, but never edits the memory itself.</div>
+    </div>
+    <div class="ctx-section">
+      <div class="ctx-section-head"><h3>Metadata</h3><span class="count">#${e.id}</span></div>
       <dl class="metagrid">
+        <dt>Tags</dt><dd>${tags}</dd>
         <dt>Namespace</dt><dd class="mono">${esc(nsSlug(e.namespace_id))}</dd>
         <dt>Happened</dt><dd>${ts(e.occurred_at)}</dd>
         <dt>Stored</dt><dd>${ts(e.created_at)}</dd>
       </dl>
-      ${tags}
-      <div class="ctx-note">An episode is immutable: consolidation reads it and writes facts, but never edits the memory itself.</div>
     </div>
     <div class="ctx-section">
       <div class="ctx-section-head"><h3>Facts from this episode</h3><span class="count">${facts.length}</span></div>
@@ -1175,28 +1226,33 @@ async function pickFact(id, tr) {
 function renderFactCtx(f, episodes) {
   ctxTitle('Fact #' + f.id);
   const now = Date.now();
-  const st = f.valid_until && new Date(f.valid_until) < now ? 'Expired'
-    : f.valid_from && new Date(f.valid_from) > now ? 'Not yet valid' : 'Active';
+  const st = f.valid_until && new Date(f.valid_until) < now ? 'abandoned'
+    : f.valid_from && new Date(f.valid_from) > now ? 'pending' : 'active';
+  const stLabel = { abandoned: 'expired', pending: 'not yet valid', active: 'active' }[st];
   const range = (f.valid_from || f.valid_until)
     ? `${f.valid_from ? ts(f.valid_from) : '…'} → ${f.valid_until ? ts(f.valid_until) : 'open'}` : 'No validity window';
   const triple = (f.entity || f.property || f.value)
     ? `<dt>Claim</dt><dd>${esc(f.entity || '')} · ${esc(f.property || '')} → ${esc(f.value || '')}</dd>` : '';
   const tags = (f.tags || []).length
-    ? `<div class="ctx-tags">${f.tags.map(t => `<span class="badge">${esc(t)}</span>`).join('')}</div>` : '';
+    ? `<div class="ctx-tags">${f.tags.map(t => `<span class="badge">${esc(t)}</span>`).join('')}</div>`
+    : '<span class="muted">—</span>';
   const sources = episodes.length
     ? episodes.map(episodeMini).join('')
     : `<div class="ctx-note">No source episodes recorded. The fact survived a purge or was merged without keeping its provenance.</div>`;
   ctxShow(`
     <div class="ctx-section">
       <div class="ctx-quote lead">${esc(f.content)}</div>
+    </div>
+    <div class="ctx-section">
+      <div class="ctx-section-head"><h3>Metadata</h3><span class="count">#${f.id}</span></div>
       <dl class="metagrid">
+        <dt>Tags</dt><dd>${tags}</dd>
         <dt>Namespace</dt><dd class="mono">${esc(nsSlug(f.namespace_id))}</dd>
+        <dt>Validity</dt><dd><span class="badge ${st}">${stLabel}</span><span class="muted">${esc(range)}</span></dd>
+        <dt>Confidence</dt><dd>${pctCompact(f.confidence)}</dd>
         ${triple}
-        <dt>Validity</dt><dd>${esc(st)}<div class="muted" style="font-size:12px">${esc(range)}</div></dd>
         <dt>Created</dt><dd>${ts(f.created_at)}</dd>
       </dl>
-      <div style="margin-top:14px">${pctCompact(f.confidence)}</div>
-      ${tags}
     </div>
     <div class="ctx-section">
       <div class="ctx-section-head"><h3>Source episodes</h3><span class="count">${episodes.length}</span></div>
@@ -1318,55 +1374,33 @@ function recallTraceCard(tr) {
 }
 
 async function renderEpisodes() {
-  // Occurred = when it happened; show when it was stored too if that was noticeably later.
-  const when = e => {
-    const lag = new Date(e.created_at) - new Date(e.occurred_at);
-    return ts(e.occurred_at) + (lag > 60000 ? `<div class="muted">stored ${ts(e.created_at)}</div>` : '');
-  };
+  // Tags, namespace and timestamps are metadata: they live in the context rail
+  // for the episode you open, so the list stays one readable column.
   await listTab('episodes', {
     above: await tagBar(),
     path: o => '/episodes' + qs(o, tagQS()),
-    headers: ['Episode', 'Tags', 'Namespace', 'When', ''],
+    headers: ['Episode', ''],
     fields: ['id', 'content', 'tags'],
     row: e => `<tr class="rowlink" onclick="pickEpisode(${e.id}, this)">
       <td class="wrap"><span class="mono">#${e.id}</span> ${esc(e.content)}</td>
-      <td class="tagcell">${tagChips(e.tags)}</td>
-      <td class="mono">${esc(nsSlug(e.namespace_id))}</td>
-      <td class="muted">${when(e)}</td>
       <td class="row-actions"><button onclick="event.stopPropagation();retractDialog('episodes', ${e.id})">retract</button><button class="danger" onclick="event.stopPropagation();purge('episodes', ${e.id})">purge</button></td>
     </tr>`,
   });
 }
 
 async function renderFacts() {
-  const now = Date.now();
-  const status = f => f.valid_until && new Date(f.valid_until) < now ? 'abandoned'
-    : f.valid_from && new Date(f.valid_from) > now ? 'pending' : 'active';
-  const label = { abandoned: 'expired', pending: 'not yet valid', active: 'active' };
-  const validity = f => {
-    const s = status(f);
-    const range = f.valid_from || f.valid_until
-      ? `<div class="muted">${f.valid_from ? ts(f.valid_from) : '…'} → ${f.valid_until ? ts(f.valid_until) : 'open'}</div>` : '';
-    return `<span class="badge ${s}">${label[s]}</span>${range}`;
-  };
-  // The structured claim rides under the sentence instead of taking a column of
-  // its own. A table wide enough for nine columns made every cell two words wide;
-  // the facts list is now one readable column plus the context rail.
+  // The structured claim rides under the sentence. Tags, namespace, validity and
+  // confidence moved to the context rail: they describe the fact, not the list,
+  // and four metadata columns squeezed the sentence into a strip.
   const structured = f => f.entity || f.property || f.value
     ? `<div class="muted" style="margin-top:4px">${esc(f.entity || '')} · ${esc(f.property || '')} → ${esc(f.value || '')}</div>` : '';
-  const tags = f => (f.tags || []).length
-    ? f.tags.map(t => `<span class="badge">${esc(t)}</span>`).join(' ') : '<span class="muted">—</span>';
   await listTab('facts', {
     above: await tagBar(),
     path: o => '/facts' + qs(o, tagQS()),
-    headers: ['Fact', 'Tags', 'Namespace', 'Validity', 'Confidence', ''],
+    headers: ['Fact', ''],
     fields: ['id', 'content', 'entity', 'property', 'value', 'tags'],
     row: f => `<tr class="rowlink" onclick="pickFact(${f.id}, this)">
       <td class="wrap"><span class="mono">#${f.id}</span> ${esc(f.content)}${structured(f)}</td>
-      <td class="tagcell">${tags(f)}</td>
-      <td class="mono">${esc(nsSlug(f.namespace_id))}</td>
-      <td>${validity(f)}</td>
-      <td>${pct(f.confidence)}</td>
       <td class="row-actions"><button onclick="event.stopPropagation();retractDialog('facts', ${f.id})">retract</button><button class="danger" onclick="event.stopPropagation();purge('facts', ${f.id})">purge</button></td>
     </tr>`,
   });
