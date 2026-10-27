@@ -11,6 +11,10 @@ import (
 type Principal struct {
 	Name     string
 	ReadOnly bool
+	// Namespace is where this caller's writes belong when it does not name one.
+	// It is a default, not a restriction: a write that names a path keeps it.
+	// See brain.writeNamespace for why it exists.
+	Namespace string
 }
 
 type ctxKey struct{}
@@ -31,4 +35,11 @@ func From(ctx context.Context) (Principal, bool) {
 func ReadOnly(ctx context.Context) bool {
 	p, _ := From(ctx)
 	return p.ReadOnly
+}
+
+// Namespace returns the namespace this caller's writes default to, or "" when
+// the caller has none (a CLI call, or a token without one).
+func Namespace(ctx context.Context) string {
+	p, _ := From(ctx)
+	return p.Namespace
 }

@@ -292,6 +292,38 @@ A web dashboard is also served at `http://localhost:9090/ui` — browse and mana
 
 Recall results carry an `id` that is only unique **within its own table**: facts and episodes have separate id sequences, and the same number exists in both. Every result therefore also carries a typed field — `fact_id` for a fact, `episode_id` for an episode — and a `type` (`"fact"` or `"episode"`). Act on the typed field, not on `id`: `DELETE /api/v1/facts/<an episode id>` deletes an unrelated fact, and the server cannot tell that you meant a different row.
 
+### Connecting a client in one command
+
+`cortexiq connect` registers the server with the clients installed on this
+machine — Cursor, Claude Code and opencode by default, or one of them with
+`--app cursor`:
+
+```bash
+cortexiq connect --token <token> --url http://localhost:8080/mcp   # this project
+cortexiq connect --global --env-ref CORTEXIQ_API_TOKEN             # every project
+cortexiq connect --dry-run                                         # show, change nothing
+cortexiq disconnect --app cursor                                   # undo
+```
+
+Cursor's `.cursor/mcp.json` is edited directly; Claude Code and opencode are
+configured through their own CLI so the rest of their configuration is left
+alone. With `--env-ref` the file holds an environment reference rather than the
+secret. `cortexiq connect` picks the streamable HTTP endpoint (`/mcp`), which is
+what current clients speak.
+
+Give each app its own token, and let the token name the namespace its writes
+belong in:
+
+```bash
+cortexiq token new --name opencode --namespace /tools/opencode
+```
+
+That prints a secret (once — it is stored nowhere) and the entry to add to
+`CORTEXIQ_API_TOKENS` on the server. A client that omits `namespace` then files
+its memory where the token says, instead of all of them landing at the root; a
+call that names a path still writes where it asks. Without `--namespace` a token
+behaves exactly as before.
+
 ### Time-aware recall
 
 Recall accepts optional `from` and `to` bounds as an RFC3339 timestamp or

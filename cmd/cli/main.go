@@ -24,7 +24,11 @@ func main() {
 			// operator runs when the service will not start. The root Before
 			// hook runs before the subcommand is resolved (cmd is always the
 			// root here), so read the first positional argument instead.
-			if firstCommand(os.Args[1:]) == "version" {
+			// The client-side commands must run on a machine that has no
+			// database and possibly no CortexIQ server at all: `connect` is
+			// what an operator runs on their own laptop, and `token new` is
+			// what they run before the server knows the token.
+			if skipBootstrap(firstCommand(os.Args[1:])) {
 				return ctx, nil
 			}
 			if _, ok := cmd.Root().Metadata["bootstrapCtx"]; ok {
@@ -742,6 +746,47 @@ func main() {
 				},
 			},
 			{
+				Name:  "connect",
+				Usage: "Register CortexIQ as an MCP server in the agent clients on this machine",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "app", Aliases: []string{"a"}, Value: "all", Usage: "Client to configure: cursor, claude, opencode, or all"},
+					&cli.StringFlag{Name: "url", Aliases: []string{"u"}, Value: defaultConnectURL, Usage: "MCP endpoint (streamable HTTP)"},
+					&cli.StringFlag{Name: "token", Aliases: []string{"t"}, Usage: "API token to send (default: $CORTEXIQ_API_TOKEN)"},
+					&cli.StringFlag{Name: "env-ref", Usage: "Write an environment reference instead of the secret"},
+					&cli.StringFlag{Name: "name", Value: "cortexiq", Usage: "Server name the client files it under"},
+					&cli.BoolFlag{Name: "global", Usage: "Write the machine-wide configuration instead of the project's"},
+					&cli.BoolFlag{Name: "dry-run", Usage: "Report what would change without changing it"},
+				},
+				Action: connectCmd,
+			},
+			{
+				Name:  "disconnect",
+				Usage: "Remove CortexIQ from the agent clients on this machine",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "app", Aliases: []string{"a"}, Value: "all", Usage: "Client to change: cursor, claude, opencode, or all"},
+					&cli.StringFlag{Name: "name", Value: "cortexiq", Usage: "Server name to remove"},
+					&cli.BoolFlag{Name: "global", Usage: "Change the machine-wide configuration instead of the project's"},
+					&cli.BoolFlag{Name: "dry-run", Usage: "Report what would change without changing it"},
+				},
+				Action: disconnectCmd,
+			},
+			{
+				Name:  "token",
+				Usage: "API token helpers",
+				Commands: []*cli.Command{
+					{
+						Name:  "new",
+						Usage: "Generate a token and print the CORTEXIQ_API_TOKENS entry for it",
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "name", Aliases: []string{"n"}, Usage: "Name for the token, e.g. the app it belongs to (required)"},
+							&cli.StringFlag{Name: "namespace", Usage: "Namespace this token's writes default to, e.g. /tools/opencode"},
+							&cli.StringFlag{Name: "scope", Value: "rw", Usage: "rw (read-write) or ro (read-only)"},
+						},
+						Action: tokenNewCmd,
+					},
+				},
+			},
+			{
 				Name:  "mcp",
 				Usage: "MCP server for agent integration",
 				Commands: []*cli.Command{
@@ -789,6 +834,18 @@ func firstCommand(args []string) string {
 		return arg
 	}
 	return ""
+}
+
+// skipBootstrap reports whether a command runs without the database. The
+// command is not resolved yet when the root Before hook fires, so the argument
+// list is the only thing available: that is what firstCommand exists for.
+func skipBootstrap(command string) bool {
+	switch command {
+	case "version", "connect", "disconnect", "token":
+		return true
+	default:
+		return false
+	}
 }
 
 // purgeFlags are shared by every purge subcommand.

@@ -914,12 +914,12 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		confidence := float32(request.GetFloat("confidence", 0.8))
 		namespace := request.GetString("namespace", "/")
 
-		nsIDs, err := bc.Brain.ResolveNamespaceIDs(ctx, []string{namespace})
+		nsID, err := bc.Brain.NamespaceIDForWrite(ctx, namespace)
 		if err != nil {
 			return nil, err
 		}
 
-		link, err := bc.Brain.CreateCausalLink(ctx, nsIDs[0], int64(causeID), int64(effectID), confidence)
+		link, err := bc.Brain.CreateCausalLink(ctx, nsID, int64(causeID), int64(effectID), confidence)
 		if err != nil {
 			return nil, err
 		}
@@ -996,12 +996,12 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			}
 		}
 
-		nsIDs, err := bc.Brain.ResolveNamespaceIDs(ctx, []string{namespace})
+		nsID, err := bc.Brain.NamespaceIDForWrite(ctx, namespace)
 		if err != nil {
 			return nil, err
 		}
 
-		h, err := bc.Brain.CreateHypothesis(ctx, nsIDs[0], content, verificationPlan, confidence, sourceFactIDs)
+		h, err := bc.Brain.CreateHypothesis(ctx, nsID, content, verificationPlan, confidence, sourceFactIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -1096,12 +1096,12 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			parentID = &pid64
 		}
 
-		nsIDs, err := bc.Brain.ResolveNamespaceIDs(ctx, []string{namespace})
+		nsID, err := bc.Brain.NamespaceIDForWrite(ctx, namespace)
 		if err != nil {
 			return nil, err
 		}
 
-		g, err := bc.Brain.CreateGoal(ctx, nsIDs[0], content, parentID, priority)
+		g, err := bc.Brain.CreateGoal(ctx, nsID, content, parentID, priority)
 		if err != nil {
 			return nil, err
 		}
@@ -1194,12 +1194,12 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			goalID = &gid64
 		}
 
-		nsIDs, err := bc.Brain.ResolveNamespaceIDs(ctx, []string{namespace})
+		nsID, err := bc.Brain.NamespaceIDForWrite(ctx, namespace)
 		if err != nil {
 			return nil, err
 		}
 
-		f, err := bc.Brain.CreateFailure(ctx, nsIDs[0], content, reason, lesson, goalID)
+		f, err := bc.Brain.CreateFailure(ctx, nsID, content, reason, lesson, goalID)
 		if err != nil {
 			return nil, err
 		}

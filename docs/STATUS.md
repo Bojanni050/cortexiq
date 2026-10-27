@@ -18,6 +18,10 @@ A binary built from a working tree reports `cortexiq dev (built from source)`.
 Release and Docker builds inject the tag, commit and build date; the values live
 in `internal/version`.
 
+Ahead of the next release: a token can bind a namespace, and `connect` /
+`disconnect` / `token new` configure MCP clients (see "One token per app"
+below). Prod does not carry this yet.
+
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
@@ -76,6 +80,47 @@ in `internal/version`.
   compare with `cortexiq version` rather than assuming.
 - Storage: Postgres + pgvector. At the `v0.1.9` deploy: 1,150 live facts,
   325 episodes, 24 namespaces, 70 MB.
+
+## One token per app
+
+A memory's namespace says where it belongs, and until now an MCP client that left
+the `namespace` parameter out filed everything at the root, where most memories
+live anyway. A token can now name a namespace: writes that do not place
+themselves keep it, and a write that names a path still wins. It is a default,
+not an allowlist — the read-side allowlist was removed on purpose and this does
+not bring it back. The point is that "which app wrote this" becomes answerable
+without asking the app, and one token per app is what puts it there.
+
+```
+cortexiq token new --name opencode --namespace /tools/opencode
+```
+
+generates the secret and prints the entry to paste into `CORTEXIQ_API_TOKENS` on
+the server, then a restart. The secret is shown once and stored nowhere; a
+namespace that the server would refuse at start-up is refused here instead.
+Without `--namespace`, a token behaves exactly as before.
+
+`cortexiq connect` writes the server entry into the clients on the machine.
+Cursor's `mcp.json` is edited directly — plain JSON, and a file that turns out to
+carry comments is refused rather than rewritten — while Claude Code and opencode
+are driven through their own CLI, so whatever else those tools store beside
+their servers survives. `--app` names one client or `all`, and an unknown name is
+an error rather than a silent skip; `--global` picks the machine-wide file over
+the project's; `--env-ref` writes the client's own environment reference
+(`${env:…}` for Cursor, `{env:…}` for opencode, `${…}` for Claude Code) so the
+secret never lands on disk; `--dry-run` prints what it would do. `disconnect`
+reverses it. opencode offers no command to remove a server, so that path points
+at the entry to delete instead of guessing at a JSONC file.
+
+Four commands run without a database — `version`, `connect`, `disconnect` and
+`token` — because configuring a laptop that has no CortexIQ of its own must not
+require one.
+
+This also fixed a real defect: `create_causal_link`, `create_hypothesis`,
+`create_goal` and `create_failure` resolved `/` to *every* namespace and then
+indexed the first element, so a record meant for the root could be filed under
+an arbitrary namespace. They now go through the same resolution the write path
+uses.
 
 ## Switched off, on purpose
 

@@ -335,6 +335,8 @@ Optional exclusive end of a half-open [from,to) event/valid-time window (RFC3339
 Where to store this. Must be an existing namespace path verified via list_namespaces.
 If not found, call create_namespace first. Default: / (root — only for truly uncategorized memories).
 
+When your token is bound to a namespace, leaving this out files the memory there, which is usually what you want: omit it rather than guessing a path.
+
 The namespace says WHERE the memory belongs; tags say WHAT it is about. They are not a substitute for each other.
 {{end}}
 
@@ -774,7 +776,7 @@ COST OF NOT CALLING: You answer structural questions without the graph. Shallow 
 
 {{define "namespace_param"}}
 Namespace path. Must exist — call list_namespaces to verify first.
-If not found, call create_namespace before proceeding. Default: / (root).
+If not found, call create_namespace before proceeding. Default: / (root), or the namespace your token is bound to.
 {{end}}
 
 
