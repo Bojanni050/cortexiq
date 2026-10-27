@@ -155,13 +155,20 @@ func (b *Brain) Audit(ctx context.Context, opts HygieneAuditOptions) ([]HygieneC
 func (b *Brain) auditTable(ctx context.Context, table string, nsIDs []int64, opts HygieneAuditOptions) ([]HygieneCandidate, error) {
 	// Only scan live, non-archived, non-flagged rows: archived rows are already
 	// out of ranking, flagged rows are already marked for review.
+	//
+	// Episodes carry occurred_at; facts do not. A fact's moment is the one it
+	// became true (valid_from), falling back to the row's creation time.
+	timeCol := "occurred_at"
+	if table == "facts" {
+		timeCol = "COALESCE(valid_from, created_at)"
+	}
 	query := fmt.Sprintf(`
-		SELECT id, namespace_id, content, importance, occurred_at, created_at
+		SELECT id, namespace_id, content, importance, %s, created_at
 		FROM %s
 		WHERE deleted_at IS NULL
 		  AND hygiene_archived = FALSE
 		  AND hygiene_flagged = FALSE
-	`, table)
+	`, timeCol, table)
 	var args []any
 	if len(nsIDs) > 0 {
 		query += " AND namespace_id = ANY($1)"
@@ -339,6 +346,15 @@ func (b *Brain) flagHygieneCandidate(ctx context.Context, tx pgx.Tx, c HygieneCa
 // logHygieneAction writes one row to hygiene_audit_log. The content preview is
 // redacted so a secret can never leak into the log.
 func (b *Brain) logHygieneAction(ctx context.Context, tx pgx.Tx, c HygieneCandidate, action, actor string) error {
+	// The log records what happened, so the schema stores the past tense
+	// ("archived"), while the clean options speak in imperatives ("archive").
+	recorded := action
+	switch action {
+	case "archive":
+		recorded = "archived"
+	case "flag":
+		recorded = "flagged"
+	}
 	reasons := c.Reasons
 	if len(reasons) == 0 {
 		reasons = []string{"kept"}
@@ -352,7 +368,7 @@ func (b *Brain) logHygieneAction(ctx context.Context, tx pgx.Tx, c HygieneCandid
 		INSERT INTO hygiene_audit_log
 			(namespace_id, target_table, target_id, action, reasons, noise_score, secret_labels, content_preview, original_importance)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		c.NamespaceID, c.Table, c.ID, action, reasons, c.NoiseScore, secretLabels, preview, c.Importance,
+		c.NamespaceID, c.Table, c.ID, recorded, reasons, c.NoiseScore, secretLabels, preview, c.Importance,
 	)
 	if err != nil {
 		return fmt.Errorf("hygiene log %s %d: %w", c.Table, c.ID, err)
@@ -383,31 +399,23 @@ func (b *Brain) Restore(ctx context.Context, namespaces []string, limit int) (in
 
 	total := 0
 	for _, table := range []string{"episodes", "facts"} {
-		var query string
 		var args []any
-		switch table {
-		case "episodes":
-			query = `UPDATE episodes SET
-				importance = COALESCE(hygiene_original_importance, 0.5),
-				hygiene_archived = FALSE,
-				hygiene_archived_at = NULL,
-				hygiene_archive_reason = NULL,
-				hygiene_original_importance = NULL
-			 WHERE hygiene_archived = TRUE AND deleted_at IS NULL`
-		case "facts":
-			query = `UPDATE facts SET
-				importance = COALESCE(hygiene_original_importance, 0.5),
-				hygiene_archived = FALSE,
-				hygiene_archived_at = NULL,
-				hygiene_archive_reason = NULL,
-				hygiene_original_importance = NULL
-			 WHERE hygiene_archived = TRUE AND deleted_at IS NULL`
-		}
+		// Postgres has no UPDATE ... LIMIT, so the bound goes on the subselect
+		// that picks the rows.
+		pick := fmt.Sprintf(`SELECT id FROM %s WHERE hygiene_archived = TRUE AND deleted_at IS NULL`, table)
 		if len(nsIDs) > 0 {
-			query += " AND namespace_id = ANY($1)"
+			pick += " AND namespace_id = ANY($1)"
 			args = append(args, nsIDs)
 		}
-		query += fmt.Sprintf(" LIMIT %d", limit)
+		pick += fmt.Sprintf(" ORDER BY id LIMIT %d", limit)
+
+		query := fmt.Sprintf(`UPDATE %s SET
+				importance = COALESCE(hygiene_original_importance, 0.5),
+				hygiene_archived = FALSE,
+				hygiene_archived_at = NULL,
+				hygiene_archive_reason = NULL,
+				hygiene_original_importance = NULL
+			 WHERE id IN (%s)`, table, pick)
 
 		tag, err := b.pool.Exec(ctx, query, args...)
 		if err != nil {
