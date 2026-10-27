@@ -4,14 +4,14 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-10-27, after the `v0.1.7` deploy.
+Last updated: 2026-10-27, after the `v0.1.8` deploy.
 
 ## Build
 
 | | |
 |---|---|
-| Latest release | `v0.1.7`, 2026-10-27 |
-| Release commit | `cfd8f00` |
+| Latest release | `v0.1.8`, 2026-10-27 |
+| Release commit | `9b61905` |
 | How to check | `cortexiq version` (works without a database) |
 
 A binary built from a working tree reports `cortexiq dev (built from source)`.
@@ -21,12 +21,12 @@ in `internal/version`.
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  `strato-vps`, in `/opt/cortexiq`, running `v0.1.7` (`cortexiq version` inside the
+  `strato-vps`, in `/opt/cortexiq`, running `v0.1.8` (`cortexiq version` inside the
   container is the source of truth; the binary lives at `/cortexiq` and the image
   has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
-  Both containers run image `sha256:241e376a1d99…`. Migrations `00038`
+  Both containers run image `sha256:e518a5064879…`. Migrations `00038`
   (retractions and the purge log) and `00039` (providers and model bindings)
-  applied on the 2026-10-26 and 2026-10-27 restarts, `00040` and up are empty;
+  applied on the 2026-10-26 and 2026-10-27 restarts, `00040` (hygiene) applied on the 2026-10-27 restart, `00041` and up are empty;
   all of them are idempotent.
 - The MCP server hands its prime directive to a client at connect time, in the
   `initialize` result's `instructions` field (6445 characters on `v0.1.4`). A
@@ -38,7 +38,9 @@ in `internal/version`.
 - The dashboard (`/ui`) is three columns: navigation, the content, and a context
   column that lists the facts an episode produced or the episodes behind a fact.
   It collapses from the topbar or its own × and becomes a drawer below 1360px;
-  the choice is kept in that browser, not on the server.
+  the choice is kept in that browser, not on the server. Since `v0.1.8` it
+  wears the logo's palette (teal-green accent, olive second colour) and the
+  brain mark is served from `/ui/brand/mark-96.png`.
 - Deploying: production pulls the image CI built —
   `ghcr.io/bojanni050/cortexiq:${CORTEXIQ_IMAGE_TAG}`. To deploy, bump
   `CORTEXIQ_IMAGE_TAG` in `/opt/cortexiq/.env` to the new release and run
@@ -52,7 +54,7 @@ in `internal/version`.
   untagged, so nothing on the server suggests a moving tag.
 - Registry tags: exactly one tag per release (`0.1.2`, `0.1.3`, …) and nothing
   else. GHCR holds one tag per release and older versions are deleted, so the
-  registry never suggests a moving target; production pulls `0.1.7` today.
+  registry never suggests a moving target; production pulls `0.1.8` today.
   No `latest`, no floating `0.1`: with a moving tag, "which version runs here"
   becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the compose
   file, so a missing value fails the deploy instead of silently pulling
@@ -82,6 +84,7 @@ in `internal/version`.
 | `CORTEXIQ_CONSOLIDATION_DEDUP_THRESHOLD` | `0.98` | Auto-merge only near-identical facts. On 932 real facts, every pair between 0.85 and 0.98 differed in a number, an entity or a state. |
 | `CORTEXIQ_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD` | `0.85` | Below this, an LLM verdict was always "different"; above it the pair is worth asking. Narrowed from 0.75, which sent a third of all facts through the model. |
 | `CORTEXIQ_TRIAGE_MODEL` | unset | Optional cheap classifier that runs before extraction and can refuse a cluster of acknowledgements. Unset sends everything to the reasoner. It fails open (unusable answer = durable), so enabling it risks cost, not memories. |
+| `CORTEXIQ_WRITE_FILTER` | `off` | Ships in `v0.1.8` but opt-in: `warn` logs what it would refuse, `strict` refuses secrets and noise. Left off until the false-positive rate on real writes is known; the hygiene cleaner can handle what already landed. |
 | `CORTEXIQ_ROUTE_RECALL` | `false` | Only widens recall; never measured in production. |
 | `CORTEXIQ_RECALL_MMR_LAMBDA` | `0` | Available per call; off by default so ranking stays plain fusion. |
 
