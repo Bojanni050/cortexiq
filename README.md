@@ -288,7 +288,7 @@ http://localhost:8080/mcp   # Streamable HTTP
 
 Both serve the same tools. Streamable HTTP is what hosted clients speak — Mistral Le Chat and Vibe, monday, Gemini Enterprise; SSE still works for Claude Desktop, Cursor, opencode and the rest. `/mcp` sends a heartbeat and `/sse` a JSON-RPC ping every 15 s, so an idle stream is not cut by clients that time out a silent body after 300 s.
 
-A web dashboard is also served at `http://localhost:9090/ui` — browse and manage memories, goals, hypotheses, contradictions, and failures from your browser. The JSON API lives on that **same 9090 listener** (`POST /api/v1/recall`, `POST /api/v1/remember`, `GET /api/v1/...`); the 8080 listener speaks MCP only.
+A web dashboard is also served at `http://localhost:9090/ui` — browse and manage memories, goals, hypotheses, contradictions, and failures from your browser. It has a collapsible context column: open an episode to see the facts it was consolidated into, or a fact to see the episodes behind it. The JSON API lives on that **same 9090 listener** (`POST /api/v1/recall`, `POST /api/v1/remember`, `GET /api/v1/...`); the 8080 listener speaks MCP only.
 
 Recall results carry an `id` that is only unique **within its own table**: facts and episodes have separate id sequences, and the same number exists in both. Every result therefore also carries a typed field — `fact_id` for a fact, `episode_id` for an episode — and a `type` (`"fact"` or `"episode"`). Act on the typed field, not on `id`: `DELETE /api/v1/facts/<an episode id>` deletes an unrelated fact, and the server cannot tell that you meant a different row.
 

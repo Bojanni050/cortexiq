@@ -356,6 +356,21 @@ type episodeJSON struct {
 	Tags        []string  `json:"tags"`
 }
 
+func episodeToJSON(e models.Episode) episodeJSON {
+	return episodeJSON{
+		ID: e.ID, NamespaceID: e.NamespaceID, Content: e.Content,
+		OccurredAt: e.OccurredAt, CreatedAt: e.CreatedAt, Tags: nonNilStrings(e.Tags),
+	}
+}
+
+// episodeDetail is one episode plus the facts it was consolidated into. The
+// dashboard's context panel is the only caller: it answers "what did this
+// memory become?" without a second round trip.
+type episodeDetail struct {
+	Episode episodeJSON `json:"episode"`
+	Facts   []factJSON  `json:"facts"`
+}
+
 func (h *Handler) episodes(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
@@ -372,7 +387,7 @@ func (h *Handler) episodes(w http.ResponseWriter, r *http.Request) {
 	total(w, n)
 	out := make([]episodeJSON, 0, len(items))
 	for _, e := range items {
-		out = append(out, episodeJSON{ID: e.ID, NamespaceID: e.NamespaceID, Content: e.Content, OccurredAt: e.OccurredAt, CreatedAt: e.CreatedAt, Tags: nonNilStrings(e.Tags)})
+		out = append(out, episodeToJSON(e))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -385,18 +400,33 @@ func (h *Handler) episodeItem(w http.ResponseWriter, r *http.Request) {
 	}
 	switch action {
 	case "":
-		if r.Method != http.MethodDelete {
+		switch r.Method {
+		case http.MethodGet:
+			e, err := h.Brain.GetEpisode(r.Context(), id)
+			if !hdl(w, err) {
+				return
+			}
+			facts, err := h.Brain.FactsFromEpisode(r.Context(), id)
+			if !hdl(w, err) {
+				return
+			}
+			out := make([]factJSON, 0, len(facts))
+			for _, f := range facts {
+				out = append(out, factToJSON(f))
+			}
+			writeJSON(w, http.StatusOK, episodeDetail{Episode: episodeToJSON(*e), Facts: out})
+		case http.MethodDelete:
+			counts, err := h.Brain.PurgeEpisode(r.Context(), id, brain.PurgeOptions{
+				Reason: "deleted from the dashboard",
+				Actor:  "dashboard",
+			})
+			if !hdl(w, err) {
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"status": "purged", "removed": counts})
+		default:
 			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
-			return
 		}
-		counts, err := h.Brain.PurgeEpisode(r.Context(), id, brain.PurgeOptions{
-			Reason: "deleted from the dashboard",
-			Actor:  "dashboard",
-		})
-		if !hdl(w, err) {
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"status": "purged", "removed": counts})
 	case "retract":
 		// The dashboard works from an id: retracting by query would let a
 		// near-duplicate episode answer for the one the reader clicked.
@@ -494,6 +524,20 @@ func (h *Handler) factItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	case "sources":
+		if r.Method != http.MethodGet {
+			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+			return
+		}
+		episodes, err := h.Brain.EpisodesForFact(r.Context(), id)
+		if !hdl(w, err) {
+			return
+		}
+		out := make([]episodeJSON, 0, len(episodes))
+		for _, e := range episodes {
+			out = append(out, episodeToJSON(e))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"episodes": out})
 	case "retract":
 		h.doRetract(w, r, func(reason, actor string) (*brain.Retraction, error) {
 			return h.Brain.RetractFact(r.Context(), id, reason, actor)
