@@ -1,5 +1,5 @@
 // Modifications copyright (c) 2026 Bojan van der Heide
-package hygiene
+package noise
 
 import (
 	"strings"
@@ -50,9 +50,6 @@ func TestScoreContent_Secret(t *testing.T) {
 			}
 			if !found {
 				t.Errorf("secret label %q not in %v", tt.label, s.SecretLabels)
-			}
-			if got := SuggestedAction(s); got != ActionFlag {
-				t.Errorf("suggested action = %q, want %q", got, ActionFlag)
 			}
 		})
 	}
@@ -176,58 +173,28 @@ func TestScoreContent_CleanMemory(t *testing.T) {
 	if s.Value > 0.1 {
 		t.Errorf("clean memory should score low, got %v (reasons: %v)", s.Value, s.Reasons)
 	}
-	if got := SuggestedAction(s); got != ActionKeep {
-		t.Errorf("suggested action = %q, want %q", got, ActionKeep)
-	}
 }
 
-func TestSuggestedAction(t *testing.T) {
-	tests := []struct {
-		name  string
-		score Score
-		want  string
-	}{
-		{"secret flags", Score{Value: 0.9, SecretLabels: []string{"github_token"}}, ActionFlag},
-		{"high score archives", Score{Value: 0.85}, ActionArchive},
-		{"mid score reviews", Score{Value: 0.6}, ActionReview},
-		{"low score keeps", Score{Value: 0.1}, ActionKeep},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := SuggestedAction(tt.score); got != tt.want {
-				t.Errorf("got %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestPreview_RedactsSecrets(t *testing.T) {
+// Redact is what the write filter stores instead of the original content when a
+// secret was found: the placeholder must appear and the value must not.
+func TestRedact_ReplacesSecrets(t *testing.T) {
 	content := "my github token is ghp_abcdefghijklmnopqrstuvwxyz1234 and more text"
-	p := Preview(content, 200)
-	if strings.Contains(p, "ghp_abcdefghijklmnopqrstuvwxyz1234") {
-		t.Errorf("preview leaked the secret: %q", p)
+	got := Redact(content)
+	if strings.Contains(got, "ghp_abcdefghijklmnopqrstuvwxyz1234") {
+		t.Errorf("redacted content leaked the secret: %q", got)
 	}
-	if !strings.Contains(p, "[REDACTED:github_token]") {
-		t.Errorf("preview should contain the redaction marker: %q", p)
+	if !strings.Contains(got, "[REDACTED:github_token]") {
+		t.Errorf("redacted content should contain the marker: %q", got)
 	}
-}
-
-func TestPreview_Truncates(t *testing.T) {
-	content := strings.Repeat("a", 500)
-	p := Preview(content, 100)
-	if len([]rune(p)) != 101 { // 100 + ellipsis
-		t.Errorf("got %d runes, want 101", len([]rune(p)))
-	}
-	if !strings.HasSuffix(p, "…") {
-		t.Errorf("preview should end with ellipsis: %q", p[len(p)-10:])
+	if !strings.HasSuffix(got, "and more text") {
+		t.Errorf("redaction must not truncate: %q", got)
 	}
 }
 
-func TestPreview_ShortContentUnchanged(t *testing.T) {
+func TestRedact_LeavesCleanContentAlone(t *testing.T) {
 	content := "short memory"
-	p := Preview(content, 200)
-	if p != content {
-		t.Errorf("got %q, want %q", p, content)
+	if got := Redact(content); got != content {
+		t.Errorf("got %q, want %q", got, content)
 	}
 }
 

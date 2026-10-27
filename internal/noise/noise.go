@@ -1,17 +1,18 @@
 // Modifications copyright (c) 2026 Bojan van der Heide
-// Package hygiene scores memory content for noise: terminal output, stack
+// Package noise scores memory content for noise: terminal output, stack
 // traces, heartbeat pings, trivial acknowledgements and leaked secrets.
 //
-// The scorer is deterministic — regex and arithmetic only, no LLM, no
-// embeddings, no network — so it runs anywhere and produces the same answer
-// twice. Auditing is read-only and always safe; acting on the results
-// (archive, flag) is a separate step the caller controls.
-package hygiene
+// It is the detector behind the write filter in internal/brain: the filter
+// asks how noisy a write is and, when a secret is found, stores the redacted
+// form instead. The scorer is deterministic — regex and arithmetic only, no
+// LLM, no embeddings, no network — so it runs anywhere, costs nothing, and
+// gives the same answer twice. It never touches storage: deciding what to do
+// with a write belongs to the caller.
+package noise
 
 import (
 	"regexp"
 	"strings"
-	"unicode"
 )
 
 // Score is the noise score of one memory, 0..1. Higher means more likely noise.
@@ -130,16 +131,6 @@ const (
 	ScoreLowImportance = 0.5
 	// ScoreValueClamp is the ceiling a value keyword imposes on the score.
 	ScoreValueClamp = 0.3
-)
-
-// Suggested actions derived from a score.
-const (
-	ActionFlag    = "flag"    // secret detected — human review, never auto-delete
-	ActionArchive = "archive" // score >= 0.8 — reversible, drops out of ranking
-	ActionKeep    = "keep"    // score < 0.5 — leave it alone
-	// ActionReview is for scores in [0.5, 0.8): archive is suggested but the
-	// caller may want a human to look first.
-	ActionReview = "review"
 )
 
 // ScoreContent computes the noise score of one memory. importance is the
@@ -282,38 +273,8 @@ func isLikelyDump(content string) bool {
 	return sentenceBreaks < len(runes)/200
 }
 
-// SuggestedAction maps a score to the action the cleaner should propose.
-// Secrets always suggest flag (never auto-delete: deleting a leaked credential
-// destroys the evidence needed to rotate it).
-func SuggestedAction(s Score) string {
-	if len(s.SecretLabels) > 0 {
-		return ActionFlag
-	}
-	switch {
-	case s.Value >= 0.8:
-		return ActionArchive
-	case s.Value >= 0.5:
-		return ActionReview
-	default:
-		return ActionKeep
-	}
-}
-
-// Preview truncates content to at most n runes for display in an audit log.
-// Secrets are redacted: any match of a secret pattern is replaced with
-// "[REDACTED:<label>]" so the preview can never leak the value it flags.
-func Preview(content string, n int) string {
-	out := redactSecrets(content)
-	runes := []rune(out)
-	if len(runes) <= n {
-		return out
-	}
-	return string(runes[:n]) + "…"
-}
-
 // Redact replaces every secret match with a placeholder carrying its label, so
-// the output can be stored or logged without leaking the value. Unlike Preview
-// it never truncates.
+// the output can be stored or logged without leaking the value.
 func Redact(content string) string {
 	return redactSecrets(content)
 }
@@ -328,6 +289,3 @@ func redactSecrets(content string) string {
 	}
 	return out
 }
-
-// IsLetter reports whether r is a letter (used by callers that tokenize).
-func IsLetter(r rune) bool { return unicode.IsLetter(r) }

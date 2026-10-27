@@ -742,47 +742,6 @@ func main() {
 				},
 			},
 			{
-				Name:  "hygiene",
-				Usage: "Find and clean noise in memory (read-only audit, then archive/flag)",
-				Commands: []*cli.Command{
-					{
-						Name:   "audit",
-						Usage:  "Scan memories for noise (read-only, always safe)",
-						Action: hygieneAuditCmd,
-						Flags:  hygieneAuditFlags(),
-					},
-					{
-						Name:      "clean",
-						Usage:     "Act on audit candidates: archive, flag or keep (dry run unless --confirm)",
-						ArgsUsage: "<candidates.json|->",
-						Action:    hygieneCleanCmd,
-						Flags: []cli.Flag{
-							&cli.StringFlag{Name: "action", Aliases: []string{"a"}, Value: "archive", Usage: "What to do: archive, flag or keep"},
-							&cli.BoolFlag{Name: "confirm", Usage: "Apply the action (without it the run is a dry run)"},
-							&cli.StringFlag{Name: "actor", Usage: "Who is running the clean (default: cli)"},
-						},
-					},
-					{
-						Name:   "status",
-						Usage:  "Show audit log summary and current archive/flag counts",
-						Action: hygieneStatusCmd,
-						Flags: []cli.Flag{
-							&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to summarise (each includes descendants; default all)"},
-							&cli.IntFlag{Name: "limit", Value: 20, Usage: "Max recent audit entries to show"},
-						},
-					},
-					{
-						Name:   "restore",
-						Usage:  "Undo archives: restore original importance and clear archive markers",
-						Action: hygieneRestoreCmd,
-						Flags: []cli.Flag{
-							&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to restore (each includes descendants; default all)"},
-							&cli.IntFlag{Name: "limit", Value: 200, Usage: "Max memories to restore"},
-						},
-					},
-				},
-			},
-			{
 				Name:  "mcp",
 				Usage: "MCP server for agent integration",
 				Commands: []*cli.Command{

@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Bojanni050/cortexiq/internal/hygiene"
+	"github.com/Bojanni050/cortexiq/internal/noise"
 )
 
 // Write filter modes. The filter runs in front of every write path (MCP, HTTP,
@@ -37,7 +37,7 @@ type WriteDecision struct {
 	Reasons []string `json:"reasons,omitempty"`
 	// SecretLabels names the kinds of secret found (labels only, never values).
 	SecretLabels []string `json:"secret_labels,omitempty"`
-	// NoiseScore is the hygiene noise score of the content (0..1).
+	// NoiseScore is the noise score of the content (0..1).
 	NoiseScore float64 `json:"noise_score"`
 	// Redacted is the content with secrets replaced by [REDACTED:label]
 	// placeholders. In strict mode a rejected write is never stored, so this
@@ -86,14 +86,14 @@ func classifyWrite(content string, importance float32, mode string) WriteDecisio
 		return WriteDecision{Action: "store"}
 	}
 
-	score := hygiene.ScoreContent(content, float64(importance), "")
+	score := noise.ScoreContent(content, float64(importance), "")
 	decision := WriteDecision{
 		NoiseScore:   score.Value,
 		Reasons:      score.Reasons,
 		SecretLabels: score.SecretLabels,
 	}
 
-	// Custom ignore patterns fire independently of the hygiene scorer. An
+	// Custom ignore patterns fire independently of the noise scorer. An
 	// operator-configured pattern is an explicit "this must not be stored", so
 	// in strict mode it always rejects regardless of the noise score.
 	ignoreMatch := false
@@ -101,8 +101,8 @@ func classifyWrite(content string, importance float32, mode string) WriteDecisio
 		if re.MatchString(content) {
 			ignoreMatch = true
 			decision.Reasons = append(decision.Reasons, "ignore_pattern_match")
-			if decision.NoiseScore < hygiene.ScoreNoisePattern {
-				decision.NoiseScore = hygiene.ScoreNoisePattern
+			if decision.NoiseScore < noise.ScoreNoisePattern {
+				decision.NoiseScore = noise.ScoreNoisePattern
 			}
 			break
 		}
@@ -124,7 +124,7 @@ func classifyWrite(content string, importance float32, mode string) WriteDecisio
 	}
 
 	// High noise (>= archive threshold) is a reject in strict mode.
-	if decision.NoiseScore >= hygiene.ScoreTerminal {
+	if decision.NoiseScore >= noise.ScoreTerminal {
 		if mode == WriteFilterStrict {
 			decision.Action = "reject"
 		} else {
@@ -135,7 +135,7 @@ func classifyWrite(content string, importance float32, mode string) WriteDecisio
 
 	// Moderate noise: warn in warn mode, store in strict mode (strict only
 	// rejects the clearly-bad writes: secrets and terminal/stack-trace output).
-	if decision.NoiseScore >= hygiene.ScoreLowImportance && mode == WriteFilterWarn {
+	if decision.NoiseScore >= noise.ScoreLowImportance && mode == WriteFilterWarn {
 		decision.Action = "warn"
 		return decision
 	}
@@ -147,7 +147,7 @@ func classifyWrite(content string, importance float32, mode string) WriteDecisio
 // redactForStorage replaces every secret match with a [REDACTED:label]
 // placeholder so the stored content cannot leak the value it was flagged for.
 func redactForStorage(content string) string {
-	return hygiene.Redact(content)
+	return noise.Redact(content)
 }
 
 // applyWriteDecision returns the error for a rejected write, or nil to proceed.
