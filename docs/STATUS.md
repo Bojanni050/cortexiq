@@ -56,9 +56,10 @@ in `internal/version`.
   artifacts, about 90 MB together; nothing pulls them. The local `latest` tag was
   untagged, so nothing on the server suggests a moving tag.
 - Registry tags: exactly one tag per release (`0.1.2`, `0.1.3`, …) and nothing
-  else. GHCR holds one tag per release and older versions are deleted, so the
-  registry never suggests a moving target; production pulls `0.1.9` today.
-  No `latest`, no floating `0.1`: with a moving tag, "which version runs here"
+  else. Checked at the registry after `v0.1.9`: `0.1.2` through `0.1.9`, eight
+  tags for eight releases, no `latest` and no floating `0.1`. Past releases are
+  kept rather than deleted, so a rollback can still pull the tag it names;
+  production pulls `0.1.9` today. With a moving tag, "which version runs here"
   becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the compose
   file, so a missing value fails the deploy instead of silently pulling
   something old.
