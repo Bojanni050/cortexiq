@@ -236,6 +236,12 @@ tbody tr.rowlink { cursor: pointer; }
 tbody tr.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 tr:last-child td { border-bottom: none; }
 td.wrap { max-width: 760px; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; min-width: 215px; }
+/* A short identifier column should give way before the text does. */
+td.wrap.nm { min-width: 0; }
+/* The namespace tree is indented by depth. It lives in a custom property rather
+   than an inline padding so the narrow card layout can shrink the indent
+   instead of pushing the card wider than the column. */
+td.nsname { padding-left: calc(16px + var(--depth, 0) * 18px); }
 .tablewrap td.muted { white-space: nowrap; }
 .muted { color: var(--muted); font-size: 14px; }
 .mono { font-family: var(--mono); font-size: 13px; color: var(--muted); letter-spacing: -.01em; }
@@ -277,6 +283,27 @@ td.tagcell { white-space: nowrap; }
 @keyframes confGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .conf span { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; width: 38px; text-align: right; }
 .row-actions { white-space: nowrap; }
+/* The context column can take half the screen, which leaves the list about as
+   wide as a phone. A table there is a lie: the name column eats a quarter, the
+   actions keep their width, and the text wraps at 190px. So below 620px of
+   content the rows stop being table rows and become cards — name, then text at
+   the full width, then the buttons on their own line. */
+body.list-narrow .lst thead { display: none; }
+body.list-narrow .lst,
+body.list-narrow .lst tbody,
+body.list-narrow .lst tr,
+body.list-narrow .lst td { display: block; }
+body.list-narrow .lst tr { padding: 14px 16px; }
+body.list-narrow .lst tr + tr { border-top: 1px solid var(--border); }
+body.list-narrow .lst td {
+  padding: 0; border-bottom: 0; max-width: none; min-width: 0;
+}
+body.list-narrow .lst td + td { margin-top: 5px; }
+body.list-narrow .lst td.nsname { padding-left: calc(var(--depth, 0) * 14px); }
+body.list-narrow .lst td.row-actions {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; white-space: normal;
+}
+body.list-narrow .lst td.row-actions button { width: auto; margin: 0; }
 .row-actions button {
   background: transparent; border: 1px solid var(--border); color: var(--muted);
   border-radius: var(--radius-xs); padding: 4px 9px; margin-right: 3px; cursor: pointer;
@@ -301,6 +328,21 @@ td.tagcell { white-space: nowrap; }
 .ctx-head .icon-btn { padding: 6px; border-color: transparent; background: none; }
 .ctx-head .icon-btn:hover { background: var(--hover); }
 .ctx-body { padding: 20px; overflow-y: auto; overscroll-behavior: contain; flex: 1; }
+/* The rail is as wide as the detail needs, so its left edge is a handle: drag
+   it, or focus it and use the arrow keys. It never grows past half the screen. */
+.ctx-grip {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 11px; z-index: 6;
+  cursor: col-resize; touch-action: none; background: none; border: 0; padding: 0;
+}
+.ctx-grip::after {
+  content: ''; position: absolute; left: 4px; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 46px; border-radius: 3px; background: var(--border-2);
+  opacity: 0; transition: opacity .18s ease, background .18s ease;
+}
+.ctx:hover .ctx-grip::after, .ctx-grip:focus-visible::after, body.ctx-resizing .ctx-grip::after { opacity: 1; }
+body.ctx-resizing .ctx-grip::after { background: var(--accent); }
+body.ctx-resizing { cursor: col-resize; user-select: none; }
+body.ctx-resizing .app { transition: none; }
 /* Every direct child of the rail slides in on its own beat. innerHTML is
    replaced on each pick, so the animation replays for the new memory. */
 .ctx-body > * { animation: ctxIn .38s cubic-bezier(.22,.61,.36,1) both; }
@@ -452,6 +494,8 @@ dialog .err { color: var(--red); }
   body.ctx-open .ctx { transform: none; opacity: 1; visibility: visible; }
   #ctx-scrim { position: fixed; inset: 0; z-index: 65; background: rgba(4,6,12,.5); display: none; }
   body.ctx-open #ctx-scrim { display: block; }
+  /* The drawer is a fixed width; there is no edge to drag. */
+  .ctx-grip { display: none; }
 }
 @media (min-width: 1361px) {
   html.ctx-collapsed .app { grid-template-columns: var(--nav-w) minmax(0, 1fr) 0px; }
@@ -539,6 +583,9 @@ dialog .err { color: var(--red); }
     <main><div id="content"></div></main>
   </div>
   <aside class="ctx" id="ctx" aria-label="Context">
+    <div class="ctx-grip" id="ctx-grip" role="separator" aria-orientation="vertical"
+      aria-label="Resize the context column" aria-valuemin="320" tabindex="0"
+      title="Drag to resize the context column (double-click to reset)"></div>
     <div class="ctx-head">
       <div><div class="label" style="padding:0">Context</div><h2 id="ctx-title">Nothing selected</h2></div>
       <button class="icon-btn" onclick="hideCtx()" aria-label="Hide context column">×</button>
@@ -742,9 +789,9 @@ function setNamespace(ns) {
 }
 
 function toolbar(html) { return `<div class="toolbar">${html}</div>`; }
-function table(headers, rows) {
+function table(headers, rows, cls) {
   if (!rows.length) return '<div class="empty"><div class="big">∅</div>Nothing here yet</div>';
-  return `<div class="tablewrap"><table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+  return `<div class="tablewrap"><table${cls ? ` class="${cls}"` : ''}><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
 }
 // A list tab shows one page at a time. The API caps limit at 1000 and takes an
 // offset, so paging is entirely a UI concern.
@@ -833,7 +880,7 @@ function paintTab(tab) {
   }
   // A poll that returns the same page must not rebuild the table: replacing
   // identical rows is what made the list flicker under the background refresh.
-  const html = table(L.spec.headers, rows.map(r => L.spec.row(r, L))) + pager;
+  const html = table(L.spec.headers, rows.map(r => L.spec.row(r, L)), 'lst') + pager;
   if (host.dataset.html === html) return;
   host.dataset.html = html;
   host.innerHTML = html;
@@ -1054,8 +1101,17 @@ const CTX_TIPS = {
   overview: ['Nothing selected', 'Pick an episode or fact from a list and its details land here.'],
   episodes: ['Pick an episode', 'Its tags, namespace and timestamps show up here, plus the facts consolidated from it.'],
   facts: ['Pick a fact', 'Its tags, namespace, validity and confidence show up here, with the episodes it came from.'],
+  goals: ['Pick a goal', 'Its status, priority, related work and namespace show up here, with any notes.'],
+  mental: ['Pick a mental model', 'Its source query, tags, freshness and the full text show up here.'],
+  hypotheses: ['Pick a hypothesis', 'What it rests on, how to verify it and how it ended show up here.'],
+  contradictions: ['Pick a contradiction', 'Both sides, the facts behind them and the resolution show up here.'],
+  failures: ['Pick a failure', 'Why it failed, the lesson and the goal it belonged to show up here.'],
+  links: ['Pick a link', 'Both facts, the confidence and how the link was found show up here.'],
+  namespaces: ['Pick a namespace', 'Its description, how much it holds and when it was created show up here.'],
   recall: ['Nothing selected', 'Select a result to inspect the memory behind it.'],
   graph: ['Nothing selected', 'Click a node or an edge in the graph to inspect it.'],
+  runs: ['No row detail', 'One row per consolidation run; the counts are in the middle column.'],
+  lifecycle: ['No row detail', 'An audit log: every row already shows what happened, to what, and why.'],
   settings: ['No row detail', 'Settings apply to the whole installation; the controls live in the middle column.'],
   metrics: ['No row detail', 'A summary view; the numbers are in the middle column.'],
   stats: ['No row detail', 'A summary of what the store holds, in the middle column.'],
@@ -1091,6 +1147,9 @@ function ctxCollapsed() { return document.documentElement.classList.contains('ct
 function setCtxCollapsed(v) {
   document.documentElement.classList.toggle('ctx-collapsed', v);
   try { localStorage.setItem(CTX_KEY, v ? 'closed' : 'open'); } catch (e) {}
+  // Collapsing gives the rail's width back to the list, so the rows may stop
+  // needing the card layout even though nothing was resized.
+  syncListNarrow();
 }
 function syncCtxToggle() {
   const b = document.getElementById('ctx-toggle');
@@ -1135,9 +1194,115 @@ function hideCtx() {
 }
 window.addEventListener('resize', syncCtxToggle);
 
+// The context column remembers how wide the reader made it. The ceiling is half
+// the viewport: past that the list stops being the subject of the page.
+const CTX_W_KEY = 'cq.ctxw';
+const CTX_W_DEFAULT = 432;
+const CTX_W_MIN = 320;
+function ctxMaxW() { return Math.round(window.innerWidth / 2); }
+function setCtxWidth(px, persist) {
+  const w = Math.max(CTX_W_MIN, Math.min(ctxMaxW(), Math.round(px)));
+  document.documentElement.style.setProperty('--ctx-w', w + 'px');
+  const grip = document.getElementById('ctx-grip');
+  if (grip) grip.setAttribute('aria-valuenow', String(w));
+  if (persist) { try { localStorage.setItem(CTX_W_KEY, String(w)); } catch (e) {} }
+  syncListNarrow();
+  return w;
+}
+// Below roughly 620px the table cannot hold its columns, and the rows become
+// cards. Computed from the intended width rather than measured from the element:
+// the grid track is still animating when this runs, so the box would report the
+// old width. The two breakpoints have to match the stylesheet — below 861px the
+// navigation turns into a topbar and stops being a column.
+function syncListNarrow() {
+  const root = getComputedStyle(document.documentElement);
+  const navW = window.innerWidth >= 861 ? (parseFloat(root.getPropertyValue('--nav-w')) || 264) : 0;
+  const ctxW = parseFloat(root.getPropertyValue('--ctx-w')) || 0;
+  const railInFlow = window.innerWidth >= 1361 && !ctxCollapsed();
+  const padding = window.innerWidth >= 861 ? 64 : 36;
+  const contentW = window.innerWidth - navW - (railInFlow ? ctxW : 0) - padding;
+  document.body.classList.toggle('list-narrow', contentW < 620);
+}
+function loadCtxWidth() {
+  let v = 0;
+  try { v = parseInt(localStorage.getItem(CTX_W_KEY) || '0', 10); } catch (e) {}
+  if (v > 0) setCtxWidth(v);
+}
+(function ctxResize() {
+  const grip = document.getElementById('ctx-grip');
+  const rail = document.getElementById('ctx');
+  if (!grip || !rail) return;
+  let startX = 0, startW = 0, dragging = false;
+  grip.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || !ctxWide()) return;
+    dragging = true;
+    startX = e.clientX;
+    startW = rail.getBoundingClientRect().width;
+    document.body.classList.add('ctx-resizing');
+    try { grip.setPointerCapture(e.pointerId); } catch (err) {}
+    // No preventDefault here: it would swallow the compatibility mouse events
+    // and with them the dblclick that resets the width. The handle already
+    // declares touch-action:none and the body turns off text selection.
+  });
+  grip.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    // The rail hangs on the right, so dragging left makes it wider.
+    setCtxWidth(startW + (startX - e.clientX));
+  });
+  const stop = e => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove('ctx-resizing');
+    try { grip.releasePointerCapture(e.pointerId); } catch (err) {}
+    setCtxWidth(rail.getBoundingClientRect().width, true);
+  };
+  grip.addEventListener('pointerup', stop);
+  grip.addEventListener('pointercancel', stop);
+  grip.addEventListener('dblclick', () => setCtxWidth(CTX_W_DEFAULT, true));
+  grip.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    setCtxWidth(rail.getBoundingClientRect().width + (e.key === 'ArrowLeft' ? 32 : -32), true);
+  });
+  loadCtxWidth();
+  syncListNarrow();
+  window.addEventListener('resize', () => {
+    // A narrower window can put the saved width past the half-screen ceiling.
+    const w = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ctx-w'));
+    if (w > ctxMaxW()) setCtxWidth(ctxMaxW());
+    syncListNarrow();
+  });
+})();
+
 function selectTr(tr) {
   document.querySelectorAll('tbody tr.selected').forEach(x => x.classList.remove('selected'));
   if (tr) tr.classList.add('selected');
+}
+
+// --- rail detail for the other lists ---------------------------------------
+// A row that carries its own detail needs no request: every list tab with
+// metadata builds its rail from the row it already fetched, through the `rail`
+// function in its listTab spec. Facts and episodes are the exception — they
+// fetch, because their detail lives in other tables.
+function metaGrid(rows) {
+  return `<dl class="metagrid">${rows.filter(Boolean)
+    .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
+}
+function ctxSection(title, body, count) {
+  return `<div class="ctx-section"><div class="ctx-section-head"><h3>${title}</h3>` +
+    (count != null ? `<span class="count">${count}</span>` : '') + `</div>${body}</div>`;
+}
+function pickRow(tab, id, tr) {
+  const L = state.lists[tab];
+  if (!L || !L.spec.rail) return;
+  const item = L.items.find(x => x.id === id);
+  if (!item) return;
+  selectTr(tr);
+  ctx.kind = tab;
+  ctx.id = id;
+  ctx.req++;
+  revealCtx();
+  ctxShow(L.spec.rail(item, L), L.spec.railTitle ? L.spec.railTitle(item) : '#' + id);
 }
 
 // pctCompact is pct without the fixed width, for the narrow rail.
@@ -1431,26 +1596,32 @@ async function renderGoals() {
   };
   await listTab('goals', {
     path: o => '/goals' + qs(o),
-    headers: ['Goal', 'Status', 'Priority', 'Related', 'Namespace', 'Created', ''],
+    headers: ['Goal', ''],
     fields: ['id', 'content', 'notes', 'status', 'priority'],
     actions: `<button class="primary" onclick="goalDialog()">+ New goal</button>`,
     enrich: async () => {
       const failures = await apiList('/failures' + nsQS('&limit=1000'));
       for (const f of failures) if (f.goal_id) fails.set(f.goal_id, (fails.get(f.goal_id) || 0) + 1);
     },
-    row: (g, L) => `<tr>
+    row: (g, L) => `<tr class="rowlink" onclick="pickRow('goals', ${g.id}, this)">
         <td class="wrap">${goal(g, L)}</td>
-        <td>${status(g)}</td>
-        <td>${pct(Number(g.priority) / 10)}<div class="muted">${esc(g.priority)} / 10</div></td>
-        <td>${related(g, L)}</td>
-        <td class="mono">${esc(nsSlug(g.namespace_id))}</td>
-        <td class="muted">${ts(g.created_at)}</td>
         <td class="row-actions">
-          <button onclick="goalComplete(${g.id})">complete</button>
-          <button onclick="goalAbandon(${g.id})">abandon</button>
-          <button class="danger" onclick="del('goals', ${g.id})">delete</button>
+          <button onclick="event.stopPropagation();goalComplete(${g.id})">complete</button>
+          <button onclick="event.stopPropagation();goalAbandon(${g.id})">abandon</button>
+          <button class="danger" onclick="event.stopPropagation();del('goals', ${g.id})">delete</button>
         </td>
       </tr>`,
+    railTitle: g => 'Goal #' + g.id,
+    rail: (g, L) => `
+      <div class="ctx-section"><div class="ctx-quote lead">${esc(g.content)}</div></div>
+      ${ctxSection('Metadata', metaGrid([
+        ['Status', status(g)],
+        ['Priority', `${pctCompact(Number(g.priority) / 10)}<span class="muted">${esc(g.priority)} / 10</span>`],
+        ['Related', related(g, L)],
+        ['Namespace', `<span class="mono">${esc(nsSlug(g.namespace_id))}</span>`],
+        ['Created', ts(g.created_at)],
+      ]), '#' + g.id)}
+      ${g.notes ? ctxSection('Notes', `<div class="ctx-quote">${esc(g.notes)}</div>`) : ''}`,
   });
 }
 async function goalDialog() {
@@ -1559,23 +1730,36 @@ async function renderMentalModels() {
   await loadMarkdownLibs().catch(() => {});
   await listTab('mental', {
     path: o => '/mental-models' + qs(o),
-    headers: ['Name', 'Content', 'Source Query', 'Tags', 'Status', 'Namespace', 'Last Refreshed', ''],
+    headers: ['Name', 'Content', ''],
     fields: ['id', 'name', 'content', 'source_query', 'tags'],
     actions: `<button class="primary" onclick="mmDialog()">+ New mental model</button>`,
-    row: m => `<tr>
-      <td class="wrap"><span class="mono">#${m.id}</span> <b>${esc(m.name)}</b></td>
-      <td style="max-width:400px">${mmContent(m)}</td>
-      <td class="wrap muted" style="max-width:250px">${esc(m.source_query)}</td>
-      <td>${mmTags(m.tags)}</td>
-      <td>${mmStale(m)}</td>
-      <td class="mono">${esc(nsSlug(m.namespace_id))}</td>
-      <td class="muted">${m.last_refreshed_at ? ts(m.last_refreshed_at) : '—'}</td>
+    row: m => `<tr class="rowlink" onclick="pickRow('mental', ${m.id}, this)">
+      <td class="wrap nm"><span class="mono">#${m.id}</span> <b>${esc(m.name)}</b></td>
+      <td class="wrap" style="max-width:640px">${mmContent(m)}</td>
       <td class="row-actions">
-        <button onclick="mmView(${m.id})">view</button>
-        <button onclick="mmRefresh(${m.id})">refresh</button>
-        <button class="danger" onclick="del('mental-models', ${m.id})">delete</button>
+        <button onclick="event.stopPropagation();mmView(${m.id})">view</button>
+        <button onclick="event.stopPropagation();mmRefresh(${m.id})">refresh</button>
+        <button class="danger" onclick="event.stopPropagation();del('mental-models', ${m.id})">delete</button>
       </td>
     </tr>`,
+    railTitle: m => m.name,
+    rail: m => `
+      <div class="ctx-section">
+        <div class="ctx-section-head"><h3>Source query</h3><span class="count">#${m.id}</span></div>
+        <div class="ctx-quote">${esc(m.source_query)}</div>
+      </div>
+      ${ctxSection('Metadata', metaGrid([
+        ['Status', mmStale(m)],
+        ['Tags', `<div class="ctx-tags">${mmTags(m.tags)}</div>`],
+        ['Scope', m.namespace_id ? `<span class="mono">${esc(nsSlug(m.namespace_id))}</span>` : '<span class="muted">all namespaces</span>'],
+        ['Refreshed', m.last_refreshed_at ? ts(m.last_refreshed_at) : '<span class="muted">never</span>'],
+        ['Created', ts(m.created_at)],
+      ]))}
+      ${m.last_refresh_failed_at ? ctxSection('Last refresh failed',
+        `<div class="ctx-note err">${ts(m.last_refresh_failed_at)} — ${esc(m.last_refresh_error || 'unknown error')}</div>`) : ''}
+      ${ctxSection('Content', m.content
+        ? `<div class="md">${md(m.content)}</div>`
+        : `<div class="ctx-note">${m.last_refresh_failed_at ? 'Generation failed.' : 'Generating…'}</div>`)}`,
   });
 }
 
@@ -1766,26 +1950,32 @@ async function renderHypotheses() {
   };
   await listTab('hypotheses', {
     path: o => '/hypotheses' + qs(o),
-    headers: ['Hypothesis', 'Based on', 'How to verify', 'Namespace', 'Status', 'Confidence', 'Updated', ''],
+    headers: ['Hypothesis', ''],
     fields: ['id', 'content', 'verification_plan', 'status'],
     enrich: async () => {
       const facts = await apiList('/facts' + nsQS('&limit=1000'));
       for (const f of facts) byId.set(f.id, f.content);
     },
-    row: h => `<tr>
+    row: h => `<tr class="rowlink" onclick="pickRow('hypotheses', ${h.id}, this)">
       <td class="wrap"><span class="mono">#${h.id}</span> ${esc(h.content)}</td>
-      <td class="wrap">${basis(h)}</td>
-      <td class="wrap muted">${esc(h.verification_plan)}</td>
-      <td class="mono">${esc(nsSlug(h.namespace_id))}${h.method ? `<div class="muted">${esc(h.method)}</div>` : ''}</td>
-      <td class="wrap">${badge(h.status)}${outcome(h)}</td>
-      <td>${pct(h.confidence)}</td>
-      <td class="muted">${ts(h.updated_at)}</td>
       <td class="row-actions">
-        ${h.status === 'confirmed' || h.status === 'rejected' ? '' : `<button onclick="hypoConfirm(${h.id})">confirm</button>
-        <button onclick="hypoReject(${h.id})">reject</button>`}
-        <button class="danger" onclick="del('hypotheses', ${h.id})">delete</button>
+        ${h.status === 'confirmed' || h.status === 'rejected' ? '' : `<button onclick="event.stopPropagation();hypoConfirm(${h.id})">confirm</button>
+        <button onclick="event.stopPropagation();hypoReject(${h.id})">reject</button>`}
+        <button class="danger" onclick="event.stopPropagation();del('hypotheses', ${h.id})">delete</button>
       </td>
     </tr>`,
+    railTitle: h => 'Hypothesis #' + h.id,
+    rail: h => `
+      <div class="ctx-section"><div class="ctx-quote lead">${esc(h.content)}</div></div>
+      ${ctxSection('How to verify', `<div class="ctx-quote">${esc(h.verification_plan || '—')}</div>`)}
+      ${ctxSection('Metadata', metaGrid([
+        ['Status', `${badge(h.status)}${outcome(h)}`],
+        ['Confidence', pctCompact(h.confidence)],
+        ['Based on', basis(h)],
+        ['Namespace', `<span class="mono">${esc(nsSlug(h.namespace_id))}</span>`],
+        h.method ? ['Method', esc(h.method)] : null,
+        ['Updated', ts(h.updated_at)],
+      ]), '#' + h.id)}`,
   });
 }
 async function hypoConfirm(id) {
@@ -1807,22 +1997,33 @@ async function renderContradictions() {
     : '<span class="badge pending">open</span>';
   await listTab('contradictions', {
     path: o => '/contradictions' + qs(o, '&status=' + encodeURIComponent(conStatus())),
-    headers: ['About', 'Old', 'New', 'Namespace', 'Status', 'Confidence', 'Created', ''],
+    headers: ['Contradiction', ''],
     fields: ['id', 'entity', 'property', 'old_value', 'new_value', 'resolution'],
     enrich: async () => {
       const facts = await apiList('/facts' + nsQS('&limit=1000'));
       for (const f of facts) byId.set(f.id, f.content);
     },
-    row: c => `<tr>
-      <td class="wrap"><b>${esc(c.entity)}</b><div class="muted">${esc(c.property)}</div></td>
-      <td class="wrap">${side(c.old_value, c.old_fact_id)}</td>
-      <td class="wrap">${side(c.new_value, c.new_fact_id)}</td>
-      <td class="mono">${esc(nsSlug(c.namespace_id))}${c.method ? `<div class="muted">${esc(c.method)}</div>` : ''}</td>
-      <td class="wrap">${state_(c)}</td>
-      <td>${pct(c.confidence)}</td>
-      <td class="muted">${ts(c.created_at)}</td>
-      <td class="row-actions">${c.resolved ? `<button onclick="conUnresolve(${c.id})">reopen</button>` : `<button onclick="conResolve(${c.id})">resolve</button>`}</td>
+    row: c => `<tr class="rowlink" onclick="pickRow('contradictions', ${c.id}, this)">
+      <td class="wrap"><b>${esc(c.entity)}</b> <span class="muted">${esc(c.property)}</span>
+        <div class="muted">${esc(c.old_value)} → ${esc(c.new_value)}</div></td>
+      <td class="row-actions">${c.resolved ? `<button onclick="event.stopPropagation();conUnresolve(${c.id})">reopen</button>` : `<button onclick="event.stopPropagation();conResolve(${c.id})">resolve</button>`}</td>
     </tr>`,
+    railTitle: c => 'Contradiction #' + c.id,
+    rail: c => `
+      <div class="ctx-section">
+        <div class="ctx-section-head"><h3>${esc(c.entity)}</h3><span class="count">#${c.id}</span></div>
+        <div class="ctx-quote lead"><div class="muted" style="font-size:12.5px;margin-bottom:6px">${esc(c.property)}</div>
+          <div class="ctx-fact"><div class="meta" style="margin:0 0 6px"><span class="mono">old</span></div>${side(c.old_value, c.old_fact_id)}</div>
+          <div class="ctx-fact" style="margin-top:8px"><div class="meta" style="margin:0 0 6px"><span class="mono">new</span></div>${side(c.new_value, c.new_fact_id)}</div>
+        </div>
+      </div>
+      ${ctxSection('Metadata', metaGrid([
+        ['Status', state_(c)],
+        ['Confidence', pctCompact(c.confidence)],
+        ['Namespace', `<span class="mono">${esc(nsSlug(c.namespace_id))}</span>`],
+        c.method ? ['Method', esc(c.method)] : null,
+        ['Created', ts(c.created_at)],
+      ]))}`,
     actions: '<label class="muted">Status <select onchange="conSetStatus(this.value)">' +
       '<option value="open"' + (conStatus() === 'open' ? ' selected' : '') + '>Open</option>' +
       '<option value="resolved"' + (conStatus() === 'resolved' ? ' selected' : '') + '>Resolved</option>' +
@@ -1857,22 +2058,28 @@ async function renderFailures() {
   };
   await listTab('failures', {
     path: o => '/failures' + qs(o),
-    headers: ['What failed', 'Why', 'Lesson', 'Goal', 'Namespace', 'Created', ''],
+    headers: ['Failure', ''],
     fields: ['id', 'content', 'reason', 'lesson'],
     actions: `<button class="primary" onclick="failDialog()">+ Record failure</button>`,
     enrich: async () => {
       const goals = await apiList('/goals' + nsQS('&limit=1000'));
       for (const g of goals) goalById.set(g.id, g);
     },
-    row: f => `<tr>
-        <td class="wrap"><span class="mono">#${f.id}</span> ${esc(f.content)}</td>
-        <td class="wrap">${esc(f.reason)}</td>
-        <td class="wrap"><b>${esc(f.lesson)}</b></td>
-        <td class="wrap">${goal(f)}</td>
-        <td class="mono">${esc(nsSlug(f.namespace_id))}</td>
-        <td class="muted">${ts(f.created_at)}</td>
-        <td class="row-actions"><button class="danger" onclick="del('failures', ${f.id})">delete</button></td>
+    row: f => `<tr class="rowlink" onclick="pickRow('failures', ${f.id}, this)">
+        <td class="wrap"><span class="mono">#${f.id}</span> ${esc(f.content)}
+          <div class="muted"><b>Lesson:</b> ${esc(f.lesson)}</div></td>
+        <td class="row-actions"><button class="danger" onclick="event.stopPropagation();del('failures', ${f.id})">delete</button></td>
       </tr>`,
+    railTitle: f => 'Failure #' + f.id,
+    rail: f => `
+      <div class="ctx-section"><div class="ctx-quote lead">${esc(f.content)}</div></div>
+      ${ctxSection('Why', `<div class="ctx-quote">${esc(f.reason || '—')}</div>`)}
+      ${ctxSection('Lesson', `<div class="ctx-quote">${esc(f.lesson || '—')}</div>`)}
+      ${ctxSection('Metadata', metaGrid([
+        ['Goal', goal(f)],
+        ['Namespace', `<span class="mono">${esc(nsSlug(f.namespace_id))}</span>`],
+        ['Created', ts(f.created_at)],
+      ]), '#' + f.id)}`,
   });
 }
 async function failDialog() {
@@ -1906,7 +2113,7 @@ async function renderLinks() {
     : `<span class="mono">#${id}</span> <span class="muted">(fact no longer stored)</span>`;
   await listTab('links', {
     path: o => '/causal-links' + qs(o),
-    headers: ['Cause', '', 'Effect', 'Confidence', 'Method', 'Created'],
+    headers: ['Link'],
     fields: ['id', 'cause_fact_id', 'effect_fact_id', 'method'],
     enrich: async items => {
       const missing = new Set();
@@ -1921,14 +2128,24 @@ async function renderLinks() {
       // Remember what the server does not have, so a repaint does not ask again.
       for (const id of ids) if (!factCache.has(id)) factCache.set(id, null);
     },
-    row: l => `<tr>
-      <td class="wrap">${fact(l.cause_fact_id)}</td>
-      <td class="muted">→</td>
-      <td class="wrap">${fact(l.effect_fact_id)}</td>
-      <td>${pct(l.confidence)}</td>
-      <td class="muted">${esc(l.method)}</td>
-      <td class="muted">${ts(l.created_at)}</td>
+    row: l => `<tr class="rowlink" onclick="pickRow('links', ${l.id}, this)">
+      <td class="wrap">${fact(l.cause_fact_id)} <span class="muted">→</span> ${fact(l.effect_fact_id)}</td>
     </tr>`,
+    railTitle: l => 'Causal link #' + l.id,
+    rail: l => `
+      <div class="ctx-section">
+        <div class="ctx-section-head"><h3>Cause</h3><span class="count">#${l.cause_fact_id}</span></div>
+        <div class="ctx-quote">${fact(l.cause_fact_id)}</div>
+      </div>
+      <div class="ctx-section">
+        <div class="ctx-section-head"><h3>Effect</h3><span class="count">#${l.effect_fact_id}</span></div>
+        <div class="ctx-quote lead">${fact(l.effect_fact_id)}</div>
+      </div>
+      ${ctxSection('Metadata', metaGrid([
+        ['Confidence', pctCompact(l.confidence)],
+        l.method ? ['Method', esc(l.method)] : null,
+        ['Created', ts(l.created_at)],
+      ]), '#' + l.id)}`,
   });
 }
 
@@ -1945,7 +2162,7 @@ async function renderNamespaces() {
   };
   await listTab('namespaces', {
     path: o => `/namespaces?limit=${PAGE}&offset=${o}`,
-    headers: ['Namespace', 'Description', 'Episodes', 'Facts', 'Goals', 'Hypotheses', 'Failures', 'Created', ''],
+    headers: ['Namespace', 'Description', ''],
     fields: ['slug', 'name', 'description'],
     actions: '<button class="primary" onclick="nsDialog()">+ New namespace</button>',
     enrich: async () => {
@@ -1957,13 +2174,19 @@ async function renderNamespaces() {
       }));
       capped = lists.slice(1).map(l => l.length >= 1000);
     },
-    row: n => `<tr>
-        <td style="padding-left:${16 + depth(n) * 18}px"><b>${esc(n.name || n.slug)}</b><div class="mono">${esc(n.slug)}</div></td>
-        <td class="wrap muted">${esc(n.description)}</td>
-        ${kinds.map((_, i) => `<td>${cell(n.id, i)}</td>`).join('')}
-        <td class="muted">${ts(n.created_at)}</td>
-        <td class="row-actions"><button onclick="nsConfigDialog('${encodeURIComponent(n.slug)}')">config</button></td>
+    row: n => `<tr class="rowlink" onclick="pickRow('namespaces', ${n.id}, this)">
+        <td class="nsname" style="--depth:${depth(n)}"><b>${esc(n.name || n.slug)}</b><div class="mono">${esc(n.slug)}</div></td>
+        <td class="wrap"><span class="muted">${esc(n.description)}</span></td>
+        <td class="row-actions"><button onclick="event.stopPropagation();nsConfigDialog('${encodeURIComponent(n.slug)}')">config</button></td>
       </tr>`,
+    railTitle: n => n.slug,
+    rail: n => `
+      <div class="ctx-section"><div class="ctx-quote lead">${esc(n.description || 'No description.')}</div></div>
+      ${ctxSection('What it holds', metaGrid([
+        ...kinds.map((k, i) => [k.charAt(0).toUpperCase() + k.slice(1), cell(n.id, i)]),
+        ['Created', ts(n.created_at)],
+      ]), '#' + n.id)}
+      <div class="ctx-note">Counts are global and follow the tree: this namespace plus everything under it. A “+” means the list hit the API's 1000-row cap.</div>`,
   });
 }
 async function renderMetrics() {
