@@ -4,14 +4,14 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-10-28, after the `v0.1.13` deploy.
+Last updated: 2026-10-28, after the `v0.1.14` deploy.
 
 ## Build
 
 | | |
 |---|---|
-| Latest release | `v0.1.13`, 2026-10-28 |
-| Release commit | `ab1a1c1` |
+| Latest release | `v0.1.14`, 2026-10-28 |
+| Release commit | `a21902c` |
 | How to check | `cortexiq version` (works without a database) |
 
 A binary built from a working tree reports `cortexiq dev (built from source)`.
@@ -23,18 +23,18 @@ Ahead of the next release: nothing named yet.
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  `strato-vps`, in `/opt/cortexiq`, running `v0.1.13` (`cortexiq version` inside the
+  `strato-vps`, in `/opt/cortexiq`, running `v0.1.14` (`cortexiq version` inside the
   container is the source of truth; the binary lives at `/cortexiq` and the image
   has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
-  Both containers run image `sha256:f0fbfb68bb0bce4f…`. Migrations `00038`
+  Both containers run image `sha256:e98a5c5c45e4…`. Migrations `00038`
   (retractions and the purge log) and `00039` (providers and model bindings)
   applied on the 2026-10-26 and 2026-10-27 restarts, and `00040` (hygiene) on
   the 2026-10-27 restart. `00041` applied on the `v0.1.9` restart: it drops
   twelve `hygiene_*` columns and the `hygiene_audit_log` table, so the schema is
   back to what it was before `00040` — verified after the deploy (0 matching
   columns, table gone, data intact). All of them are idempotent. The `v0.1.10`,
-  `v0.1.11`, `v0.1.12` and `v0.1.13` restarts applied none: they changed the
-  binary only, and `goose_db_version` still reads `41` afterwards.
+  `v0.1.11`, `v0.1.12`, `v0.1.13` and `v0.1.14` restarts applied none: they
+  changed the binary only, and `goose_db_version` still reads `41` afterwards.
 - The MCP server hands its prime directive to a client at connect time, in the
   `initialize` result's `instructions` field (6445 characters on `v0.1.4`). A
   client reads that once per connection, so it has to reconnect after an upgrade
@@ -51,7 +51,11 @@ Ahead of the next release: nothing named yet.
   and episodes lists are one readable column and all of their metadata (tags,
   namespace, validity, confidence, claim, timestamps) sits in that context
   column as a labelled grid; the rail animates and respects
-  `prefers-reduced-motion`.
+  `prefers-reduced-motion`. Since `v0.1.14` the navigation rail and the context
+  column stay pinned while the content scrolls: on wide screens both kept their
+  `position: sticky` declarations, but `overflow-x: hidden` on `html`/`body`
+  made `body` a scroll container that never scrolls itself, which silently
+  defeated sticky; `overflow-x: clip` restores it.
 - Deploying: production pulls the image CI built —
   `ghcr.io/bojanni050/cortexiq:${CORTEXIQ_IMAGE_TAG}`. To deploy, bump
   `CORTEXIQ_IMAGE_TAG` in `/opt/cortexiq/.env` to the new release and run
@@ -64,10 +68,10 @@ Ahead of the next release: nothing named yet.
   artifacts, about 90 MB together; nothing pulls them. The local `latest` tag was
   untagged, so nothing on the server suggests a moving tag.
 - Registry tags: exactly one tag per release (`0.1.2`, `0.1.3`, …) and nothing
-  else. Checked at the registry after `v0.1.13`: `0.1.2` through `0.1.13`, twelve
-  tags for twelve releases, no `latest` and no floating `0.1`. Past releases are
+  else. Checked at the registry after `v0.1.14`: `0.1.2` through `0.1.14`, thirteen
+  tags for thirteen releases, no `latest` and no floating `0.1`. Past releases are
   kept rather than deleted, so a rollback can still pull the tag it names;
-  production pulls `0.1.13` today. With a moving tag, "which version runs here"
+  production pulls `0.1.14` today. With a moving tag, "which version runs here"
   becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the compose
   file, so a missing value fails the deploy instead of silently pulling
   something old.
@@ -82,8 +86,8 @@ Ahead of the next release: nothing named yet.
   not images; they are harmless.
 - This page may be one documentation-only commit ahead of the deployed binary;
   compare with `cortexiq version` rather than assuming.
-- Storage: Postgres + pgvector. At the `v0.1.13` deploy: 1,184 live facts,
-  331 episodes, 24 namespaces. The tag coverage was last measured at the
+- Storage: Postgres + pgvector. At the `v0.1.14` deploy: 1,188 live facts,
+  323 episodes, 24 namespaces. The tag coverage was last measured at the
   `v0.1.12` deploy (82 of 1,166 facts, 17 of 328 episodes); `cortexiq tags`
   gives the current numbers.
 
