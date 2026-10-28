@@ -506,6 +506,15 @@ dialog .err { color: var(--red); }
     opacity: 0; transform: translateX(30px); pointer-events: none; border-left-color: transparent;
   }
 }
+/* On screens wider than 1600px the context rail starts at 600px — a starting
+   width, not a ceiling: a saved width (localStorage cq.ctxw) is applied inline
+   and outranks this, and the grip can take the rail anywhere between 320 and
+   half the viewport. min-width here keeps the very first paint before the
+   resize machine runs inside the same floor the grip enforces. */
+@media (min-width: 1601px) {
+  :root { --ctx-w: 600px; }
+  .ctx { min-width: 320px; }
+}
 @media (max-width: 1000px) and (min-width: 861px) {
   .rail { --nav-w: 236px; }
   nav button span { display: none; }
@@ -1200,9 +1209,17 @@ window.addEventListener('resize', syncCtxToggle);
 // The context column remembers how wide the reader made it. The ceiling is half
 // the viewport: past that the list stops being the subject of the page.
 const CTX_W_KEY = 'cq.ctxw';
+// The starting width answers the screen: 600px is too much below 1601px, 432px
+// underuses everything above it. It is a default, not a rule — a width the
+// reader dragged or saved wins (the saved value is applied inline), and the
+// headline width is mirrored in the stylesheet so the very first paint without
+// a saved width already matches.
 const CTX_W_DEFAULT = 432;
+const CTX_W_WIDE = 600;
+const CTX_W_WIDE_FROM = 1601;
 const CTX_W_MIN = 320;
 function ctxMaxW() { return Math.round(window.innerWidth / 2); }
+function ctxDefaultW() { return window.innerWidth >= CTX_W_WIDE_FROM ? CTX_W_WIDE : CTX_W_DEFAULT; }
 function setCtxWidth(px, persist) {
   const w = Math.max(CTX_W_MIN, Math.min(ctxMaxW(), Math.round(px)));
   document.documentElement.style.setProperty('--ctx-w', w + 'px');
@@ -1261,7 +1278,7 @@ function loadCtxWidth() {
   };
   grip.addEventListener('pointerup', stop);
   grip.addEventListener('pointercancel', stop);
-  grip.addEventListener('dblclick', () => setCtxWidth(CTX_W_DEFAULT, true));
+  grip.addEventListener('dblclick', () => setCtxWidth(ctxDefaultW(), true));
   grip.addEventListener('keydown', e => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     e.preventDefault();

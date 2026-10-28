@@ -55,7 +55,9 @@ Ahead of the next release: nothing named yet.
   column stay pinned while the content scrolls: on wide screens both kept their
   `position: sticky` declarations, but `overflow-x: hidden` on `html`/`body`
   made `body` a scroll container that never scrolls itself, which silently
-  defeated sticky; `overflow-x: clip` restores it.
+  defeated sticky; `overflow-x: clip` restores it. On screens wider than 1600px
+  the context column starts at 600px instead of 432 — a starting width, since a
+  saved width always wins and the grip still reaches the 320px floor.
 - Deploying: production pulls the image CI built —
   `ghcr.io/bojanni050/cortexiq:${CORTEXIQ_IMAGE_TAG}`. To deploy, bump
   `CORTEXIQ_IMAGE_TAG` in `/opt/cortexiq/.env` to the new release and run
