@@ -629,6 +629,7 @@ const icons = {
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   metrics: '<path d="M4 19V5M4 19h16"/><path d="m7 15 3-4 3 2 5-7"/>',
   lifecycle: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/>',
+  status: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   stats: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
 };
 const svg = k => `<svg viewBox="0 0 24 24">${icons[k]}</svg>`;
@@ -648,6 +649,7 @@ const tabs = [
   ['namespaces', 'Namespaces', 'How memory is organised'],
   ['runs', 'Runs', 'Recent consolidation runs and what changed'],
   ['lifecycle', 'Lifecycle', 'What was retracted and what was purged, newest first'],
+  ['status', 'Status', 'Is this server healthy: build, uptime, database and consolidator'],
   ['settings', 'Settings', 'When new memories are consolidated into facts'],
   ['metrics', 'Metrics', 'Runtime, consolidation and LLM usage metrics'],
   ['stats', 'Stats', 'What the memory store holds: totals, size and date range'],
@@ -658,7 +660,7 @@ const tabs = [
 const NAV_GROUPS = [
   ['Memory', ['overview', 'episodes', 'facts', 'recall']],
   ['Knowledge', ['graph', 'mental', 'goals', 'hypotheses', 'contradictions', 'failures', 'links']],
-  ['System', ['namespaces', 'runs', 'lifecycle', 'settings', 'metrics', 'stats']],
+  ['System', ['status', 'namespaces', 'runs', 'lifecycle', 'settings', 'metrics', 'stats']],
 ];
 const nav = document.getElementById('nav');
 NAV_GROUPS.forEach(([group, ids]) => {
@@ -1574,18 +1576,19 @@ async function renderEpisodes() {
 }
 
 async function renderFacts() {
-  // The structured claim rides under the sentence. Tags, namespace, validity and
-  // confidence moved to the context rail: they describe the fact, not the list,
-  // and four metadata columns squeezed the sentence into a strip.
+  // The structured claim rides under the sentence, and the confidence sits
+  // beside the sentence: the sidebar shows it too, but reading a list without
+  // it in the middle column made the number look arbitrary.
   const structured = f => f.entity || f.property || f.value
     ? `<div class="muted" style="margin-top:4px">${esc(f.entity || '')} · ${esc(f.property || '')} → ${esc(f.value || '')}</div>` : '';
+  const confidence = f => `<span class="muted" style="margin-left:6px">${pct(f.confidence)}</span>`;
   await listTab('facts', {
     above: await tagBar(),
     path: o => '/facts' + qs(o, tagQS()),
     headers: ['Fact', ''],
     fields: ['id', 'content', 'entity', 'property', 'value', 'tags'],
     row: f => `<tr class="rowlink" onclick="pickFact(${f.id}, this)">
-      <td class="wrap"><span class="mono">#${f.id}</span> ${esc(f.content)}${structured(f)}</td>
+      <td class="wrap"><span class="mono">#${f.id}</span> ${esc(f.content)}${confidence(f)}${structured(f)}</td>
       <td class="row-actions"><button onclick="event.stopPropagation();retractDialog('facts', ${f.id})">retract</button><button class="danger" onclick="event.stopPropagation();purge('facts', ${f.id})">purge</button></td>
     </tr>`,
   });
@@ -2270,6 +2273,51 @@ async function renderStats() {
         <td class="mono">${bytes(t.size_bytes)}</td>
       </tr>`)) + '</div>';
 }
+// Status answers "is this server healthy": the build identity, how long the
+// process has been up, the database pulse, and what the consolidator is doing
+// (or stuck on). It reads /api/v1/status, which always answers even when a
+// component cannot be checked yet — an error is reported, never swallowed.
+async function renderStatus() {
+  const s = await api('/status');
+  const db = s.database || {};
+  const cons = s.consolidation || {};
+  const pending = cons.pending_episodes || 0;
+  // A duration, not an "Ago": uptime counts up, so the phrase of ago() would read backwards.
+  const uptimeFmt = s => {
+    if (s < 60) return Math.round(s) + 's';
+    const parts = [];
+    for (const [unit, name] of [[86400, 'd'], [3600, 'h'], [60, 'm']]) {
+      if (s >= unit) { const n = Math.floor(s / unit); parts.push(n + name); s -= n * unit; }
+      if (parts.length === 2) break;
+    }
+    return parts.join(' ');
+  };
+  const uptime = isFinite(Number(s.uptime_seconds)) ? uptimeFmt(Number(s.uptime_seconds)) : '—';
+  const whenRun = cons.last_run ? `${ts(cons.last_run)} <span class="muted">(${ago(cons.last_run)})</span>` : '<span class="muted">never</span>';
+  const freq = s.consolidation_error ? `<span class="muted">could not be read: ${esc(s.consolidation_error)}</span>`
+    : (!s.schedule ? '<span class="muted">unknown</span>'
+    : `${esc(s.schedule.mode)}${s.schedule.mode !== 'events' && s.schedule.interval_seconds
+      ? ` · every ${Number(s.schedule.interval_seconds) >= 60 ? Number(s.schedule.interval_seconds) / 60 + ' min' : s.schedule.interval_seconds + 's'}` : ''}`);
+  const kv = (k, v) => `<tr><td class="muted">${k}</td><td>${v}</td></tr>`;
+  document.getElementById('content').innerHTML = `
+    <div class="stats">
+      ${stat('status', 'var(--accent)', 'Online', 'Server')}
+      ${stat('stats', db.ok ? 'var(--green)' : 'var(--red)', db.ok ? 'Healthy' : 'Unhealthy', 'Database')}
+      ${stat('runs', 'var(--yellow)', pending, pending === 1 ? 'Episode waiting' : 'Episodes waiting')}
+      ${stat('episodes', 'var(--blue)', uptime, 'Uptime')}
+    </div>` +
+    `<div class="card"><h3>Build</h3>` + table(['', ''], [
+      kv('Version', esc(s.version || 'unknown')),
+      kv('Commit', `<span class="mono">${esc(s.commit || 'none')}</span>`),
+      kv('Built', esc(s.built || 'unknown')),
+      kv('Go', esc(s.go_version || 'unknown')),
+      kv('Started', ts(s.started_at)),
+    ]) + '</div>' +
+    `<div class="card"><h3>Consolidation</h3>` + table(['', ''], [
+      kv('Schedule', freq),
+      kv('Last extraction run', whenRun),
+    ]) + '</div>';
+}
 async function nsDialog() {
   const d = document.getElementById('dlg');
   d.innerHTML = `<h3>New namespace</h3>
@@ -2951,7 +2999,7 @@ async function saveSchedule() {
 const renderers = { overview: renderOverview, graph: renderGraph, episodes: renderEpisodes, recall: renderRecall, facts: renderFacts,
   goals: renderGoals, mental: renderMentalModels, hypotheses: renderHypotheses, contradictions: renderContradictions,
   failures: renderFailures, links: renderLinks, namespaces: renderNamespaces, runs: renderRuns, lifecycle: renderLifecycle,
-  settings: renderSettings, metrics: renderMetrics, stats: renderStats };
+  status: renderStatus, settings: renderSettings, metrics: renderMetrics, stats: renderStats };
 
 async function refresh(opts) {
   const quiet = !!(opts && opts.quiet);
@@ -2963,7 +3011,7 @@ async function refresh(opts) {
   // Only a tab change resets the rail: a quiet refresh must not close the
   // memory the reader is looking at.
   if (state.ctxTab !== state.tab) { state.ctxTab = state.tab; ctxIdle(); }
-  document.getElementById('ns-select').disabled = state.tab === 'namespaces' || state.tab === 'settings';
+  document.getElementById('ns-select').disabled = state.tab === 'namespaces' || state.tab === 'settings' || state.tab === 'status';
   const c = document.getElementById('content');
   if (!quiet) document.getElementById('loading').style.display = 'block';
   destroyGraph();
