@@ -87,3 +87,83 @@ func TestKnownRelationTypesMatchBackfillScript(t *testing.T) {
 		}
 	}
 }
+
+// Real cases from the production audit of 2026-10-30 (relations the extraction model
+// had filed under a vocabulary word although the wording says otherwise) next to
+// suggestions that are fine.
+func TestSuggestionGuard(t *testing.T) {
+	refused := []struct{ relType, suggested string }{
+		{"lacks", "contains"},
+		{"does_not_include", "contains"},
+		{"are not merged", "affects"},
+		{"cannot_reach", "affects"},
+		{"cannot", "configures"},
+		{"used_by", "runs_on"},
+		{"is_used_by", "supports"},
+		{"managed_by", "manages"},
+		{"replaced_by", "replaces"},
+		{"released_under", "has"},
+		{"accessible_at", "hosts"},
+		{"accessible_over", "supports"},
+		{"reachable_via", "connects_to"},
+		{"included_in", "contains"},
+		{"part_of_in", "has"},
+		{"null", "contains"},
+		{"fails_for", "affects"},
+	}
+	for _, tt := range refused {
+		if got := CanonicalRelationType(tt.relType, tt.suggested); got != "" {
+			t.Errorf("CanonicalRelationType(%q, %q) = %q, want it refused (empty)", tt.relType, tt.suggested, got)
+		}
+	}
+	allowed := []struct{ relType, suggested, want string }{
+		{"installed_in", "located_in", "located_in"}, // inward word, inward vocabulary word
+		{"saved_in", "located_in", "located_in"},
+		{"registered_in", "part_of", "part_of"},
+		{"applied_to", "transforms", "transforms"},
+		{"introduces", "creates", "creates"},
+		{"operating_with", "uses", "uses"},
+		{"configured_for", "configures", "configures"},
+		{"CortexIQ uses", "uses", "uses"},
+		{"consisted of", "contains", "contains"}, // "of" is not treated as a reversal
+	}
+	for _, tt := range allowed {
+		if got := CanonicalRelationType(tt.relType, tt.suggested); got != tt.want {
+			t.Errorf("CanonicalRelationType(%q, %q) = %q, want %q", tt.relType, tt.suggested, got, tt.want)
+		}
+	}
+	// The hand-reviewed mapping is not subject to the guard.
+	if got := CanonicalRelationType("derived_from", ""); got != "derived_from" {
+		t.Errorf("reviewed mapping must stay: %q", got)
+	}
+	if got := CanonicalRelationType("is", "uses"); got != "is_a" {
+		t.Errorf("reviewed mapping beats the model: %q", got)
+	}
+	if !SuggestionAllowed("applies", "transforms") || SuggestionAllowed("never_uses", "uses") {
+		t.Error("SuggestionAllowed basics")
+	}
+}
+
+// scripts/clear-unsafe-canonical-types.sql repeats the guard in SQL; fail when the
+// patterns or the outward word list differ from the Go constants.
+func TestGuardPatternsMatchCleanupScript(t *testing.T) {
+	raw, err := os.ReadFile("../../scripts/clear-unsafe-canonical-types.sql")
+	if err != nil {
+		t.Skipf("cleanup script not available: %v", err)
+	}
+	sql := string(raw)
+	for name, p := range map[string]string{"negation": guardNegationPattern, "passive": guardPassivePattern, "inward": guardInwardPattern} {
+		if !strings.Contains(sql, "~ '"+p+"'") {
+			t.Errorf("the %s pattern %q is missing from the cleanup script", name, p)
+		}
+	}
+	for c := range outwardCanonicalTypes {
+		if !strings.Contains(sql, "'"+c+"'") {
+			t.Errorf("outward type %q missing from the cleanup script", c)
+		}
+	}
+	m := regexp.MustCompile(`canonical_type IN \(([^)]*)\)`).FindStringSubmatch(sql)
+	if m == nil || strings.Count(m[1], "'")/2 != len(outwardCanonicalTypes) {
+		t.Errorf("the cleanup script lists a different number of outward types than the Go table (%d)", len(outwardCanonicalTypes))
+	}
+}
