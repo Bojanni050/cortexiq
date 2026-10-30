@@ -4,14 +4,14 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-10-28, after the `v0.1.15` deploy.
+Last updated: 2026-10-30, after the `v0.1.16` deploy.
 
 ## Build
 
 | | |
 |---|---|
-| Latest release | `v0.1.15`, 2026-10-28 |
-| Release commit | `b131f3f` |
+| Latest release | `v0.1.16`, 2026-10-30 |
+| Release commit | `8f591a1` |
 | How to check | `cortexiq version` (works without a database) |
 
 A binary built from a working tree reports `cortexiq dev (built from source)`.
@@ -20,20 +20,28 @@ in `internal/version`.
 
 Ahead of the next release: nothing named yet.
 
+Open, not a release item: the consolidation model (`mistralai/Mistral-Small-24B-Instruct-2501` via
+DeepInfra) often returns JSON that does not parse. On 100 sampled facts, 6 of 20 relation
+batches failed (against 0 for `google/gemma-4-31B-it` on the same facts), and since 2026-10-27
+59 of 92 consolidation runs with LLM calls logged a parse error. A failed batch is retried on the
+next run, but it also means the `canonical_type` guard added in `v0.1.16` has had no live
+traffic to prove itself on yet. Changing the model touches every consolidation stage and needs
+its own test; it has not been done.
+
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  `strato-vps`, in `/opt/cortexiq`, running `v0.1.15` (`cortexiq version` inside the
+  `strato-vps`, in `/opt/cortexiq`, running `v0.1.16` (`cortexiq version` inside the
   container is the source of truth; the binary lives at `/cortexiq` and the image
   has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
-  Both containers run image `sha256:0220ae618d79…`. Migrations `00038`
+  Both containers run image `sha256:11dd33cfa7e0…`. Migrations `00038`
   (retractions and the purge log) and `00039` (providers and model bindings)
   applied on the 2026-10-26 and 2026-10-27 restarts, and `00040` (hygiene) on
   the 2026-10-27 restart. `00041` applied on the `v0.1.9` restart: it drops
   twelve `hygiene_*` columns and the `hygiene_audit_log` table, so the schema is
   back to what it was before `00040` — verified after the deploy (0 matching
   columns, table gone, data intact). All of them are idempotent. The `v0.1.10`,
-  `v0.1.11`, `v0.1.12`, `v0.1.13`, `v0.1.14` and `v0.1.15` restarts applied
+  `v0.1.11`, `v0.1.12`, `v0.1.13`, `v0.1.14`, `v0.1.15` and `v0.1.16` restarts applied
   none: they changed the binary only, and `goose_db_version` still reads `41`.
 - The MCP server hands its prime directive to a client at connect time, in the
   `initialize` result's `instructions` field (6445 characters on `v0.1.4`). A
