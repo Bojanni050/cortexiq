@@ -20,13 +20,17 @@ in `internal/version`.
 
 Ahead of the next release: nothing named yet.
 
-Open, not a release item: the consolidation model (`mistralai/Mistral-Small-24B-Instruct-2501` via
-DeepInfra) often returns JSON that does not parse. On 100 sampled facts, 6 of 20 relation
-batches failed (against 0 for `google/gemma-4-31B-it` on the same facts), and since 2026-10-27
-59 of 92 consolidation runs with LLM calls logged a parse error. A failed batch is retried on the
-next run, but it also means the `canonical_type` guard added in `v0.1.16` has had no live
-traffic to prove itself on yet. Changing the model touches every consolidation stage and needs
-its own test; it has not been done.
+Consolidation model: since 2026-10-30 production runs `google/gemma-4-31B-it` via DeepInfra
+(`CORTEXIQ_REASONER_MODEL` in `.env`, `CORTEXIQ_REASONER_JSON_MODE=false`), replacing
+`mistralai/Mistral-Small-24B-Instruct-2501`. On the same inputs the old model failed to parse 13 of 40
+fact calls and 6 of 20 relation batches, and merged 13 of 48 different fact pairs in the same-fact
+review; Gemma had no parse errors on those stages and merged 0 of 48 (it misses 3 of 20 true twins,
+which leaves a duplicate instead of losing information). Do not bind a reasoner model in the dashboard
+(`llm_bindings`) for now: that path builds the client with JSON mode forced on, and with JSON mode on
+Gemma fails every stage that returns a list. The test is `internal/reasoner/modeleval_test.go`
+(`-tags modeleval`); the numbers are in `walkthrough2.md`. Not yet seen on live traffic: check
+`consolidation_runs` for parse errors after a few days. Rollback is the previous value in
+`.env.bak-pregemma` plus a restart of both containers.
 
 ## What runs where
 
