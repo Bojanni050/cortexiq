@@ -1,0 +1,5 @@
+manifest_version: 1
+name: cortexiq-setup
+version: 0.1.0
+description: "CortexIQ geheugen-provider: installatiewizard, statuscheck en configuratie in Hermes."
+homepage: https://github.com/Bojanni050/cortexiq
