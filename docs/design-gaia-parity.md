@@ -196,7 +196,8 @@ from data rather than convention. Existing namespaces backfill to
 ## What this deliberately does not do
 
 - **No answer step for LongMemEval.** Public benchmark parity is the
-  seventh gap, but it is an eval harness, not an API port — separate proposal.
+  seventh gap, but it is an eval harness, not an API port — written up
+  separately in `docs/design-longmemeval.md`.
 - **No bank-level scores normalization.** The whole point of banks is that
   scores are incomparable; any future "smart" cross-bank merge must be opt-in
   and off the default path.
