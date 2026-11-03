@@ -75,6 +75,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/mental-models", h.mentalModels)
 	api.HandleFunc("/api/v1/mental-models/", h.mentalModelItem)
 	api.HandleFunc("/api/v1/runs", h.runs)
+	api.HandleFunc("/api/v1/status", h.status)
 	api.HandleFunc("/api/v1/retractions", h.retractions)
 	api.HandleFunc("/api/v1/purge-log", h.purgeLog)
 	api.HandleFunc("/api/v1/consolidation", h.consolidation)
