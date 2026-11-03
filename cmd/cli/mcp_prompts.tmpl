@@ -312,6 +312,18 @@ Optional comma-separated pointers to where this memory came from outside CortexI
 Set true together with external_key to replace the memory that currently holds that key with this new content. The old one is retired and its link to the new one kept, and facts that rested only on the old one are closed, all in one step. Without external_key this is an error.
 {{end}}
 
+{{define "invalidate_description"}}
+Retire the memory that holds an external_key, when a rejection changes nothing: the statement stops being current and no new content replaces it (for a rejection of "status is proposed", the invalidated state IS the answer). Facts that rested only on that memory are closed. Repeats are safe: an already-invalidated key is answered, not an error. Use remember with supersedes instead when a new content exists; use retract when you are not the key's writer.
+{{end}}
+
+{{define "invalidate_external_key"}}
+Required id the writer used for the memory ("gaia:hypothesis:42"). The live episode holding this key in the namespace is retired; calling again with the same key reports already_invalidated.
+{{end}}
+
+{{define "invalidate_reason"}}
+Optional reason the state changed ("hypothesis was rejected: contradicted by the emails"). With a reason the withdrawal is recorded so a later reader sees what stopped being true and why; without one the memory is simply retired. At most 2000 characters.
+{{end}}
+
 {{define "recall_tags"}}
 Optional comma-separated tags to narrow the search: only memories carrying all of them are returned (AND, not OR). Tags are lowercase words like 'beslissing' or 'klant-x'; the filter applies to consolidated facts and to raw episodes. Failures and goals have no tags and are excluded when this is set.
 {{end}}

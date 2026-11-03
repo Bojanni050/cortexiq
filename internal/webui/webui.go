@@ -54,6 +54,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/recall", h.recall)
 	api.HandleFunc("/api/v1/reflect", h.reflect)
 	api.HandleFunc("/api/v1/remember", h.remember)
+	api.HandleFunc("/api/v1/invalidate", h.invalidate)
 	api.HandleFunc("/api/v1/tags/timeline", h.tagTimeline)
 	api.HandleFunc("/api/v1/tags", h.tags)
 	api.HandleFunc("/api/v1/namespaces", h.namespaces)
@@ -185,6 +186,8 @@ func errStatus(err error) int {
 	case errors.Is(err, brain.ErrAlreadyRetracted),
 		errors.Is(err, brain.ErrExternalKeyExists):
 		return http.StatusConflict
+	case errors.Is(err, brain.ErrExternalKeyNotFound):
+		return http.StatusNotFound
 	case errors.Is(err, llmreg.ErrProviderNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, llmreg.ErrModelRequired), errors.Is(err, llmreg.ErrPurposeUnknown):
@@ -966,6 +969,53 @@ func rememberNamespace(single string, many []string) string {
 		}
 	}
 	return "/"
+}
+
+// invalidate retires the live episode holding an external_key — the pure
+// invalidation of a rejection, for mirrors keyed by the caller's own ids
+// (design-gaia-parity.md, phase 3). With a reason the withdrawal is recorded
+// as a retraction. 200 on retirement as on a replay; 404 when the key never
+// held an episode in this namespace, which is how a desynchronised mirror
+// announces itself.
+func (h *Handler) invalidate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	var body struct {
+		Namespace   string `json:"namespace"`
+		ExternalKey string `json:"external_key"`
+		Reason      string `json:"reason"`
+		Actor       string `json:"actor"`
+	}
+	if err := readBody(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if strings.TrimSpace(body.ExternalKey) == "" {
+		writeErr(w, http.StatusBadRequest, errors.New("external_key is required"))
+		return
+	}
+	out, err := h.Brain.InvalidateKeyed(r.Context(),
+		rememberNamespace(body.Namespace, nil), body.ExternalKey, body.Reason, body.Actor)
+	if !hdl(w, err) {
+		return
+	}
+	resp := map[string]any{
+		"id":                  out.ID,
+		"content":             out.Content,
+		"already_invalidated": out.AlreadyInvalidated,
+		"facts_ended":         out.FactsEnded,
+	}
+	if out.Retraction != nil {
+		resp["retraction"] = out.Retraction
+	}
+	if out.AlreadyInvalidated {
+		resp["message"] = "Already invalidated"
+	} else {
+		resp["message"] = "Memory invalidated"
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) tags(w http.ResponseWriter, r *http.Request) {

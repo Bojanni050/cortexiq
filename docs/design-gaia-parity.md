@@ -1,7 +1,9 @@
 # Design: Gaia-Cloud Parity
 
 > Status: phases 3 and 4 are implemented and merged (PR #8, `ff2d4c7`; CI incl.
-> the Postgres integration tests green). Phase 2 is done except the ANY-filter
+> the Postgres integration tests green), and the dedicated invalidate call
+> (`POST /api/v1/invalidate`, MCP `invalidate`) is built on top of them. Phase 2
+> is done except the ANY-filter
 > and the tag character set (see there). The rest is proposal. Written 2026-11-02, revised 2026-11-03
 > after a review and after reading Gaia-Cloud's merge code. Source of the
 > dependency list: Gaia-Cloud (`Bojanni050/Gaia-Cloud`,
@@ -208,6 +210,20 @@ integration that mirrors external state, so this phase stands on its own.
    standalone `POST /api/v1/sync` is only worth it if Gaia's `cognitionSync.js`
    needs several units written atomically — decide that when porting
    `gaia-logos`.
+
+   As built (`InvalidateKeyed`, on top of merged PR #8): the call retires the
+   live episode holding the key - soft delete, no successor row, `superseded_by`
+   stays NULL - closes the facts whose only live source it was, and frees the
+   key. An optional `reason` is recorded as a retraction (what was rejected and
+   why, instead of silently finding nothing); a repeat is answered with the
+   already retired row (`already_invalidated: true`), and a key that never held
+   an episode in the namespace is a `404` (`ErrExternalKeyNotFound`) so a
+   desynchronised mirror is noticeable. Retirement, fact closing and the
+   retraction record share one transaction with remember's supersede path.
+
+   The MCP tool `invalidate` mirrors it (`external_key` required, `namespace`
+   required, optional `reason`); recall results return `external_key` resolved
+   from episodes only, so an invalidated key disappears from answers.
 
 ```json
 {
