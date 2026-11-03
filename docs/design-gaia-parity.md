@@ -1,6 +1,8 @@
 # Design: Gaia-Cloud Parity
 
-> Status: proposal — not implemented. Written 2026-11-02, revised 2026-11-03
+> Status: phases 3 and 4 are implemented on branch `feat/external-key-refs`
+> (written without a local Go toolchain; verified only by CI). The rest is
+> proposal. Written 2026-11-02, revised 2026-11-03
 > after a review and after reading Gaia-Cloud's merge code. Source of the
 > dependency list: Gaia-Cloud (`Bojanni050/Gaia-Cloud`,
 > `services/gaia-api/src/hindsightClient.js` and `docs/memory-pipe.md`),
@@ -173,6 +175,13 @@ optional `tags_any: []string` next to `tags`, same normalisation
 the two conditions. Build it only once a concrete call site needs it; until
 then the read side works with `tags` alone.
 
+**A bigger gap, found while implementing phase 3:** `NormalizeTags` only accepts
+`^[a-z0-9][a-z0-9_-]*$` (`internal/brain/tags.go`), so Gaia's `gaia:hypothesis`
+and `gaia:confirmed` are **rejected today** because of the colon. Either allow
+`:` inside a tag (a change to the tag vocabulary for everyone) or let the Gaia
+port map `gaia:x` to `gaia-x`. This must be decided before `gaia-logos` is
+pointed at CortexIQ; it blocks the rollout more than the ANY-filter does.
+
 ## Phase 3 — Keyed upsert with superseding versions
 
 ### Why
@@ -218,7 +227,26 @@ With `supersedes: false` and unchanged content the call is a no-op. Rebuild =
 replay all writes; `external_refs` (phase 4) makes each derived record
 traceable, never hand-written.
 
-**Invariant, to be tested:** invalidating the old row and inserting the new one
+**Implementation notes (2026-11-03).** Episodes are immutable in CortexIQ and
+carry no `valid_until`; `remember` writes episodes, and facts only come from
+consolidation. So the design above was adapted:
+
+- The key lives on the **episode**. Superseding retires the old episode with
+  `deleted_at` (the same soft delete forget and retract use) and sets
+  `superseded_by`; the unique index
+  `episodes_external_key_live (namespace_id, external_key)` covers live rows
+  only, so the retired row frees the key for its successor.
+- Facts derived from the old episode are closed (`valid_until` and
+  `known_until` set) **only if** the retired episode was their last live source.
+  A fact that also rests on another live episode stays open.
+- Same key, same content: a no-op that returns the existing id (HTTP 200,
+  `unchanged: true`), decided before the embedding call so a rebuild is cheap.
+- Same key, different content, no `supersedes`: refused (HTTP 409,
+  `ErrExternalKeyExists`) rather than silently rewriting history.
+  `supersedes` without a key is a 400.
+- `external_refs` is `TEXT[]` like `tags`, not jsonb.
+
+**Invariant, tested:** invalidating the old row and inserting the new one
 happen in **one transaction**. A failed write must leave the old row valid; it
 must never leave a gap in which the key resolves to nothing. (The same rule
 EverOS applies to its own merges: retire the old only once the new is complete —
@@ -245,15 +273,17 @@ stays a one-line mapping.
 
 ### Design
 
-Migration: `external_refs jsonb NOT NULL DEFAULT '[]'` on `episodes` and
-`facts`. `POST /api/v1/remember` and the MCP `remember` accept `external_refs:
+Migration `00042_add_external_key_refs.sql`: `external_refs TEXT[] NOT NULL
+DEFAULT '{}'` on `episodes` and `facts`. `POST /api/v1/remember` and the MCP `remember` accept `external_refs:
 []string`; recall returns them verbatim. CortexIQ stores and returns the
 pointer; resolving it (`foundation:<id>` against Gaia's Foundation store) is and
 stays the caller's job — a one-way boundary.
 
-Open question for the implementation: facts consolidated from several episodes
-should carry the union of their episodes' `external_refs`, the way they already
-carry tags.
+Facts consolidated from several episodes carry the sorted union of their
+episodes' `external_refs`, the way they already carry tags (`sourceRefs` in
+`internal/brain/external.go`, used by `storeFact` and `reinforceFact`). Recall
+results return `external_key` (episodes only) and `external_refs`, filled in one
+query per table after the final cut (`attachProvenance`).
 
 ## Phase 5 — Async retain
 

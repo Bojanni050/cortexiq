@@ -300,6 +300,18 @@ At most 8 tags, each up to 32 characters of lowercase letters, digits, '-' or '_
 Leave them out only when the memory genuinely is about nothing in particular: the response then says it was stored untagged and names the tags this namespace already uses, so the next write can pick instead of guess. There is no way to add a tag afterwards.
 {{end}}
 
+{{define "remember_external_key"}}
+Optional id of your own for this memory, for a writer that mirrors something it can name again ("gaia:hypothesis:42", "jira:ABC-123"). Unique per namespace. Writing the same content under the same key again changes nothing, so a rebuild or a retry never duplicates. Writing different content under an existing key is refused unless supersedes is true. No whitespace, at most 200 characters.
+{{end}}
+
+{{define "remember_external_refs"}}
+Optional comma-separated pointers to where this memory came from outside CortexIQ, for example 'commit:bf575f8' or a URL or ticket id. Stored and returned verbatim, never resolved; facts consolidated from this memory inherit them. At most 16, each up to 200 characters without whitespace.
+{{end}}
+
+{{define "remember_supersedes"}}
+Set true together with external_key to replace the memory that currently holds that key with this new content. The old one is retired and its link to the new one kept, and facts that rested only on the old one are closed, all in one step. Without external_key this is an error.
+{{end}}
+
 {{define "recall_tags"}}
 Optional comma-separated tags to narrow the search: only memories carrying all of them are returned (AND, not OR). Tags are lowercase words like 'beslissing' or 'klant-x'; the filter applies to consolidated facts and to raw episodes. Failures and goals have no tags and are excluded when this is set.
 {{end}}

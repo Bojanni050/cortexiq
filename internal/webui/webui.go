@@ -174,13 +174,16 @@ func errStatus(err error) int {
 		errors.Is(err, brain.ErrNamespaceNotFound),
 		errors.Is(err, brain.ErrMentalModelNotGrounded),
 		errors.Is(err, brain.ErrMentalModelRefreshInFlight),
-		errors.Is(err, brain.ErrReasonRequired):
+		errors.Is(err, brain.ErrReasonRequired),
+		errors.Is(err, brain.ErrInvalidExternalKey),
+		errors.Is(err, brain.ErrSupersedesNeedsKey):
 		return http.StatusBadRequest
 	case errors.Is(err, brain.ErrResolutionRequired):
 		return http.StatusBadRequest
 	// The target is still there and still readable, but it already carries a
 	// retraction: a second one would say the same thing twice.
-	case errors.Is(err, brain.ErrAlreadyRetracted):
+	case errors.Is(err, brain.ErrAlreadyRetracted),
+		errors.Is(err, brain.ErrExternalKeyExists):
 		return http.StatusConflict
 	case errors.Is(err, llmreg.ErrProviderNotFound):
 		return http.StatusNotFound
@@ -870,6 +873,13 @@ func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
 		Importance *float32 `json:"importance"`
 		OccurredAt string   `json:"occurred_at"`
 		Tags       []string `json:"tags"`
+		// ExternalKey makes the write keyed (idempotent; see brain.RememberOptions).
+		// Sources is accepted as an alias of ExternalRefs so a client ported from
+		// Hindsight keeps its field name.
+		ExternalKey  string   `json:"external_key"`
+		ExternalRefs []string `json:"external_refs"`
+		Sources      []string `json:"sources"`
+		Supersedes   bool     `json:"supersedes"`
 	}
 	if err := readBody(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -892,11 +902,15 @@ func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	id, decision, err := h.Brain.RememberWithDecision(r.Context(), rememberNamespace(body.Namespace, body.Namespaces), body.Content, brain.RememberOptions{
-		OccurredAt: occurredAt,
-		Importance: importance,
-		Tags:       body.Tags,
+	out, err := h.Brain.RememberWithOutcome(r.Context(), rememberNamespace(body.Namespace, body.Namespaces), body.Content, brain.RememberOptions{
+		OccurredAt:   occurredAt,
+		Importance:   importance,
+		Tags:         body.Tags,
+		ExternalKey:  body.ExternalKey,
+		ExternalRefs: append(body.ExternalRefs, body.Sources...),
+		Supersedes:   body.Supersedes,
 	})
+	id, decision := out.ID, out.Decision
 	if errors.Is(err, brain.ErrSocialCloser) {
 		// Nothing is wrong with the request; the content just is not a memory.
 		// 200 (not 201) keeps clients from reporting a row that was never created,
@@ -925,6 +939,17 @@ func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
 		resp["reasons"] = decision.Reasons
 		resp["secret_labels"] = decision.SecretLabels
 		resp["noise_score"] = decision.NoiseScore
+	}
+	if out.SupersededID != 0 {
+		resp["superseded"] = out.SupersededID
+		resp["facts_ended"] = out.FactsEnded
+	}
+	if out.Unchanged {
+		// A replay of a keyed write: nothing was created, so 200 and not 201.
+		resp["unchanged"] = true
+		resp["message"] = "Memory already up to date"
+		writeJSON(w, http.StatusOK, resp)
+		return
 	}
 	writeJSON(w, http.StatusCreated, resp)
 }
