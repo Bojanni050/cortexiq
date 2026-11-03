@@ -13,12 +13,14 @@
 
 Gaia-Cloud cannot swap `hindsightClient.js` for CortexIQ until six dependencies
 are covered. Each one is named from Gaia's own code, with the current CortexIQ
-state and the proposed port.
+state and the proposed port. Dependency 2 (tags) was found already built when
+this document was reviewed on 2026-11-03; Phase 2 below is reduced to the one
+remaining gap.
 
 | # | Gaia dependency | Where in Gaia-Cloud | CortexIQ today |
 |---|---|---|---|
 | 1 | Banks + cross-bank recall with per-bank quota | `createCrossBankRecallClient`, `CROSS_BANK_QUOTA = 3` | namespaces fuse into one RRF list on one scale |
-| 2 | Arbitrary tags per item, readable in recall output | `memoryKindOf` reads item tags; `gaia:*` tags | tags exist only on mental models |
+| 2 | Arbitrary tags per item, readable in recall output | `memoryKindOf` reads item tags; `gaia:*` tags | **done** (migration 00037): tags on episodes and facts, accepted by `remember`, returned by `recall`, AND-filter; only an ANY-filter is open |
 | 3 | Superseding version writes + rebuildable mirror | `cognitionSync.js`, `reconcile-hindsight-tags.js` | superseding facts and `forget` exist; no sync operation |
 | 4 | Provenance `sources: ['foundation:<id>']` | `evidenceRecall.js` Dual Recall | no per-item sources field |
 | 5 | Async fire-and-forget retain | `reflectOnTurn` (`async: true, timeout: null`) | `POST /api/v1/remember` is synchronous |
@@ -80,27 +82,32 @@ per-bank duration and returned count, mirroring the existing arm traces.
 Validation: extend `internal/brain/recall_test.go` with a fixture where bank A
 would win a global sort 8-of-9 and assert the quota contract (3/3/3 first).
 
-## Phase 2 — Tags on episodes and facts
+## Phase 2 — Tags on episodes and facts (mostly done)
 
 ### Why
 
 Gaia renders each recalled item with an epistemic mark read from its tags:
 "confirmed by the person", "your own hypothesis, never confirmed", "a pattern
-you formed". In CortexIQ only mental models carry tags
-(`internal/brain/mental_model.go`), and recall cannot filter or return them.
+you formed".
 
-### Design
+### Already built
 
-Migration: `tags text NOT NULL DEFAULT '{}'` on `episodes` and `facts`
-(`[]string`, same storage as mental models).
+Migration `00037_add_tags.sql` adds `tags TEXT[]` (with GIN indexes) to
+`episodes` and `facts`. `POST /api/v1/remember` and the MCP `remember` tool
+accept `tags`; consolidation carries the union of source-episode tags onto
+extracted facts (`internal/brain/consolidate.go`); `POST /api/v1/recall` and MCP
+recall accept `tags` and return each item's `tags`. Epistemic marks stay
+client-side (Gaia's `memoryKindOf`): CortexIQ stores and returns tags, it does
+not interpret them.
 
-- `POST /api/v1/remember` and the MCP `remember` tool accept `tags: []string`.
-  Consolidation carries the union (capped) of source-episode tags onto extracted
-  facts so `gaia:hypothesis` survives extraction.
-- `POST /api/v1/recall` accepts `tags: []string` (ANY-match) and returns each
-  item's `tags`. MCP recall mirrors both.
-- Epistemic marks themselves stay client-side (Gaia's `memoryKindOf`): CortexIQ
-  stores and returns tags, it does not interpret them.
+### Remaining gap
+
+The existing recall filter is **AND** (an item must carry every listed tag). Gaia
+may need **OR** (e.g. `gaia:hypothesis` or `gaia:pattern`). Add an optional
+`tags_any: []string` next to `tags`, same normalisation (`NormalizeTags`), same
+GIN index (`&&` overlap operator). Both set means AND of the two conditions.
+Only build this once a concrete Gaia call site needs it; until then the
+read side works with `tags` alone.
 
 ## Phase 3 — Superseding version sync (the Cognition mirror)
 
@@ -206,8 +213,9 @@ from data rather than convention. Existing namespaces backfill to
 
 ## Migration and rollout order
 
-One migration adds: `tags`, `sources`, `external_key` (+ unique index), and
-`agent_identity` on episodes and facts, plus the `write_jobs` table. The
+One migration adds: `sources`, `external_key` (+ unique index), and
+`agent_identity` on episodes and facts, plus the `write_jobs` table (`tags`
+already shipped in 00037). The
 `banks` mode of recall needs no migration. Ship phases in pairs —
 (1, 2) read side, (3, 4) write side, (5, 6) operational — each pair is
 independently shippable and leaves recall behavior untouched unless the new
