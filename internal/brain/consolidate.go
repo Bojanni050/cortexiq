@@ -625,11 +625,11 @@ func (b *Brain) storeFactWithConfig(ctx context.Context, nsID int64, sf *reasone
 
 	var factID int64
 	err = b.pool.QueryRow(ctx,
-		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, entity, property, value, valid_from, importance, tags)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, entity, property, value, valid_from, importance, tags, external_refs)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
 		nsID, sf.Summary, pgvector.NewVector(vec), b.embedder.Model(), confidence,
 		strPtrOrNull(sf.Entity), strPtrOrNull(sf.Property), strPtrOrNull(sf.Value), now,
-		b.sourceImportance(ctx, episodeIDs), b.sourceTags(ctx, episodeIDs),
+		b.sourceImportance(ctx, episodeIDs), b.sourceTags(ctx, episodeIDs), b.sourceRefs(ctx, episodeIDs),
 	).Scan(&factID)
 	if err != nil {
 		return r, fmt.Errorf("insert fact: %w", err)
@@ -665,9 +665,10 @@ func (b *Brain) reinforceFact(ctx context.Context, factID int64, episodeIDs []in
 		`UPDATE facts SET confidence = LEAST(1.0, confidence + (1 - confidence) * $2),
 		        importance = GREATEST(importance, $3),
 		        tags = (SELECT COALESCE(array_agg(DISTINCT t ORDER BY t), '{}') FROM unnest(tags || $4) AS t),
+		        external_refs = (SELECT COALESCE(array_agg(DISTINCT r ORDER BY r), '{}') FROM unnest(external_refs || $5::text[]) AS r),
 		        updated_at = now()
 		 WHERE id = $1`,
-		factID, reinforceStep, b.sourceImportance(ctx, episodeIDs), b.sourceTags(ctx, episodeIDs),
+		factID, reinforceStep, b.sourceImportance(ctx, episodeIDs), b.sourceTags(ctx, episodeIDs), b.sourceRefs(ctx, episodeIDs),
 	)
 	for _, eid := range episodeIDs {
 		_, _ = b.pool.Exec(ctx,

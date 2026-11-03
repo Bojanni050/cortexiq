@@ -158,6 +158,9 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("occurred_at", mcp.Description(render("occurred_at_param"))),
 		mcp.WithNumber("importance", mcp.Description(render("remember_importance")), mcp.DefaultNumber(0.5)),
 		mcp.WithString("tags", mcp.Description(render("remember_tags"))),
+		mcp.WithString("external_key", mcp.Description(render("remember_external_key"))),
+		mcp.WithString("external_refs", mcp.Description(render("remember_external_refs"))),
+		mcp.WithBoolean("supersedes", mcp.Description(render("remember_supersedes"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		content := request.GetString("content", "")
 		namespace, err := requiredNamespace(request.GetString("namespace", ""))
@@ -174,11 +177,15 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		if err != nil {
 			return nil, err
 		}
-		id, decision, err := bc.Brain.RememberWithDecision(ctx, namespace, content, brain.RememberOptions{
-			OccurredAt: occurredAt,
-			Importance: importance,
-			Tags:       tags,
+		out, err := bc.Brain.RememberWithOutcome(ctx, namespace, content, brain.RememberOptions{
+			OccurredAt:   occurredAt,
+			Importance:   importance,
+			Tags:         tags,
+			ExternalKey:  request.GetString("external_key", ""),
+			ExternalRefs: splitList(request.GetString("external_refs", "")),
+			Supersedes:   request.GetBool("supersedes", false),
 		})
+		id, decision := out.ID, out.Decision
 		if errors.Is(err, brain.ErrSocialCloser) {
 			return skippedResult(err)
 		}
@@ -199,7 +206,15 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			stored = []string{}
 		}
 		result := map[string]any{"id": id, "tags": stored, "message": "Memory remembered successfully"}
-		if len(tags) == 0 {
+		if out.SupersededID != 0 {
+			result["superseded"] = out.SupersededID
+			result["facts_ended"] = out.FactsEnded
+		}
+		if out.Unchanged {
+			result["unchanged"] = true
+			result["message"] = "Memory already up to date"
+		}
+		if len(tags) == 0 && !out.Unchanged {
 			// The memory is stored; what is missing is the tag. Say so on the turn
 			// where the writer can still act on it, and hand over the vocabulary
 			// this namespace already uses so the next write reuses it.

@@ -49,6 +49,13 @@ type RecallResult struct {
 	// orthogonal to NamespaceID, which says where it belongs. Facts inherit the
 	// tags of the episodes they were consolidated from.
 	Tags []string `json:"tags,omitempty"`
+	// ExternalKey is the writer's own id for an episode ("gaia:hypothesis:42").
+	// Facts have none: a fact is derived, so it points back via ExternalRefs.
+	ExternalKey string `json:"external_key,omitempty"`
+	// ExternalRefs are the opaque pointers the writer attached to where the
+	// memory came from outside CortexIQ. Facts inherit those of their source
+	// episodes. Stored and returned verbatim, never resolved.
+	ExternalRefs []string `json:"external_refs,omitempty"`
 	// Feedback is the net of the callers' verdicts on this fact (+1 helpful,
 	// -1 wrong), counting only each principal's latest vote. It is absent when
 	// nobody voted or the votes cancel out, and it scales Score by a bounded
@@ -452,6 +459,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 	if len(results) > limit {
 		results = results[:limit]
 	}
+	b.attachProvenance(ctx, results)
 
 	// A traced recall is an inspection, not a use: like a historical lookup it
 	// must not keep facts from decaying.

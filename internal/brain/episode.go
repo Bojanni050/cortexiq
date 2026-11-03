@@ -36,6 +36,19 @@ type RememberOptions struct {
 	// "klant-x"). They are orthogonal to the namespace and normalized by
 	// NormalizeTags. Facts consolidated from this episode inherit them.
 	Tags []string
+	// ExternalKey makes the write keyed: the caller's own id for this memory
+	// ("gaia:hypothesis:42"), unique per namespace among live episodes. Writing
+	// the same content again is a no-op. Writing different content is refused
+	// (ErrExternalKeyExists) unless Supersedes is set, in which case the old
+	// episode is retired and the new one replaces it in one transaction.
+	ExternalKey string
+	// ExternalRefs are opaque pointers to where the memory came from outside
+	// CortexIQ ("commit:bf575f8"). Facts consolidated from this episode inherit
+	// them. They are stored and returned verbatim, never resolved.
+	ExternalRefs []string
+	// Supersedes allows a keyed write to replace an episode holding different
+	// content. It requires ExternalKey.
+	Supersedes bool
 }
 
 // RememberWithImportance is Remember with an explicit importance in 0..1
@@ -67,20 +80,56 @@ func (b *Brain) RememberWith(ctx context.Context, namespaceSlug, content string,
 // instead of the original, so the secret never reaches the database even when
 // the write is allowed through.
 func (b *Brain) RememberWithDecision(ctx context.Context, namespaceSlug, content string, opts RememberOptions) (int64, WriteDecision, error) {
+	out, err := b.RememberWithOutcome(ctx, namespaceSlug, content, opts)
+	return out.ID, out.Decision, err
+}
+
+// RememberOutcome is what a write did, for callers that must tell a new memory
+// from a replayed one or from a superseding version.
+type RememberOutcome struct {
+	// ID is the live episode that now holds the content. For an Unchanged write
+	// it is the existing episode; no row was written.
+	ID       int64
+	Decision WriteDecision
+	// Unchanged is true when ExternalKey already held exactly this content, so
+	// the write was a replay and changed nothing.
+	Unchanged bool
+	// SupersededID is the episode this write retired under the same ExternalKey,
+	// or 0 when it replaced nothing.
+	SupersededID int64
+	// FactsEnded counts derived facts closed because the superseded episode was
+	// their only live source.
+	FactsEnded int64
+}
+
+// RememberWithOutcome is RememberWithDecision with the full outcome. With an
+// ExternalKey the write is keyed: see RememberOptions.
+func (b *Brain) RememberWithOutcome(ctx context.Context, namespaceSlug, content string, opts RememberOptions) (RememberOutcome, error) {
 	var decision WriteDecision
 	if err := requireWrite(ctx); err != nil {
-		return 0, decision, err
+		return RememberOutcome{Decision: decision}, err
 	}
 	if err := validateContent(content); err != nil {
-		return 0, decision, err
+		return RememberOutcome{Decision: decision}, err
 	}
 	importance := opts.Importance
 	if importance < 0 || importance > 1 || importance != importance {
-		return 0, decision, fmt.Errorf("importance must be between 0 and 1, got %v", importance)
+		return RememberOutcome{Decision: decision}, fmt.Errorf("importance must be between 0 and 1, got %v", importance)
 	}
 	tags, err := NormalizeTags(opts.Tags)
 	if err != nil {
-		return 0, decision, err
+		return RememberOutcome{Decision: decision}, err
+	}
+	externalKey, err := NormalizeExternalKey(opts.ExternalKey)
+	if err != nil {
+		return RememberOutcome{Decision: decision}, err
+	}
+	externalRefs, err := NormalizeExternalRefs(opts.ExternalRefs)
+	if err != nil {
+		return RememberOutcome{Decision: decision}, err
+	}
+	if opts.Supersedes && externalKey == "" {
+		return RememberOutcome{Decision: decision}, ErrSupersedesNeedsKey
 	}
 
 	// The write filter is the second gate in front of every write path (after
@@ -89,7 +138,7 @@ func (b *Brain) RememberWithDecision(ctx context.Context, namespaceSlug, content
 	// a rejected write costs nothing.
 	decision = classifyWrite(content, importance, b.config.WriteFilter)
 	if err := applyWriteDecision(decision); err != nil {
-		return 0, decision, err
+		return RememberOutcome{Decision: decision}, err
 	}
 	if decision.Action == "warn" && decision.Redacted != "" && b.config.WriteFilterRedactSecrets {
 		content = decision.Redacted
@@ -103,19 +152,19 @@ func (b *Brain) RememberWithDecision(ctx context.Context, namespaceSlug, content
 	socialFilter := b.config.SocialFilter
 
 	if err := validatePath(namespaceSlug); err != nil {
-		return 0, decision, err
+		return RememberOutcome{Decision: decision}, err
 	}
 
 	nsID, err := b.resolveNamespaceID(ctx, namespaceSlug)
 	if err != nil {
-		return 0, decision, err
+		return RememberOutcome{Decision: decision}, err
 	}
 
 	if eff, err := b.EffectiveNamespaceConfig(ctx, namespaceSlug); err == nil && eff != nil {
 		socialFilter = eff.SocialFilter()
 	}
 	if socialFilter && socialCloser(content) {
-		return 0, decision, ErrSocialCloser
+		return RememberOutcome{Decision: decision}, ErrSocialCloser
 	}
 
 	occurred := time.Now().UTC()
@@ -123,27 +172,145 @@ func (b *Brain) RememberWithDecision(ctx context.Context, namespaceSlug, content
 		occurred = *opts.OccurredAt
 	}
 
-	vec, err := b.embedder.Embed(ctx, content)
-	if err != nil {
-		return 0, decision, fmt.Errorf("embed: %w", err)
+	// A keyed replay is decided before the embedding call: writing the same
+	// content under the same key again must cost nothing, which is what makes a
+	// rebuild from scratch cheap. The check is repeated under a row lock below.
+	if externalKey != "" {
+		var existingID int64
+		var existingContent string
+		err := b.pool.QueryRow(ctx,
+			`SELECT id, content FROM episodes
+			  WHERE namespace_id = $1 AND external_key = $2 AND deleted_at IS NULL`,
+			nsID, externalKey,
+		).Scan(&existingID, &existingContent)
+		switch {
+		case err == nil && existingContent == content:
+			return RememberOutcome{ID: existingID, Decision: decision, Unchanged: true}, nil
+		case err == nil && !opts.Supersedes:
+			return RememberOutcome{Decision: decision}, ErrExternalKeyExists
+		case err != nil && !errors.Is(err, pgx.ErrNoRows):
+			return RememberOutcome{Decision: decision}, fmt.Errorf("look up external key: %w", err)
+		}
 	}
 
-	var id int64
-	err = b.pool.QueryRow(ctx,
-		`INSERT INTO episodes (namespace_id, content, embedding, embedding_model, occurred_at, importance, tags)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-		nsID, content, pgvector.NewVector(vec), b.embedder.Model(), occurred, importance, tagsOrEmpty(tags),
-	).Scan(&id)
+	vec, err := b.embedder.Embed(ctx, content)
 	if err != nil {
-		return 0, decision, fmt.Errorf("insert episode: %w", err)
+		return RememberOutcome{Decision: decision}, fmt.Errorf("embed: %w", err)
+	}
+
+	out, err := b.insertEpisode(ctx, nsID, content, vec, occurred, importance, tags, externalKey, externalRefs, opts.Supersedes)
+	out.Decision = decision
+	if err != nil {
+		return out, err
 	}
 	// Let the consolidator pick this up right away, unless this is an eval
 	// write: /eval/ episodes exist to measure recall and must not turn into
 	// facts while the evaluation is still running.
-	if !strings.HasPrefix(namespaceSlug, "/eval/") {
+	if !out.Unchanged && !strings.HasPrefix(namespaceSlug, "/eval/") {
 		b.noteEpisode(nsID)
 	}
-	return id, decision, nil
+	return out, nil
+}
+
+// insertEpisode writes the episode in one transaction. For a keyed write that
+// replaces an existing episode, retiring the old one and inserting the new one
+// happen together: if anything fails the old episode is still live and the key
+// still resolves to it, never to nothing.
+func (b *Brain) insertEpisode(ctx context.Context, nsID int64, content string, vec []float32, occurred time.Time, importance float32, tags []string, externalKey string, externalRefs []string, supersedes bool) (RememberOutcome, error) {
+	var out RememberOutcome
+
+	tx, err := b.pool.Begin(ctx)
+	if err != nil {
+		return out, fmt.Errorf("remember: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var oldID int64
+	if externalKey != "" {
+		var oldContent string
+		err := tx.QueryRow(ctx,
+			`SELECT id, content FROM episodes
+			  WHERE namespace_id = $1 AND external_key = $2 AND deleted_at IS NULL
+			  FOR UPDATE`,
+			nsID, externalKey,
+		).Scan(&oldID, &oldContent)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			oldID = 0
+		case err != nil:
+			return out, fmt.Errorf("lock external key: %w", err)
+		case oldContent == content:
+			// Another writer got here first with the same content.
+			out.ID, out.Unchanged = oldID, true
+			return out, nil
+		case !supersedes:
+			return out, ErrExternalKeyExists
+		}
+		// Retire the old episode before the insert: the unique index only
+		// covers live rows, so the key is free again from here on.
+		if oldID != 0 {
+			if _, err := tx.Exec(ctx,
+				`UPDATE episodes SET deleted_at = now() WHERE id = $1`, oldID,
+			); err != nil {
+				return out, fmt.Errorf("retire superseded episode: %w", err)
+			}
+		}
+	}
+
+	var key *string
+	if externalKey != "" {
+		key = &externalKey
+	}
+	var id int64
+	err = tx.QueryRow(ctx,
+		`INSERT INTO episodes (namespace_id, content, embedding, embedding_model, occurred_at, importance, tags, external_key, external_refs)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+		nsID, content, pgvector.NewVector(vec), b.embedder.Model(), occurred, importance, tagsOrEmpty(tags), key, refsOrEmpty(externalRefs),
+	).Scan(&id)
+	if isUniqueViolation(err) {
+		return RememberOutcome{}, ErrExternalKeyExists
+	}
+	if err != nil {
+		return out, fmt.Errorf("insert episode: %w", err)
+	}
+	out.ID = id
+
+	if oldID != 0 {
+		if _, err := tx.Exec(ctx,
+			`UPDATE episodes SET superseded_by = $2 WHERE id = $1`, oldID, id,
+		); err != nil {
+			return out, fmt.Errorf("link superseded episode: %w", err)
+		}
+		// A fact whose only live source was the retired episode described the
+		// old version. Close it the way decay and contradiction resolution do:
+		// valid_until and known_until stop at the same instant.
+		tag, err := tx.Exec(ctx,
+			`UPDATE facts f
+			    SET valid_until = COALESCE(f.valid_until, now()),
+			        known_until = now(),
+			        updated_at  = now()
+			  WHERE f.deleted_at IS NULL
+			    AND f.known_until IS NULL
+			    AND EXISTS (SELECT 1 FROM fact_sources s
+			                 WHERE s.fact_id = f.id AND s.episode_id = $1)
+			    AND NOT EXISTS (SELECT 1 FROM fact_sources s
+			                      JOIN episodes e ON e.id = s.episode_id
+			                     WHERE s.fact_id = f.id AND e.id <> $1 AND e.deleted_at IS NULL)`,
+			oldID,
+		)
+		if err != nil {
+			return out, fmt.Errorf("end facts of superseded episode: %w", err)
+		}
+		out.SupersededID, out.FactsEnded = oldID, tag.RowsAffected()
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		if isUniqueViolation(err) {
+			return RememberOutcome{}, ErrExternalKeyExists
+		}
+		return RememberOutcome{}, fmt.Errorf("remember: commit: %w", err)
+	}
+	return out, nil
 }
 
 // findEpisode returns the episode closest to query across the given
