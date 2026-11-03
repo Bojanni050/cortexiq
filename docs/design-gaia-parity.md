@@ -1,8 +1,8 @@
 # Design: Gaia-Cloud Parity
 
-> Status: phases 3 and 4 are implemented on branch `feat/external-key-refs`
-> (written without a local Go toolchain; verified only by CI). The rest is
-> proposal. Written 2026-11-02, revised 2026-11-03
+> Status: phases 3 and 4 are implemented and merged (PR #8, `ff2d4c7`; CI incl.
+> the Postgres integration tests green). Phase 2 is done except the ANY-filter
+> and the tag character set (see there). The rest is proposal. Written 2026-11-02, revised 2026-11-03
 > after a review and after reading Gaia-Cloud's merge code. Source of the
 > dependency list: Gaia-Cloud (`Bojanni050/Gaia-Cloud`,
 > `services/gaia-api/src/hindsightClient.js` and `docs/memory-pipe.md`),

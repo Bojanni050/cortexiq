@@ -93,3 +93,9 @@ voor de regel dat er na 1000 regels een nieuw walkthrough-bestand komt.
 - Findings: Go 1.27.3 via winget geïnstalleerd (go.mod vraagt 1.25.5). `go build` en `go vet` op branch feat/external-key-refs zijn schoon; `go test ./...` slaagt voor alle 19 pakketten, inclusief de nieuwe normalisatietests.
 - Conclusions: de nieuwe SQL (keyed upsert, supersede, feiten sluiten, provenance-lookup) en de vier integratietests in `external_test.go` zijn nog niet gedraaid: `CORTEXIQ_TEST_DSN` ontbreekt omdat er geen Postgres met pgvector op deze pc staat. Die gaan pas in CI (pull request) lopen.
 - Actions: geen codewijzigingen nodig; alleen deze notitie.
+
+## 2026-11-03 (PR #8 gemerged: fase 3+4 in main)
+
+- Findings: na de fix van de per ongeluk meegecommitte `/api/v1/status`-regel (8023028) slaagden alle drie de checks op PR #8, inclusief "Build, vet and test" met echte Postgres en pgvector; daarmee zijn de SQL-paden en de vier integratietests uit `external_test.go` bewezen. Gemerged als `ff2d4c7`.
+- Conclusions: fase 3 (keyed upsert + supersede) en fase 4 (`external_refs`) staan in main. Open voor de Gaia-uitrol: de tag-tekenset (`gaia:hypothesis` met dubbele punt wordt door `NormalizeTags` geweigerd) en daarna fase 1 pas na meting.
+- Actions: lokale main fast-forward bijgewerkt; statusregel in `docs/design-gaia-parity.md` aangepast van "branch" naar "gemerged".
