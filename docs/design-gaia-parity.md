@@ -52,38 +52,62 @@ for free.
 {
   "query": "wat weet je over de outages in maart",
   "banks": [
-    {"namespace": "/people/bojan",   "quota": 3},
-    {"namespace": "/self/gaia",      "quota": 3},
-    {"namespace": "/projects/gaia-logos", "quota": 3}
+    {"namespace": "/people/bojan"},
+    {"namespace": "/self/gaia"},
+    {"namespace": "/projects/gaia-logos"}
   ],
+  "quota": 3,
   "limit": 9
 }
 ```
 
-Merge algorithm. Steps 1, 2 and 4 are the contract Gaia relies on. Step 3
-(interleave by rank position) is **our assumption**, not a verified port: read
-`createCrossBankRecallClient` in Gaia-Cloud and align step 3 with what it
-actually does before building.
+`quota` is optional and request-wide, as in Gaia (`options.quota`). When
+omitted it is derived: `max(1, ceil(limit / answering_banks))`, where a bank
+only counts as answering if it returned at least one item. Three banks and
+`limit: 9` give 3 each; two give 5 and 4; this is Gaia's
+`quotaForBankCount(count, MEMORY_MAX_LINES)` with `limit` standing in for the
+line budget (default 9). A per-bank quota is not part of the contract.
+
+Merge algorithm, **verified against `mergeBankSlices` and
+`createCrossBankRecallClient`** (`services/gaia-api/src/hindsightClient.js`,
+2026-11-03). An earlier draft of this document had steps 2–4 wrong:
 
 1. Run the existing per-namespace recall pipeline **once per bank**, in
-   parallel. RRF, rerank, temporal and MMR all stay *within* a bank — that is
-   what makes bank scores incomparable, and why they must not be globally
-   sorted up front.
-2. **Quota round:** emit up to `quota` items from each bank, in each bank's own
-   rank order. This guarantees "each bank speaks before any bank repeats,"
-   independent of absolute scores.
-3. **Remainder round:** after all banks spent their quota, remaining items
-   follow in global order *within* each bank's score scale, interleaved by
-   rank position (bank A's #4, bank B's #4, ...), until `limit` is reached.
-4. Never compare raw scores across banks at any point.
+   parallel. RRF, rerank, temporal and MMR all stay *within* a bank. Each
+   bank's slice is re-sorted best-first by its final score.
+2. **Quota rounds, round-robin:** for round 1..`quota`, take the next-best item
+   of each bank in bank order — best of each bank, then second best of each,
+   and so on. This is *interleaved*, not "all of bank A, then all of bank B":
+   with a hard line cap the order decides who is cut. A bank that runs out
+   simply skips its turn. Items without a finite score get no reserved place
+   and wait in the tail.
+3. **Tail:** everything not claimed follows sorted by **global score**. This
+   does compare raw scores across banks, but only for items beyond the quota,
+   where the damage a loud bank can do is bounded. Gaia says so itself: "the
+   old global score order, so nothing is lost and a single-bank caller is
+   unchanged." A single bank therefore behaves exactly like today's recall.
+4. **Best-effort per bank:** a bank that errors or times out contributes an empty
+   slice instead of failing the whole recall, and does not count toward the
+   derived quota. The response should say which banks were dropped.
+5. Truncate to `limit` after merging (Gaia truncates later, at the prompt
+   line budget).
+
+Our scores are RRF/rerank values, no more comparable across namespaces than
+Hindsight's. Replicate the global-score tail for parity and keep it behind one
+internal function so a rank-interleaved tail (bank A's #4, bank B's #4, …) can
+replace it later if the tail proves noisy. That alternative is *ours*, not
+Gaia's, and is not the default.
 
 Every result item gains a `bank` field so the caller can render the epistemic
 mark per bank (Gaia renders `gaia-logos` items as "confirmed by the person",
 `gaia` items as her own memory). The trace gains a `banks` section with
-per-bank duration and returned count, mirroring the existing arm traces.
+per-bank duration, returned count and error, mirroring the existing arm traces.
 
 Validation: extend `internal/brain/recall_test.go` with a fixture where bank A
-would win a global sort 8-of-9 and assert the quota contract (3/3/3 first).
+would win a global sort 8-of-9 and assert (a) the round-robin order — A1, B1,
+C1, A2, B2, C2, A3, B3, C3 — (b) the tail in global score order, (c) one
+failing bank leaves the other two intact with a recomputed quota. Port the cases
+of `test/hindsightCrossBankRecall.test.js` rather than inventing new ones.
 
 ## Phase 2 — Tags on episodes and facts (mostly done)
 
