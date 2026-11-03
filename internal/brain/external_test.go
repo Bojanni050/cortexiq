@@ -290,3 +290,119 @@ func TestIntegrationExternalRefsInheritAndRecall(t *testing.T) {
 		t.Error("recall did not return the fact with its inherited refs")
 	}
 }
+
+// A keyed invalidation retires the live episode without writing a successor,
+// records a given reason as a retraction, closes the facts that rested only on
+// it, and frees the key for a later new write.
+func TestIntegrationInvalidateKeyed(t *testing.T) {
+	e := newEnv(t, nil)
+
+	old, err := e.b.RememberWithOutcome(e.ctx, e.ns, "hypotheses ship without review", RememberOptions{
+		ExternalKey: "gaia:hypothesis:9", ExternalRefs: []string{"foundation:9f3a"},
+	})
+	if err != nil {
+		t.Fatalf("old write: %v", err)
+	}
+	other, err := e.b.RememberWith(e.ctx, e.ns, "an unrelated second observation about review", RememberOptions{})
+	if err != nil {
+		t.Fatalf("other write: %v", err)
+	}
+	if _, err := e.b.storeFact(e.ctx, e.nsID, &reasoner.StructuredFact{
+		Entity: "hypotheses", Property: "ship", Value: "without review", Summary: "hypotheses ship without review",
+	}, []int64{old.ID}); err != nil {
+		t.Fatalf("storeFact(only old): %v", err)
+	}
+	if _, err := e.b.storeFact(e.ctx, e.nsID, &reasoner.StructuredFact{
+		Entity: "review", Property: "is", Value: "a gate", Summary: "review is a gate",
+	}, []int64{old.ID, other}); err != nil {
+		t.Fatalf("storeFact(shared): %v", err)
+	}
+
+	out, err := e.b.InvalidateKeyed(e.ctx, e.ns, "gaia:hypothesis:9", "hypothesis was rejected", "mcp")
+	if err != nil {
+		t.Fatalf("invalidate: %v", err)
+	}
+	if out.AlreadyInvalidated || out.ID != old.ID || out.Content != "hypotheses ship without review" {
+		t.Fatalf("outcome = %+v, want it to retire episode %d", out, old.ID)
+	}
+	if out.FactsEnded != 1 {
+		t.Errorf("FactsEnded = %d, want 1 (only the fact resting solely on the episode)", out.FactsEnded)
+	}
+	if out.Retraction == nil || out.Retraction.Reason != "hypothesis was rejected" || out.Retraction.RetractedBy != "mcp" {
+		t.Errorf("retraction = %+v, want the recorded reason and actor", out.Retraction)
+	}
+
+	live, _, _, _ := e.episodeRow(t, old.ID)
+	if live {
+		t.Error("the invalidation must retire the episode")
+	}
+
+	var hadRetraction bool
+	if err := e.b.pool.QueryRow(e.ctx,
+		`SELECT EXISTS (SELECT 1 FROM retractions WHERE target_type = 'episode' AND target_id = $1 AND reason = 'hypothesis was rejected')`,
+		old.ID,
+	).Scan(&hadRetraction); err != nil {
+		t.Fatalf("read retraction: %v", err)
+	}
+	if !hadRetraction {
+		t.Error("the reason was not recorded as a retraction")
+	}
+
+	var endedOnlyOld, endedShared bool
+	if err := e.b.pool.QueryRow(e.ctx,
+		`SELECT known_until IS NOT NULL FROM facts WHERE content = $1 AND namespace_id = $2`,
+		"hypotheses ship without review", e.nsID,
+	).Scan(&endedOnlyOld); err != nil {
+		t.Fatalf("read fact: %v", err)
+	}
+	if err := e.b.pool.QueryRow(e.ctx,
+		`SELECT known_until IS NOT NULL FROM facts WHERE content = $1 AND namespace_id = $2`,
+		"review is a gate", e.nsID,
+	).Scan(&endedShared); err != nil {
+		t.Fatalf("read fact: %v", err)
+	}
+	if !endedOnlyOld {
+		t.Error("the fact resting only on the invalidated episode should be closed")
+	}
+	if endedShared {
+		t.Error("a fact with another live source must stay open")
+	}
+
+	// A repeat is a replay, not a failure: the answer points at the retired row.
+	again, err := e.b.InvalidateKeyed(e.ctx, e.ns, "gaia:hypothesis:9", "", "mcp")
+	if err != nil {
+		t.Fatalf("repeat: %v", err)
+	}
+	if !again.AlreadyInvalidated || again.ID != old.ID || again.FactsEnded != 0 || again.Retraction != nil {
+		t.Fatalf("repeat outcome = %+v, want already_invalidated with no new rows", again)
+	}
+
+	// The retirement frees the key: a new version does not need supersedes.
+	fresh, err := e.b.RememberWithOutcome(e.ctx, e.ns, "hypotheses ship after review", RememberOptions{
+		ExternalKey: "gaia:hypothesis:9",
+	})
+	if err != nil || fresh.Unchanged || fresh.SupersededID != 0 {
+		t.Fatalf("write after invalidation = %+v %v, want a plain new episode", fresh, err)
+	}
+}
+
+// An invalidation that names a key nothing ever held in this namespace is
+// refused: the caller's mirror and the store disagree, and that must be
+// noticeable rather than answered with a success.
+func TestIntegrationInvalidateUnknownKey(t *testing.T) {
+	e := newEnv(t, nil)
+
+	if _, err := e.b.InvalidateKeyed(e.ctx, e.ns, "gaia:hypothesis:404", "no such statement", "mcp"); !errors.Is(err, ErrExternalKeyNotFound) {
+		t.Fatalf("want ErrExternalKeyNotFound, got %v", err)
+	}
+
+	var n int
+	if err := e.b.pool.QueryRow(e.ctx,
+		`SELECT count(*) FROM retractions WHERE namespace_id = $1`, e.nsID,
+	).Scan(&n); err != nil {
+		t.Fatalf("count retractions: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("a refused invalidation must record nothing, found %d retractions", n)
+	}
+}

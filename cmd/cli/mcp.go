@@ -231,6 +231,43 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
+	mcpServer.AddTool(mcp.NewTool("invalidate",
+		mcp.WithDescription(render("invalidate_description")),
+		mcp.WithString("namespace", mcp.Description(render("remember_namespace")), mcp.Required()),
+		mcp.WithString("external_key", mcp.Description(render("invalidate_external_key")), mcp.Required()),
+		mcp.WithString("reason", mcp.Description(render("invalidate_reason"))),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		namespace, err := requiredNamespace(request.GetString("namespace", ""))
+		if err != nil {
+			return nil, err
+		}
+		out, err := bc.Brain.InvalidateKeyed(ctx, namespace,
+			request.GetString("external_key", ""),
+			request.GetString("reason", ""),
+			"mcp",
+		)
+		if err != nil {
+			return nil, err
+		}
+		result := map[string]any{
+			"id":                  out.ID,
+			"already_invalidated": out.AlreadyInvalidated,
+			"facts_ended":         out.FactsEnded,
+			"message": map[bool]string{
+				true:  "Already invalidated",
+				false: "Memory invalidated",
+			}[out.AlreadyInvalidated],
+		}
+		if out.Content != "" {
+			result["content"] = out.Content
+		}
+		if out.Retraction != nil {
+			result["retraction"] = out.Retraction
+		}
+		b, _ := json.Marshal(result)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
 	mcpServer.AddTool(mcp.NewTool("recall",
 		mcp.WithDescription(render("recall_description")),
 		mcp.WithString("query", mcp.Description(render("recall_query")), mcp.Required()),

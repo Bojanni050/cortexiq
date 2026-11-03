@@ -284,24 +284,11 @@ func (b *Brain) insertEpisode(ctx context.Context, nsID int64, content string, v
 		// A fact whose only live source was the retired episode described the
 		// old version. Close it the way decay and contradiction resolution do:
 		// valid_until and known_until stop at the same instant.
-		tag, err := tx.Exec(ctx,
-			`UPDATE facts f
-			    SET valid_until = COALESCE(f.valid_until, now()),
-			        known_until = now(),
-			        updated_at  = now()
-			  WHERE f.deleted_at IS NULL
-			    AND f.known_until IS NULL
-			    AND EXISTS (SELECT 1 FROM fact_sources s
-			                 WHERE s.fact_id = f.id AND s.episode_id = $1)
-			    AND NOT EXISTS (SELECT 1 FROM fact_sources s
-			                      JOIN episodes e ON e.id = s.episode_id
-			                     WHERE s.fact_id = f.id AND e.id <> $1 AND e.deleted_at IS NULL)`,
-			oldID,
-		)
+		ended, err := endFactsOfEpisode(ctx, tx, oldID)
 		if err != nil {
-			return out, fmt.Errorf("end facts of superseded episode: %w", err)
+			return out, err
 		}
-		out.SupersededID, out.FactsEnded = oldID, tag.RowsAffected()
+		out.SupersededID, out.FactsEnded = oldID, ended
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -311,6 +298,32 @@ func (b *Brain) insertEpisode(ctx context.Context, nsID int64, content string, v
 		return RememberOutcome{}, fmt.Errorf("remember: commit: %w", err)
 	}
 	return out, nil
+}
+
+// endFactsOfEpisode closes the derived facts whose only live source was the
+// given (just-retired) episode. A fact that also rests on another live episode
+// keeps describing the world and stays open. It runs inside the caller's
+// transaction: remember's supersede path and InvalidateKeyed both need the
+// retirement and the closing to happen together.
+func endFactsOfEpisode(ctx context.Context, tx pgx.Tx, episodeID int64) (int64, error) {
+	tag, err := tx.Exec(ctx,
+		`UPDATE facts f
+		    SET valid_until = COALESCE(f.valid_until, now()),
+		        known_until = now(),
+		        updated_at  = now()
+		  WHERE f.deleted_at IS NULL
+		    AND f.known_until IS NULL
+		    AND EXISTS (SELECT 1 FROM fact_sources s
+		                 WHERE s.fact_id = f.id AND s.episode_id = $1)
+		    AND NOT EXISTS (SELECT 1 FROM fact_sources s
+		                      JOIN episodes e ON e.id = s.episode_id
+		                     WHERE s.fact_id = f.id AND e.id <> $1 AND e.deleted_at IS NULL)`,
+		episodeID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("end facts of retired episode %d: %w", episodeID, err)
+	}
+	return tag.RowsAffected(), nil
 }
 
 // findEpisode returns the episode closest to query across the given
