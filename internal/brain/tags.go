@@ -18,7 +18,11 @@ const MaxTagsPerMemory = 8
 // report column.
 const maxTagLength = 32
 
-var tagPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+// A colon is allowed after the first character so a writer can scope a tag with
+// a prefix ("gaia:hypothesis", "klant:white-vision"). It is still one opaque
+// word to CortexIQ: nothing here splits on it or reads a prefix, and the
+// length limit and the normal form (lowercase, no spaces) apply to the whole.
+var tagPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_:-]*$`)
 
 // NormalizeTags lowercases, trims and de-duplicates tags, and rejects anything
 // that would make the vocabulary drift. Without a single normal form "Bug",
@@ -45,7 +49,7 @@ func NormalizeTags(tags []string) ([]string, error) {
 			return nil, fmt.Errorf("brain: tag %q is longer than %d characters", tag, maxTagLength)
 		}
 		if !tagPattern.MatchString(tag) {
-			return nil, fmt.Errorf("brain: invalid tag %q: use lowercase letters, digits, '-' or '_', starting with a letter or digit", tag)
+			return nil, fmt.Errorf("brain: invalid tag %q: use lowercase letters, digits, '-', '_' or ':', starting with a letter or digit", tag)
 		}
 		if _, dup := seen[tag]; dup {
 			continue

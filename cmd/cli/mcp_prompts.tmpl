@@ -296,7 +296,7 @@ How much this memory matters, 0 to 1. Default 0.5 (neutral). Use ~0.8-1.0 for de
 
 {{define "remember_tags"}}
 Optional comma-separated tags describing what this memory is about, not where it belongs (the namespace does that). Use lowercase words: 'beslissing', 'bugfix', 'observatie', 'klant-x', 'sprint-42'. Facts consolidated from this memory inherit its tags, so tags keep filtering after the raw memory is gone.
-At most 8 tags, each up to 32 characters of lowercase letters, digits, '-' or '_'. Call list_tags first to reuse tags that already exist instead of inventing near-duplicates.
+At most 8 tags, each up to 32 characters of lowercase letters, digits, '-', '_' or ':' (a colon scopes a tag, like 'gaia:hypothesis', and is still one plain word). Call list_tags first to reuse tags that already exist instead of inventing near-duplicates.
 Leave them out only when the memory genuinely is about nothing in particular: the response then says it was stored untagged and names the tags this namespace already uses, so the next write can pick instead of guess. There is no way to add a tag afterwards.
 {{end}}
 

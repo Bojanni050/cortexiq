@@ -175,12 +175,12 @@ optional `tags_any: []string` next to `tags`, same normalisation
 the two conditions. Build it only once a concrete call site needs it; until
 then the read side works with `tags` alone.
 
-**A bigger gap, found while implementing phase 3:** `NormalizeTags` only accepts
-`^[a-z0-9][a-z0-9_-]*$` (`internal/brain/tags.go`), so Gaia's `gaia:hypothesis`
-and `gaia:confirmed` are **rejected today** because of the colon. Either allow
-`:` inside a tag (a change to the tag vocabulary for everyone) or let the Gaia
-port map `gaia:x` to `gaia-x`. This must be decided before `gaia-logos` is
-pointed at CortexIQ; it blocks the rollout more than the ANY-filter does.
+**Resolved (2026-11-03):** `NormalizeTags` used to accept only
+`^[a-z0-9][a-z0-9_-]*$`, which rejected Gaia's `gaia:hypothesis` and
+`gaia:confirmed`. A colon is now allowed after the first character
+(`^[a-z0-9][a-z0-9_:-]*$`), so scoped tags pass unchanged. It stays one opaque
+word: CortexIQ never splits on the colon or reads the prefix, and the
+32-character limit and lowercase normal form apply to the whole tag.
 
 ## Phase 3 — Keyed upsert with superseding versions
 

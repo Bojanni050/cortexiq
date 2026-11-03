@@ -175,7 +175,7 @@ sentiment: a memory without a namespace is unfindable, a memory without a tag is
 still findable, and a tag invented to satisfy a gate ("overig", "algemeen")
 fragments exactly the vocabulary that `NormalizeTags` exists to protect. That
 function already rejects what would drift — more than 8 tags, longer than 32
-characters, anything outside lowercase letters, digits, `-` and `_` — and one
+characters, anything outside lowercase letters, digits, `-`, `_` and `:` — and one
 near-duplicate filter ("beslissing" against "Beslissing" against "beslissingen")
 costs more than one forced tag.
 

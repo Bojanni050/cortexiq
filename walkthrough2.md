@@ -99,3 +99,9 @@ voor de regel dat er na 1000 regels een nieuw walkthrough-bestand komt.
 - Findings: na de fix van de per ongeluk meegecommitte `/api/v1/status`-regel (8023028) slaagden alle drie de checks op PR #8, inclusief "Build, vet and test" met echte Postgres en pgvector; daarmee zijn de SQL-paden en de vier integratietests uit `external_test.go` bewezen. Gemerged als `ff2d4c7`.
 - Conclusions: fase 3 (keyed upsert + supersede) en fase 4 (`external_refs`) staan in main. Open voor de Gaia-uitrol: de tag-tekenset (`gaia:hypothesis` met dubbele punt wordt door `NormalizeTags` geweigerd) en daarna fase 1 pas na meting.
 - Actions: lokale main fast-forward bijgewerkt; statusregel in `docs/design-gaia-parity.md` aangepast van "branch" naar "gemerged".
+
+## 2026-11-03 (Tags: dubbele punt toegestaan)
+
+- Findings: `NormalizeTags` accepteerde alleen `^[a-z0-9][a-z0-9_-]*$`, dus Gaia's `gaia:hypothesis` en `gaia:confirmed` werden afgewezen; dat blokkeerde de uitrol van `gaia-logos`.
+- Conclusions: Bo koos voor toestaan in plaats van mappen naar `gaia-…` in de port. Een dubbele punt mag na het eerste teken (`^[a-z0-9][a-z0-9_:-]*$`) en blijft één ondoorzichtig woord: er wordt nergens op gesplitst of een prefix gelezen; lengtelimiet 32 en kleine letters gelden voor de hele tag. Een leidende dubbele punt blijft ongeldig.
+- Actions: `internal/brain/tags.go` (patroon, foutmelding, commentaar), `internal/brain/tags_test.go` (drie nieuwe gevallen), `cmd/cli/mcp_prompts.tmpl` (tekst bij `remember_tags`), `docs/STATUS.md` (toegestane tekens), `docs/design-gaia-parity.md` (blokkade opgelost). Gevalideerd: build, vet en `go test ./...` slagen lokaal; bestaande tags blijven geldig (het patroon wordt alleen ruimer).
