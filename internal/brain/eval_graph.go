@@ -7,8 +7,6 @@ import (
 	"io"
 	"strings"
 	"time"
-
-	"github.com/pgvector/pgvector-go"
 )
 
 // Kinds of the graph question set (eval/graph_queries.jsonl).
@@ -212,10 +210,19 @@ func (b *Brain) EvalGraph(ctx context.Context, facts []GraphFact, rels []GraphRe
 		if err != nil {
 			return GraphEvalReport{}, fmt.Errorf("embed %s: %w", f.ID, err)
 		}
-		_, err = b.pool.Exec(ctx,
-			`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, entity, valid_from)
-			 VALUES ($1, $2, $3, $4, 0.8, $5, now())`,
-			nsID, f.Content, pgvector.NewVector(vec), b.embedder.Model(), f.Entity)
+		validFrom := time.Now().UTC()
+		entity := f.Entity
+		_, err = b.insertFact(ctx, b.pool, factInsert{
+			Origin:         originEval,
+			NamespaceID:    nsID,
+			Content:        f.Content,
+			Embedding:      vec,
+			EmbeddingModel: b.embedder.Model(),
+			Confidence:     0.8,
+			Entity:         &entity,
+			ValidFrom:      &validFrom,
+			Importance:     DefaultImportance,
+		})
 		if err != nil {
 			return GraphEvalReport{}, fmt.Errorf("store %s: %w", f.ID, err)
 		}

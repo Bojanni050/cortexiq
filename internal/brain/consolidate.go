@@ -14,7 +14,6 @@ import (
 	"github.com/Bojanni050/cortexiq/internal/observability"
 	"github.com/Bojanni050/cortexiq/internal/reasoner"
 	"github.com/jackc/pgx/v5"
-	"github.com/pgvector/pgvector-go"
 )
 
 // ConsolidationResult describes the outcome of a consolidation run.
@@ -623,16 +622,23 @@ func (b *Brain) storeFactWithConfig(ctx context.Context, nsID int64, sf *reasone
 	confidence := calculateConfidence(len(episodeIDs), sf.Entity != "" && sf.Property != "")
 	now := time.Now().UTC()
 
-	var factID int64
-	err = b.pool.QueryRow(ctx,
-		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, entity, property, value, valid_from, importance, tags, external_refs)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-		nsID, sf.Summary, pgvector.NewVector(vec), b.embedder.Model(), confidence,
-		strPtrOrNull(sf.Entity), strPtrOrNull(sf.Property), strPtrOrNull(sf.Value), now,
-		b.sourceImportance(ctx, episodeIDs), b.sourceTags(ctx, episodeIDs), b.sourceRefs(ctx, episodeIDs),
-	).Scan(&factID)
+	factID, err := b.insertFact(ctx, b.pool, factInsert{
+		Origin:         originConsolidation,
+		NamespaceID:    nsID,
+		Content:        sf.Summary,
+		Embedding:      vec,
+		EmbeddingModel: b.embedder.Model(),
+		Confidence:     confidence,
+		Entity:         strPtrOrNull(sf.Entity),
+		Property:       strPtrOrNull(sf.Property),
+		Value:          strPtrOrNull(sf.Value),
+		ValidFrom:      &now,
+		Importance:     b.sourceImportance(ctx, episodeIDs),
+		Tags:           b.sourceTags(ctx, episodeIDs),
+		ExternalRefs:   b.sourceRefs(ctx, episodeIDs),
+	})
 	if err != nil {
-		return r, fmt.Errorf("insert fact: %w", err)
+		return r, err
 	}
 	r.created = true
 

@@ -8,7 +8,6 @@ import (
 
 	"github.com/Bojanni050/cortexiq/internal/models"
 	"github.com/jackc/pgx/v5"
-	"github.com/pgvector/pgvector-go"
 )
 
 var (
@@ -241,14 +240,18 @@ func (b *Brain) ConfirmHypothesis(ctx context.Context, id int64) (*models.Hypoth
 	}
 	defer tx.Rollback(ctx)
 
-	var factID int64
-	err = tx.QueryRow(ctx,
-		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, valid_from)
-		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		current.NamespaceID, current.Content, pgvector.NewVector(vec), b.embedder.Model(), current.Confidence, now,
-	).Scan(&factID)
+	factID, err := b.insertFact(ctx, tx, factInsert{
+		Origin:         originHypothesis,
+		NamespaceID:    current.NamespaceID,
+		Content:        current.Content,
+		Embedding:      vec,
+		EmbeddingModel: b.embedder.Model(),
+		Confidence:     current.Confidence,
+		ValidFrom:      &now,
+		Importance:     DefaultImportance,
+	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("insert fact from hypothesis: %w", err)
+		return nil, nil, err
 	}
 
 	var h models.Hypothesis

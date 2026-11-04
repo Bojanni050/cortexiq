@@ -89,3 +89,7 @@ Statisch, één commit. De retractietest (waarde afwijzen, opnieuw beweren, kijk
 6. Rebuild-pad.
 7. Recall-poort en RRF-sweep.
 8. Namespace-autorisatie per token: alleen zodra er een tweede caller komt.
+
+## Bijgewerkt na de hertoets
+
+- **Punt 4 (één schrijfpoort), 2026-11-04:** de vijf `INSERT INTO facts` lopen nu via `Brain.insertFact` (`internal/brain/fact_insert.go`). `TestFactsAreInsertedInOnePlace` faalt zodra een ander bestand zelf in `facts` schrijft. Dat is `gateway.no_bypass_path` in de goedkoopste vorm, zonder database. Het is nog geen volledige gateway: `insertFact` doet zelf geen dedup, conflictcheck of bronplicht. Het is het punt waar die checks nu op één plek kunnen komen.

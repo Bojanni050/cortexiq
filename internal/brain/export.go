@@ -322,12 +322,23 @@ func (b *Brain) importRecord(ctx context.Context, rec ExportRecord, nsCache map[
 	if err != nil {
 		return false, err
 	}
-	_, err = b.pool.Exec(ctx,
-		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence,
-		                    entity, property, value, valid_from, valid_until, known_until, created_at, importance, tags)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-		nsID, rec.Content, pgVec, b.embedder.Model(), conf,
-		rec.Entity, rec.Property, rec.Value, rec.ValidFrom, rec.ValidUntil, rec.KnownUntil, created, importance, tagsOrEmpty(tags))
+	_, err = b.insertFact(ctx, b.pool, factInsert{
+		Origin:         originImport,
+		NamespaceID:    nsID,
+		Content:        rec.Content,
+		Embedding:      vec,
+		EmbeddingModel: b.embedder.Model(),
+		Confidence:     conf,
+		Entity:         rec.Entity,
+		Property:       rec.Property,
+		Value:          rec.Value,
+		ValidFrom:      rec.ValidFrom,
+		ValidUntil:     rec.ValidUntil,
+		KnownUntil:     rec.KnownUntil,
+		CreatedAt:      &created,
+		Importance:     importance,
+		Tags:           tags,
+	})
 	return err == nil, err
 }
 
