@@ -411,10 +411,10 @@ func TestIntegrationExportImportRoundTrip(t *testing.T) {
 	}
 	data := buf.String()
 
-	if err := e.b.PurgeEpisode(e.ctx, epID); err != nil {
+	if _, err := e.b.PurgeEpisode(e.ctx, epID, PurgeOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.b.PurgeFact(e.ctx, factID); err != nil {
+	if _, err := e.b.PurgeFact(e.ctx, factID, PurgeOptions{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -499,6 +499,37 @@ func TestIntegrationGraphRecallFollowsEntitiesAndNeighbours(t *testing.T) {
 		if r.Content == "Panelen staan op de monitoringpagina." && r.Trace.GraphRank != 0 {
 			t.Errorf("an unrelated entity must not be reached by the graph arm: %+v", r.Trace)
 		}
+	}
+}
+
+// A neighbour earns its place by sharing an entity, not by answering the
+// question. With a similarity floor configured, a neighbour whose content has
+// nothing to do with the query is no longer dragged in — which is the noise that
+// made the graph arm cost quality on topic questions.
+func TestIntegrationGraphRecallDropsDistantNeighbours(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.GraphRecall = true; c.MinRecallSimilarity = 0.999 })
+	direct := e.insertEntityFact(t, "pgvector", "De extensie levert HNSW-indexen voor nabijheidszoeken.", 0.8)
+	neighbour := e.insertEntityFact(t, "PostgreSQL", "Versie zestien draait op de productieserver.", 0.8)
+	e.insertRelationship(t, "pgvector", "extends", "PostgreSQL", 0.9)
+
+	res, _, err := e.b.RecallDetailed(e.ctx, []string{e.ns}, "wat doet pgvector eigenlijk", 10, RecallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keptDirect bool
+	for _, r := range res {
+		if r.FactID == nil {
+			continue
+		}
+		switch *r.FactID {
+		case direct:
+			keptDirect = true
+		case neighbour:
+			t.Fatalf("a neighbour with no similarity to the query was kept: %+v", r.Trace)
+		}
+	}
+	if !keptDirect {
+		t.Fatalf("the fact about the named entity was dropped by the floor: %+v", res)
 	}
 }
 
@@ -682,6 +713,39 @@ func TestIntegrationRecallFindsFailuresAndGoalsByType(t *testing.T) {
 	}
 }
 
+// Asking for facts and episodes together must not return facts only. Episodes
+// used to receive whatever slots the facts left over, and facts fill the limit,
+// so that branch never ran: a mixed request was a facts request with extra
+// words. Each type now searches with its own budget and the merged list is
+// sorted by score, so the better answer wins regardless of type.
+func TestIntegrationRecallEpisodesCompeteWithFacts(t *testing.T) {
+	e := newEnv(t, nil)
+	for _, c := range []string{
+		"alpha bravo charlie", "delta echo foxtrot", "golf hotel india",
+		"juliet kilo lima", "mike november oscar",
+	} {
+		e.insertFact(t, c, nil)
+	}
+	ep, err := e.b.Remember(e.ctx, e.ns, "the nightly backup runs at 04:15", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := e.b.RecallWith(e.ctx, []string{e.ns}, "when does the nightly backup run", 5, RecallOptions{Types: []string{"fact", "episode"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) > 5 {
+		t.Fatalf("limit 5 returned %d results", len(res))
+	}
+	for _, r := range res {
+		if r.Type == "episode" && r.EpisodeID != nil && *r.EpisodeID == ep {
+			return
+		}
+	}
+	t.Fatalf("the episode was crowded out by unrelated facts: %+v", res)
+}
+
 // With routing on, a query that points to failures finds them without naming a
 // type; with routing off (the default) the same query does not.
 func TestIntegrationRecallRoutesToFailures(t *testing.T) {
@@ -766,9 +830,13 @@ func TestIntegrationReflectNoMemories(t *testing.T) {
 	e := newEnv(t, nil)
 	e.r.chatAnswer = "I don't have any memory about that."
 
+	// Global mental models are searched from every namespace by design, so this
+	// test has to ask for raw memories only: it is about an empty namespace, not
+	// about an empty memory store.
 	result, err := e.b.Reflect(e.ctx, "what is the meaning of life?", ReflectOptions{
-		Namespaces: []string{e.ns},
-		Limit:      5,
+		Namespaces:       []string{e.ns},
+		Limit:            5,
+		SkipMentalModels: true,
 	})
 	if err != nil {
 		t.Fatalf("Reflect: %v", err)

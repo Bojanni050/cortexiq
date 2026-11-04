@@ -165,13 +165,12 @@ func TestApplyBoostsRecencyReordersAndTruncates(t *testing.T) {
 		{ID: 1, Score: 0.9, refTime: now.Add(-30 * 24 * time.Hour)},
 		{ID: 2, Score: 0.8, refTime: now},
 	}
-	got := b.applyBoosts(rs, 1, now)
+	got := applyBoosts(rs, 1, now, b.config)
 	if len(got) != 1 || got[0].ID != 2 {
 		t.Fatalf("recent result should overtake a stale one, got %+v", got)
 	}
 
-	off := &Brain{}
-	got = off.applyBoosts([]RecallResult{{ID: 1, Score: 0.9}, {ID: 2, Score: 0.95}}, 5, now)
+	got = applyBoosts([]RecallResult{{ID: 1, Score: 0.9}, {ID: 2, Score: 0.95}}, 5, now, Config{})
 	if got[0].ID != 1 || got[0].Score != 0.9 {
 		t.Errorf("disabled recency must leave order and scores alone, got %+v", got)
 	}
@@ -201,7 +200,7 @@ func TestApplyBoostsImportanceOvertakes(t *testing.T) {
 		{ID: 1, Score: 0.9, Importance: 0.1},
 		{ID: 2, Score: 0.8, Importance: 1},
 	}
-	got := b.applyBoosts(rs, 5, time.Now())
+	got := applyBoosts(rs, 5, time.Now(), b.config)
 	if got[0].ID != 2 {
 		t.Fatalf("important result should overtake, got %+v", got)
 	}
@@ -268,7 +267,7 @@ func TestFuseRecordsEachArmsRank(t *testing.T) {
 func TestApplyBoostsRecordsFactorsForTheTrace(t *testing.T) {
 	now := time.Now()
 	b := &Brain{config: Config{RecencyWeight: 0.5, RecencyHalfLife: 24 * time.Hour, ImportanceWeight: 0.4}}
-	got := b.applyBoosts([]RecallResult{{ID: 1, Score: 0.8, Importance: 0, refTime: now}}, 5, now)
+	got := applyBoosts([]RecallResult{{ID: 1, Score: 0.8, Importance: 0, refTime: now}}, 5, now, b.config)
 	r := got[0]
 	if r.fusedScore != 0.8 {
 		t.Errorf("fused score = %v, want the score before boosts (0.8)", r.fusedScore)
@@ -280,7 +279,7 @@ func TestApplyBoostsRecordsFactorsForTheTrace(t *testing.T) {
 		t.Errorf("trace = %+v", tr)
 	}
 
-	off := (&Brain{}).applyBoosts([]RecallResult{{ID: 1, Score: 0.7}}, 5, now)
+	off := applyBoosts([]RecallResult{{ID: 1, Score: 0.7}}, 5, now, Config{})
 	if off[0].recencyF != 1 || off[0].importanceF != 1 || off[0].fusedScore != 0.7 {
 		t.Errorf("with weighting off the factors must be 1, got %+v", off[0])
 	}

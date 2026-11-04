@@ -3,19 +3,34 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Bojanni050/cortexiq/internal/bootstrap"
+	"github.com/Bojanni050/cortexiq/internal/version"
 	"github.com/urfave/cli/v3"
 )
 
 func main() {
 	cmd := &cli.Command{
-		Name:  "cortexiq",
-		Usage: "CortexIQ - Persistent Memory for AI",
+		Name:    "cortexiq",
+		Usage:   "CortexIQ - Persistent Memory for AI",
+		Version: version.Version,
 		Before: func(ctx context.Context, cmd *cli.Command) (context.Context, error) {
+			// Version must work without a database: it is the one command an
+			// operator runs when the service will not start. The root Before
+			// hook runs before the subcommand is resolved (cmd is always the
+			// root here), so read the first positional argument instead.
+			// The client-side commands must run on a machine that has no
+			// database and possibly no CortexIQ server at all: `connect` is
+			// what an operator runs on their own laptop, and `token new` is
+			// what they run before the server knows the token.
+			if skipBootstrap(firstCommand(os.Args[1:])) {
+				return ctx, nil
+			}
 			if _, ok := cmd.Root().Metadata["bootstrapCtx"]; ok {
 				return ctx, nil
 			}
@@ -67,6 +82,14 @@ func main() {
 				Action: EnvCmd,
 			},
 			{
+				Name:  "version",
+				Usage: "Print the version, commit and build date of this binary",
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					fmt.Print(version.Details())
+					return nil
+				},
+			},
+			{
 				Name:  "namespace",
 				Usage: "Manage namespaces",
 				Commands: []*cli.Command{
@@ -95,6 +118,31 @@ func main() {
 							&cli.IntFlag{Name: "offset", Value: 0, Usage: "Result offset"},
 						},
 					},
+					{
+						Name:      "config",
+						Usage:     "Manage namespace configuration overrides",
+						ArgsUsage: "<slug>",
+						Commands: []*cli.Command{
+							{
+								Name:      "get",
+								Usage:     "Show the effective configuration for a namespace",
+								ArgsUsage: "<slug>",
+								Action:    namespaceConfigGetCmd,
+							},
+							{
+								Name:      "set",
+								Usage:     "Set overrides for a namespace (key=value pairs)",
+								ArgsUsage: "<slug> [key=value ...]",
+								Action:    namespaceConfigSetCmd,
+							},
+							{
+								Name:      "unset",
+								Usage:     "Remove one override key, or all overrides when no key is given",
+								ArgsUsage: "<slug> [key]",
+								Action:    namespaceConfigUnsetCmd,
+							},
+						},
+					},
 				},
 			},
 			{
@@ -106,6 +154,7 @@ func main() {
 					&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "Namespace path"},
 					&cli.StringFlag{Name: "occurred-at", Usage: "When it occurred (RFC3339 or YYYY-MM-DD)"},
 					&cli.FloatFlag{Name: "importance", Value: 0.5, Usage: "How much it matters, 0..1 (0.5 = neutral)"},
+					&cli.StringSliceFlag{Name: "tag", Aliases: []string{"t"}, Usage: "Tag describing what it is about (repeatable)"},
 				},
 			},
 			{
@@ -122,6 +171,7 @@ func main() {
 					&cli.StringFlag{Name: "from", Usage: "Include event/valid time on or after this bound (RFC3339 or YYYY-MM-DD)"},
 					&cli.StringFlag{Name: "to", Usage: "Exclude event/valid time at or after this bound (RFC3339 or YYYY-MM-DD)"},
 					&cli.FloatFlag{Name: "mmr", Usage: "MMR diversity 0..1 (0=relevance, 1=diversity, 0.5=balanced); default: server config"},
+					&cli.StringSliceFlag{Name: "tag", Aliases: []string{"t"}, Usage: "Only memories carrying every one of these tags (repeatable)"},
 				},
 			},
 			{
@@ -134,6 +184,7 @@ func main() {
 					&cli.IntFlag{Name: "limit", Value: 10, Usage: "Max memories to recall for grounding"},
 					&cli.StringFlag{Name: "context", Usage: "Additional context to include in the answer synthesis"},
 					&cli.StringFlag{Name: "types", Usage: "Comma-separated filter: fact, episode, failure, goal"},
+					&cli.StringSliceFlag{Name: "tag", Aliases: []string{"t"}, Usage: "Ground the answer only on memories carrying every one of these tags (repeatable)"},
 					&cli.StringFlag{Name: "as-of", Usage: "Answer from what the system knew at this time (RFC3339 or YYYY-MM-DD)"},
 					&cli.StringFlag{Name: "known-from", Usage: "Answer from what the system held in [known-from, known-to) (RFC3339 or YYYY-MM-DD); not with --as-of"},
 					&cli.StringFlag{Name: "known-to", Usage: "Exclusive end of the knowledge window (RFC3339 or YYYY-MM-DD)"},
@@ -150,19 +201,79 @@ func main() {
 				},
 			},
 			{
+				Name:    "retract",
+				Aliases: []string{"correct"},
+				Usage:   "Withdraw a claim because it was wrong, and record the correction",
+				Action:  retractCmd,
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "reason", Aliases: []string{"r"}, Usage: "What was wrong and what is true instead (required)"},
+					&cli.Int64Flag{Name: "fact", Usage: "Retract this fact id instead of searching by description"},
+					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to search (each includes descendants)"},
+					&cli.StringFlag{Name: "actor", Usage: "Who is retracting (default: cli)"},
+				},
+			},
+			{
+				Name:      "lift",
+				Usage:     "Lift a rejection so the value may be stored again",
+				ArgsUsage: "<retraction-id>",
+				Action:    liftCmd,
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "reason", Aliases: []string{"r"}, Usage: "Why the value may be stored again (required)"},
+					&cli.StringFlag{Name: "actor", Usage: "Who is lifting it (default: cli)"},
+				},
+			},
+			{
+				Name:   "retractions",
+				Usage:  "List recorded retractions, newest first",
+				Action: retractionsCmd,
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to list (each includes descendants)"},
+					&cli.IntFlag{Name: "limit", Value: 50, Usage: "Max retractions"},
+				},
+			},
+			{
 				Name:  "purge",
-				Usage: "Hard-delete by ID",
+				Usage: "Hard-delete memory and log what was removed",
 				Commands: []*cli.Command{
 					{
 						Name:   "episode",
-						Usage:  "Hard-delete an episode by ID",
+						Usage:  "Hard-delete an episode by ID, with facts only it sourced",
 						Action: purgeEpisodeCmd,
+						Flags:  purgeFlags(),
 					},
 					{
 						Name:   "fact",
 						Usage:  "Hard-delete a fact by ID",
 						Action: purgeFactCmd,
+						Flags:  purgeFlags(),
 					},
+					{
+						Name:      "namespace",
+						Usage:     "Hard-delete a namespace and everything filed under it",
+						ArgsUsage: "<slug>",
+						Action:    purgeNamespaceCmd,
+						Flags: append(purgeFlags(),
+							&cli.StringFlag{Name: "confirm", Usage: "Repeat the slug to confirm (required)"},
+						),
+					},
+				},
+			},
+			{
+				Name:   "purge-log",
+				Usage:  "List recent hard deletes: what, when, by whom and why",
+				Action: purgeLogCmd,
+				Flags: []cli.Flag{
+					&cli.IntFlag{Name: "limit", Value: 50, Usage: "Max entries"},
+				},
+			},
+			{
+				Name:   "tags",
+				Usage:  "List the tag vocabulary with fact and episode counts, and how much of the store is tagged at all",
+				Action: tagsCmd,
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to count (each includes descendants; default all)"},
+					&cli.StringFlag{Name: "since", Usage: "Only count memories stored on or after this time (RFC3339 or YYYY-MM-DD); coverage always counts everything that is live now"},
+					&cli.IntFlag{Name: "limit", Value: 100, Usage: "Max tags"},
 				},
 			},
 			{
@@ -171,6 +282,7 @@ func main() {
 				Action: factsListCmd,
 				Flags: []cli.Flag{
 					&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to query (each includes descendants)"},
+					&cli.StringSliceFlag{Name: "tag", Aliases: []string{"t"}, Usage: "Only facts carrying every one of these tags (repeatable)"},
 					&cli.StringFlag{Name: "since", Usage: "Created since (RFC3339)"},
 					&cli.StringFlag{Name: "until", Usage: "Created until (RFC3339)"},
 					&cli.StringFlag{Name: "as-of", Usage: "Only facts the system held at this time (RFC3339 or YYYY-MM-DD)"},
@@ -314,6 +426,7 @@ func main() {
 						Action: consolidateRunCmd,
 						Flags: []cli.Flag{
 							&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to consolidate (each includes descendants)"},
+							&cli.StringSliceFlag{Name: "tag", Aliases: []string{"t"}, Usage: "Only consolidate episodes carrying every one of these tags (targeted run; leaves the checkpoint alone)"},
 							&cli.BoolFlag{Name: "dry-run", Aliases: []string{"d"}, Usage: "Show what would be consolidated"},
 						},
 					},
@@ -557,7 +670,7 @@ func main() {
 						ArgsUsage: "<name> <source-query>",
 						Action:    mentalModelCreateCmd,
 						Flags: []cli.Flag{
-							&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "Namespace path"},
+							&cli.StringFlag{Name: "namespace", Aliases: []string{"n"}, Value: "/", Usage: "File the model in this namespace and scope it there; / means all namespaces (global)"},
 							&cli.StringSliceFlag{Name: "tags", Usage: "Tags for scoped visibility"},
 							&cli.IntFlag{Name: "max-tokens", Value: 2048, Usage: "Maximum tokens for generated content"},
 						},
@@ -643,6 +756,51 @@ func main() {
 				},
 			},
 			{
+				Name:  "connect",
+				Usage: "Register CortexIQ as an MCP server in the agent clients on this machine",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "app", Aliases: []string{"a"}, Value: "all", Usage: "Client to configure: cursor, claude, opencode, or all"},
+					&cli.StringFlag{Name: "url", Aliases: []string{"u"}, Value: defaultConnectURL, Usage: "MCP endpoint (streamable HTTP)"},
+					&cli.StringFlag{Name: "token", Aliases: []string{"t"}, Usage: "API token to send (default: $CORTEXIQ_API_TOKEN)"},
+					&cli.StringFlag{Name: "env-ref", Usage: "Write an environment reference instead of the secret"},
+					&cli.StringFlag{Name: "name", Value: "cortexiq", Usage: "Server name the client files it under"},
+					&cli.BoolFlag{Name: "global", Usage: "Write the machine-wide configuration instead of the project's"},
+					&cli.BoolFlag{Name: "dry-run", Usage: "Report what would change without changing it"},
+				},
+				Action: connectCmd,
+			},
+			{
+				Name:  "disconnect",
+				Usage: "Remove CortexIQ from the agent clients on this machine",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "app", Aliases: []string{"a"}, Value: "all", Usage: "Client to change: cursor, claude, opencode, or all"},
+					&cli.StringFlag{Name: "name", Value: "cortexiq", Usage: "Server name to remove"},
+					&cli.BoolFlag{Name: "global", Usage: "Change the machine-wide configuration instead of the project's"},
+					&cli.BoolFlag{Name: "dry-run", Usage: "Report what would change without changing it"},
+				},
+				Action: disconnectCmd,
+			},
+			{
+				Name:  "token",
+				Usage: "API token helpers",
+				Commands: []*cli.Command{
+					{
+						Name:  "new",
+						Usage: "Generate a token and print the CORTEXIQ_API_TOKENS entry for it",
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "name", Aliases: []string{"n"}, Usage: "Name for the token, e.g. the app it belongs to (required)"},
+							// Removed on purpose, but still accepted so a caller who
+							// read the earlier version gets the reason instead of
+							// "flag provided but not defined". Hidden, so nobody
+							// discovers a flag that only refuses.
+							&cli.StringFlag{Name: "namespace", Hidden: true, Usage: "Removed: a token is per app, a namespace is per project"},
+							&cli.StringFlag{Name: "scope", Value: "rw", Usage: "rw (read-write) or ro (read-only)"},
+						},
+						Action: tokenNewCmd,
+					},
+				},
+			},
+			{
 				Name:  "mcp",
 				Usage: "MCP server for agent integration",
 				Commands: []*cli.Command{
@@ -675,5 +833,40 @@ func main() {
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		log.Fatal(err)
+	}
+}
+
+// firstCommand returns the first positional argument, ignoring flags. It is
+// used only to let `version` run before the database is opened: the root
+// Before hook fires before the subcommand is known, so the argument list is
+// the only thing that distinguishes `cortexiq version` from any other command.
+func firstCommand(args []string) string {
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		return arg
+	}
+	return ""
+}
+
+// skipBootstrap reports whether a command runs without the database. The
+// command is not resolved yet when the root Before hook fires, so the argument
+// list is the only thing available: that is what firstCommand exists for.
+func skipBootstrap(command string) bool {
+	switch command {
+	case "version", "connect", "disconnect", "token":
+		return true
+	default:
+		return false
+	}
+}
+
+// purgeFlags are shared by every purge subcommand.
+func purgeFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.StringFlag{Name: "reason", Aliases: []string{"r"}, Usage: "Why this is being deleted (recorded in purge_log)"},
+		&cli.StringFlag{Name: "actor", Usage: "Who is deleting (default: cli)"},
+		&cli.BoolFlag{Name: "dry-run", Usage: "Report what would be removed without removing it"},
 	}
 }

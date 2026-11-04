@@ -11,6 +11,9 @@ FROM episodes
 WHERE namespace_id = {{.Bind .Args.namespace_id}}
     AND deleted_at IS NULL
     AND id > {{.Bind .Args.after_id}}
+{{if .Args.tags}}
+    AND tags @> ARRAY[{{.Bind .Args.tags}}]::text[]
+{{end}}
 ORDER BY id
 LIMIT {{.Bind .Args.limit}}
 {{end}}

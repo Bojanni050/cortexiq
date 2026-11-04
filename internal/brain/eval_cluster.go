@@ -97,7 +97,7 @@ func ScoreClusterArms(pairs []DedupPair, vecs [][]float32, threshold float32, ca
 		for _, i := range seeds {
 			twinID := int64(2*i + 2)
 			clustered := map[int64]bool{int64(2*i + 1): true}
-			got := b.clusterMembers(episodes[2*i], episodes, clustered, make(trigramCache))
+			got := clusterMembers(episodes[2*i], episodes, clustered, make(trigramCache), b.config)
 			hit := false
 			for _, m := range got {
 				if m.ID == twinID {

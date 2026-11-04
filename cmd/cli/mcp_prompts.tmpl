@@ -232,6 +232,7 @@ The new path. Must not exist yet and must not lie inside "from". Missing parent 
 Permanently stores an observation (episode) into memory. Raw, immutable, timestamped.
 
 BEFORE CALLING: Call list_namespaces to verify the target namespace exists. If not, call create_namespace first.
+Call list_tags when you want to tag this memory, to reuse the tags that already exist.
 
 CALL THIS WHEN:
 - User shares a preference, habit, constraint, or personal detail
@@ -293,6 +294,48 @@ Optional point in time (RFC3339, e.g. 2026-09-01T00:00:00Z, or a date like 2026-
 How much this memory matters, 0 to 1. Default 0.5 (neutral). Use ~0.8-1.0 for decisions, standing preferences and corrections; ~0.1-0.3 for passing detail. Only affects ranking when the server has importance weighting enabled.
 {{end}}
 
+{{define "remember_tags"}}
+Optional comma-separated tags describing what this memory is about, not where it belongs (the namespace does that). Use lowercase words: 'beslissing', 'bugfix', 'observatie', 'klant-x', 'sprint-42'. Facts consolidated from this memory inherit its tags, so tags keep filtering after the raw memory is gone.
+At most 8 tags, each up to 32 characters of lowercase letters, digits, '-', '_' or ':' (a colon scopes a tag, like 'gaia:hypothesis', and is still one plain word). Call list_tags first to reuse tags that already exist instead of inventing near-duplicates.
+Leave them out only when the memory genuinely is about nothing in particular: the response then says it was stored untagged and names the tags this namespace already uses, so the next write can pick instead of guess. There is no way to add a tag afterwards.
+{{end}}
+
+{{define "remember_external_key"}}
+Optional id of your own for this memory, for a writer that mirrors something it can name again ("gaia:hypothesis:42", "jira:ABC-123"). Unique per namespace. Writing the same content under the same key again changes nothing, so a rebuild or a retry never duplicates. Writing different content under an existing key is refused unless supersedes is true. No whitespace, at most 200 characters.
+{{end}}
+
+{{define "remember_external_refs"}}
+Optional comma-separated pointers to where this memory came from outside CortexIQ, for example 'commit:bf575f8' or a URL or ticket id. Stored and returned verbatim, never resolved; facts consolidated from this memory inherit them. At most 16, each up to 200 characters without whitespace.
+{{end}}
+
+{{define "remember_supersedes"}}
+Set true together with external_key to replace the memory that currently holds that key with this new content. The old one is retired and its link to the new one kept, and facts that rested only on the old one are closed, all in one step. Without external_key this is an error.
+{{end}}
+
+{{define "invalidate_description"}}
+Retire the memory that holds an external_key, when a rejection changes nothing: the statement stops being current and no new content replaces it (for a rejection of "status is proposed", the invalidated state IS the answer). Facts that rested only on that memory are closed. Repeats are safe: an already-invalidated key is answered, not an error. Use remember with supersedes instead when a new content exists; use retract when you are not the key's writer.
+{{end}}
+
+{{define "invalidate_external_key"}}
+Required id the writer used for the memory ("gaia:hypothesis:42"). The live episode holding this key in the namespace is retired; calling again with the same key reports already_invalidated.
+{{end}}
+
+{{define "invalidate_reason"}}
+Optional reason the state changed ("hypothesis was rejected: contradicted by the emails"). With a reason the withdrawal is recorded so a later reader sees what stopped being true and why; without one the memory is simply retired. At most 2000 characters.
+{{end}}
+
+{{define "recall_tags"}}
+Optional comma-separated tags to narrow the search: only memories carrying all of them are returned (AND, not OR). Tags are lowercase words like 'beslissing' or 'klant-x'; the filter applies to consolidated facts and to raw episodes. Failures and goals have no tags and are excluded when this is set.
+{{end}}
+
+{{define "list_tags_description"}}
+Lists the tags in use, most used first, with how many facts and episodes carry each one, plus a coverage count of how many live memories carry no tag at all. Call this before writing tags, so you reuse the existing vocabulary instead of creating near-duplicates such as 'bug', 'Bug' and 'bugs'. A high untagged count means filtering by tag is not yet answering for the whole store.
+{{end}}
+
+{{define "list_tags_namespaces"}}
+Optional comma-separated namespaces to count tags in. Omit to count across all namespaces.
+{{end}}
+
 {{define "occurred_at_param"}}
 Optional event time (RFC3339 or YYYY-MM-DD). Use it for when the observation happened, not when you stored it. Omit to use the current time.
 {{end}}
@@ -314,8 +357,11 @@ Optional exclusive end of a half-open [from,to) event/valid-time window (RFC3339
 {{end}}
 
 {{define "remember_namespace"}}
-Where to store this. Must be an existing namespace path verified via list_namespaces.
-If not found, call create_namespace first. Default: / (root — only for truly uncategorized memories).
+Where to store this, and it is required: a memory filed without one disappears into everything else and is found by nobody.
+
+Call list_namespaces first and pass the path this belongs to. If the namespace does not exist yet, call create_namespace. Use / (root) only for a memory that is genuinely global, and pass it explicitly.
+
+The namespace says WHERE the memory belongs; tags say WHAT it is about. They are not a substitute for each other.
 {{end}}
 
 
@@ -403,6 +449,7 @@ PREFER recall WHEN:
 - You need exact wording or IDs to act on
 
 The answer is grounded in recalled memories. When nothing relevant is found, the answer says so. The result includes the sources used, so you can cite specific memories.
+To ground only on a kind of memory (decisions, bugfixes, a client), pass tags instead of widening the namespace list.
 {{end}}
 
 {{define "reflect_query"}}
@@ -413,6 +460,10 @@ Good: 'What do we know about the authentication approach?'. Bad: 'auth'.
 {{define "reflect_namespaces"}}
 Comma-separated namespace paths to search for grounding memories. Each path matches itself and all descendants.
 / → everything. /projects/myapp → that project and its sub-namespaces.
+{{end}}
+
+{{define "reflect_tags"}}
+Optional comma-separated tags to ground the answer only on memories carrying every one of them (AND, not OR). Use it when the question is about a kind of knowledge rather than a place: e.g. tags "beslissing" answers "which decisions did we take", whatever namespace they live in. Combine with namespaces to keep the scope narrow. Mental models are filtered separately (they have their own tags).
 {{end}}
 
 {{define "reflect_limit"}}
@@ -426,6 +477,10 @@ Optional additional context to include in the answer synthesis (e.g. the current
 {{define "mental_model_workflow"}}
 MENTAL MODELS are curated, high-quality summaries about specific topics, generated by reflect and stored for fast retrieval.
 
+SCOPE:
+- Global by default: a model without a namespace is synthesized from every namespace, goes stale when anything anywhere changes, and is available to reflect from every namespace.
+- Pass `namespaces` to file and scope a model to one namespace and its children (e.g. a project-specific summary).
+
 WHEN TO CREATE A MENTAL MODEL:
 - A topic comes up repeatedly across sessions ("our deployment process", "the auth architecture")
 - The user asks you to "remember this summary" or "keep this in mind"
@@ -437,24 +492,34 @@ WHEN TO SEARCH MENTAL MODELS:
 - Mental models are searched automatically inside reflect
 
 WHEN TO REFRESH:
-- A mental model is marked is_stale: true
+- A mental model is marked is_stale: true (stale_reason says why: new_memories or retracted_grounding)
 - New memories arrived that change the topic's answer
 - The user says "update what you know about X"
+- Automatic: consolidation refreshes stale models after every run, oldest first, at most three per namespace. A model whose refresh found no memories is paused; its content was kept and needs an explicit refresh once there is something to ground on.
 
 WORKFLOW:
 1. mental_model_search "topic" → check if one exists
-2. If not: mental_model_create name="Topic" source_query="What do we know about topic?"
+2. If not: mental_model_create name="Topic" source_query="What do we know about topic?" (fails when the namespace has no memories)
 3. On repeat questions: mental_model_search first, use the result directly
-4. Periodically: mental_model_refresh <id> for stale models
+4. On is_stale: mental_model_refresh <id>, or rely on the automatic refresh after consolidation
 {{end}}
 
 {{define "forget_description"}}
-Removes incorrect or outdated information from memory.
+Removes incorrect or outdated information from memory. Three modes, and the
+difference matters:
+
+- forget (default): stop using it. Makes no claim about whether it was true.
+- retract: it was WRONG. Soft-deletes it and records what was withdrawn and
+  why, keeping the correction on the record. Requires `reason`.
+- purge: it must not exist at all. Hard-deletes the memory, facts sourced only
+  by it, and the cached copy of its text. Requires `reason`. No undo.
 
 BEFORE CALLING:
 1. Call recall(what you want to forget) first
 2. Use the EXACT content returned by recall as the `about` parameter
 3. Never guess the stored wording — search first, then forget with precision
+4. User says it was wrong → mode: retract with a reason. User says "delete it"
+   or asks for removal under privacy rules → mode: purge. Otherwise forget.
 
 CALL THIS WHEN:
 - User says "forget that", "that's wrong", "I changed my mind", "ignore what I said"
@@ -483,6 +548,17 @@ COST OF NOT CALLING: You give advice based on facts the user explicitly correcte
 What to forget. Must closely match the stored content — call recall first to find the exact wording.
 Good: 'User preferred gRPC over REST for the API layer.' (matches stored text)
 Bad: 'grpc stuff' or 'the database thing'.
+{{end}}
+
+{{define "forget_mode"}}
+forget (default) stops using the memory; retract records that it was wrong;
+purge deletes it without a trace. Use retract or purge only with a reason.
+{{end}}
+
+{{define "forget_reason"}}
+Required for retract and purge. For retract: what was wrong and what is true
+instead ('the queue is Redis, not Kafka'). For purge: why it must be gone
+('user asked for removal'). Recorded in the audit log.
 {{end}}
 
 
@@ -556,6 +632,24 @@ Never calling — memory stays raw notes forever, no structured knowledge extrac
 Consolidating an empty namespace — returns nothing, wastes a call
 
 COST OF NOT CALLING: Memory accumulates as raw episodes. No structured facts. No entity relationships. recall results are noisier. query_facts returns nothing.
+
+To reprocess only one kind of memory, pass tags: the run then reads just the episodes carrying every tag and runs the episode-to-fact stage alone.
+{{end}}
+
+{{define "consolidate_tags"}}
+Optional. Narrows the run to episodes carrying every one of these tags (AND, not OR).
+
+A tag run is a TARGETED REPROCESS, not a normal consolidation:
+- only the episode-to-fact stage runs; relationships, causal links, patterns, goals, failure patterns, hypotheses, decay and mental models are left alone
+- the consolidation checkpoint is NOT advanced, so the untagged episodes the filter skipped are still picked up by the next normal run
+- it reads matching episodes from the start of the namespace, so old tagged episodes are seen again
+
+USE IT WHEN: you want facts from a specific kind of episode ("only the beslissing episodes"), or after fixing how a category should be summarized.
+
+DO NOT USE IT AS A REPLACEMENT for a normal run: it never catches up on everything else in the namespace.
+
+GOOD: tags="beslissing" to re-derive the decision facts of a namespace.
+BAD: tags="bugfix" called every session while untagged episodes pile up unconsolidated.
 {{end}}
 
 
@@ -705,8 +799,8 @@ COST OF NOT CALLING: You answer structural questions without the graph. Shallow 
 
 
 {{define "namespace_param"}}
-Namespace path. Must exist — call list_namespaces to verify first.
-If not found, call create_namespace before proceeding. Default: / (root).
+Namespace path. Required for a write: call list_namespaces and pass the path this belongs to.
+If not found, call create_namespace before proceeding. Use / (root) only for genuinely global records.
 {{end}}
 
 

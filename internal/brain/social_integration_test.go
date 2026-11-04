@@ -15,7 +15,7 @@ func TestIntegrationRememberRefusesSocialCloserAndStoresNothing(t *testing.T) {
 	if _, err := e.b.Remember(e.ctx, e.ns, "dank je wel, tot morgen!", nil); !errors.Is(err, ErrSocialCloser) {
 		t.Fatalf("err = %v, want ErrSocialCloser", err)
 	}
-	n, err := e.b.CountEpisodes(e.ctx, []string{e.ns})
+	n, err := e.b.CountEpisodes(e.ctx, []string{e.ns}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

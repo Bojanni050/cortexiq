@@ -162,7 +162,7 @@ func TestIntegrationRecallKnownWindow(t *testing.T) {
 	}
 
 	// The listing agrees with recall.
-	facts, err := e.b.QueryFactsWindow(e.ctx, []string{e.ns}, nil, nil, nil, nil, nil, &mar1, &apr1, Pagination{Limit: 10})
+	facts, err := e.b.QueryFactsWindow(e.ctx, []string{e.ns}, nil, nil, nil, nil, nil, &mar1, &apr1, nil, Pagination{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}

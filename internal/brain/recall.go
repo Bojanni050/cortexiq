@@ -45,6 +45,17 @@ type RecallResult struct {
 	// Importance (0..1, 0.5 neutral) is what the caller said this memory is worth;
 	// it only influences Score when importance weighting is enabled.
 	Importance float32 `json:"importance"`
+	// Tags say what the memory is about (e.g. "beslissing", "bugfix"). They are
+	// orthogonal to NamespaceID, which says where it belongs. Facts inherit the
+	// tags of the episodes they were consolidated from.
+	Tags []string `json:"tags,omitempty"`
+	// ExternalKey is the writer's own id for an episode ("gaia:hypothesis:42").
+	// Facts have none: a fact is derived, so it points back via ExternalRefs.
+	ExternalKey string `json:"external_key,omitempty"`
+	// ExternalRefs are the opaque pointers the writer attached to where the
+	// memory came from outside CortexIQ. Facts inherit those of their source
+	// episodes. Stored and returned verbatim, never resolved.
+	ExternalRefs []string `json:"external_refs,omitempty"`
 	// Feedback is the net of the callers' verdicts on this fact (+1 helpful,
 	// -1 wrong), counting only each principal's latest vote. It is absent when
 	// nobody voted or the votes cancel out, and it scales Score by a bounded
@@ -160,6 +171,13 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 	if err := validateContent(query); err != nil {
 		return nil, err
 	}
+	// Normalize here as well, not only on write: a caller that types "Bugfix"
+	// should match the stored "bugfix", and an invalid tag must fail loudly
+	// instead of silently matching nothing.
+	tagFilter, err := NormalizeTags(opts.Tags)
+	if err != nil {
+		return nil, err
+	}
 	if limit <= 0 {
 		limit = 10
 	}
@@ -182,12 +200,39 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		return nil, err
 	}
 
+	// Per-namespace overrides for recall. A recall can span several namespaces,
+	// so the effective config is resolved per namespace and merged: a key set on
+	// any of them wins over the global default (first namespace in the list that
+	// sets it). A lookup failure falls back to the global config.
+	recallCfg := b.config
+	hybridRecall := b.config.HybridRecall
+	minSimilarity := b.config.MinRecallSimilarity
+	recencyWeight := b.config.RecencyWeight
+	for _, slug := range namespaces {
+		eff, err := b.EffectiveNamespaceConfig(ctx, slug)
+		if err != nil || eff == nil {
+			continue
+		}
+		if _, ok := eff.Overrides()[KeyRecallHybrid]; ok {
+			hybridRecall = eff.HybridRecall()
+		}
+		if _, ok := eff.Overrides()[KeyRecallMinSimilarity]; ok {
+			minSimilarity = eff.MinRecallSimilarity()
+		}
+		if _, ok := eff.Overrides()[KeyRecallRecencyWeight]; ok {
+			recencyWeight = eff.RecencyWeight()
+		}
+	}
+	recallCfg.HybridRecall = hybridRecall
+	recallCfg.MinRecallSimilarity = minSimilarity
+	recallCfg.RecencyWeight = recencyWeight
+
 	kwQuery := ""
-	if b.config.HybridRecall {
+	if hybridRecall {
 		kwQuery = keywordQuery(query)
 	}
 	// Recency and importance reorder the fused list, so the pool must be wider than limit.
-	recency := b.reranks()
+	recency := recallCfg.RecencyWeight > 0 && recallCfg.RecencyHalfLife > 0 || recallCfg.ImportanceWeight > 0
 	candidates := limit
 	if kwQuery != "" || recency || temporal {
 		candidates = limit * 3
@@ -214,6 +259,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 	if tr != nil {
 		tr.Query, tr.KeywordQuery, tr.Hybrid, tr.Graph, tr.Limit, tr.Candidates = query, kwQuery, kwQuery != "", graph, limit, candidates
 		tr.Namespaces, tr.NamespaceIDs, tr.Routed = namespaces, len(nsIDs), routed
+		tr.Tags = tagFilter
 		if asOf != nil {
 			tr.AsOf = asOf.Format(time.RFC3339)
 		}
@@ -231,7 +277,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			tr.To = opts.To.Format(time.RFC3339)
 		}
 		tr.Temporal = temporal
-		tr.MinSimilarity, tr.RRFK = b.config.MinRecallSimilarity, rrfK
+		tr.MinSimilarity, tr.RRFK = minSimilarity, rrfK
 		tr.RecencyWeight, tr.RecencyHalfLife, tr.ImportanceWeight = b.config.RecencyWeight, b.config.RecencyHalfLife.String(), b.config.ImportanceWeight
 		tr.MMRLambda = mmrLambda
 	}
@@ -240,7 +286,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 
 	// Search facts first (higher quality, consolidated)
 	if facts {
-		factSQL, factArgs, err := b.queries.RecallFactsWindowWithEmbedding(nsIDs, pgVec, candidates, asOf, opts.From, opts.To, known, mmrOn)
+		factSQL, factArgs, err := b.queries.RecallFactsWindowWithEmbedding(nsIDs, pgVec, candidates, asOf, opts.From, opts.To, known, mmrOn, tagFilter)
 		if err != nil {
 			return nil, fmt.Errorf("build fact query: %w", err)
 		}
@@ -252,7 +298,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 
 		var factKw, factGraph, factTemporal []RecallResult
 		if kwQuery != "" {
-			kwSQL, kwArgs, err := b.queries.RecallFactsKeywordWindow(nsIDs, kwQuery, candidates, asOf, opts.From, opts.To, known)
+			kwSQL, kwArgs, err := b.queries.RecallFactsKeywordWindow(nsIDs, kwQuery, candidates, asOf, opts.From, opts.To, known, tagFilter)
 			if err != nil {
 				return nil, fmt.Errorf("build fact keyword query: %w", err)
 			}
@@ -262,7 +308,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			stage("facts_keyword", len(factKw))
 		}
 		if graph {
-			graphSQL, graphArgs, err := b.queries.RecallFactsGraphWindow(nsIDs, query, pgVec, candidates, asOf, opts.From, opts.To, known)
+			graphSQL, graphArgs, err := b.queries.RecallFactsGraphWindow(nsIDs, query, pgVec, candidates, minSimilarity, asOf, opts.From, opts.To, known, tagFilter)
 			if err != nil {
 				return nil, fmt.Errorf("build fact graph query: %w", err)
 			}
@@ -275,7 +321,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			}
 		}
 		if temporal {
-			temporalSQL, temporalArgs, err := b.queries.RecallFactsTemporal(nsIDs, candidates, asOf, opts.From, opts.To, known)
+			temporalSQL, temporalArgs, err := b.queries.RecallFactsTemporal(nsIDs, candidates, asOf, opts.From, opts.To, known, tagFilter)
 			if err != nil {
 				return nil, fmt.Errorf("build fact temporal query: %w", err)
 			}
@@ -299,9 +345,9 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			if temporal {
 				scaleArms++
 			}
-			results = fuseArms(arms, scaleArms, candidates, b.config.MinRecallSimilarity)
+			results = fuseArms(arms, scaleArms, candidates, minSimilarity)
 		} else {
-			results = fuse(factVec, factKw, candidates, kwQuery != "", b.config.MinRecallSimilarity)
+			results = fuse(factVec, factKw, candidates, kwQuery != "", minSimilarity)
 		}
 		if b.config.Reranker != nil {
 			results = b.rerank(ctx, query, results)
@@ -316,20 +362,24 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		if !historical {
 			b.applyFeedback(ctx, results)
 		}
-		results = b.applyBoosts(results, limit, now)
+		results = applyBoosts(results, limit, now, recallCfg)
 		stage("facts_fused", len(results))
 	}
 
-	// Search episodes for remaining slots
-	if episodeLimit := limit - len(results); episodes && episodeLimit > 0 {
-		epCandidates := episodeLimit
+	// Episodes get a budget of their own rather than the slots facts left over.
+	// Handing them the remainder meant asking for both kinds returned facts
+	// only: facts filled the limit, the remainder was zero, and this branch never
+	// ran. The final sort merges both by score, so neither type needs a reserved
+	// share — but both need to be present before that sort can judge them.
+	if episodes {
+		epCandidates := limit
 		if kwQuery != "" || recency || temporal {
-			epCandidates = episodeLimit * 3
+			epCandidates = limit * 3
 			if epCandidates > maxCandidates {
 				epCandidates = maxCandidates
 			}
 		}
-		epSQL, epArgs, err := b.queries.RecallEpisodesWindowWithEmbedding(nsIDs, pgVec, epCandidates, asOf, opts.From, opts.To, known, mmrOn)
+		epSQL, epArgs, err := b.queries.RecallEpisodesWindowWithEmbedding(nsIDs, pgVec, epCandidates, asOf, opts.From, opts.To, known, mmrOn, tagFilter)
 		if err != nil {
 			return nil, fmt.Errorf("build episode query: %w", err)
 		}
@@ -341,7 +391,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 
 		var epKw, epTemporal []RecallResult
 		if kwQuery != "" {
-			kwSQL, kwArgs, err := b.queries.RecallEpisodesKeywordWindow(nsIDs, kwQuery, epCandidates, asOf, opts.From, opts.To, known)
+			kwSQL, kwArgs, err := b.queries.RecallEpisodesKeywordWindow(nsIDs, kwQuery, epCandidates, asOf, opts.From, opts.To, known, tagFilter)
 			if err != nil {
 				return nil, fmt.Errorf("build episode keyword query: %w", err)
 			}
@@ -351,7 +401,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			stage("episodes_keyword", len(epKw))
 		}
 		if temporal {
-			temporalSQL, temporalArgs, err := b.queries.RecallEpisodesTemporal(nsIDs, epCandidates, asOf, opts.From, opts.To, known)
+			temporalSQL, temporalArgs, err := b.queries.RecallEpisodesTemporal(nsIDs, epCandidates, asOf, opts.From, opts.To, known, tagFilter)
 			if err != nil {
 				return nil, fmt.Errorf("build episode temporal query: %w", err)
 			}
@@ -375,22 +425,24 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			if temporal {
 				scaleArms++
 			}
-			eps = fuseArms(arms, scaleArms, epCandidates, b.config.MinRecallSimilarity)
+			eps = fuseArms(arms, scaleArms, epCandidates, minSimilarity)
 		} else {
-			eps = fuse(epVec, epKw, epCandidates, kwQuery != "", b.config.MinRecallSimilarity)
+			eps = fuse(epVec, epKw, epCandidates, kwQuery != "", minSimilarity)
 		}
 		eps = b.rerank(ctx, query, eps)
 		if mmrOn {
 			eps = applyMMR(eps, vec, mmrLambda, epCandidates)
 			stage("episodes_mmr", len(eps))
 		}
-		results = append(results, b.applyBoosts(eps, episodeLimit, now)...)
+		results = append(results, applyBoosts(eps, limit, now, recallCfg)...)
 		stage("episodes_fused", len(eps))
 	}
 
 	// Failures and goals only take part when asked for by type; they compete with
-	// facts and episodes in the final sort.
-	if failures, goals := opts.includesWork(); failures || goals {
+	// facts and episodes in the final sort. A tag filter excludes them: they have
+	// no tags, so they could never satisfy it, and letting them through would
+	// return rows the caller explicitly filtered out.
+	if failures, goals := opts.includesWork(); (failures || goals) && len(tagFilter) == 0 {
 		work, err := b.recallWork(ctx, nsIDs, query, limit, asOf, failures, goals)
 		if err != nil {
 			return nil, err
@@ -407,6 +459,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 	if len(results) > limit {
 		results = results[:limit]
 	}
+	b.attachProvenance(ctx, results)
 
 	// A traced recall is an inspection, not a use: like a historical lookup it
 	// must not keep facts from decaying.
@@ -494,22 +547,24 @@ func importanceFactor(importance float32, weight float64) float64 {
 	return (1 - weight) + weight*imp
 }
 
-// reranks reports whether recency or importance weighting is switched on.
-func (b *Brain) reranks() bool {
-	return (b.config.RecencyWeight > 0 && b.config.RecencyHalfLife > 0) || b.config.ImportanceWeight > 0
+// reranksOn reports whether recency or importance weighting is switched on for
+// the given configuration.
+func reranksOn(cfg Config) bool {
+	return (cfg.RecencyWeight > 0 && cfg.RecencyHalfLife > 0) || cfg.ImportanceWeight > 0
 }
 
 // applyBoosts rescales scores by recencyFactor, importanceFactor and a fact's
 // feedback factor, re-sorts and keeps the best limit. With all three off it only
-// truncates.
-func (b *Brain) applyBoosts(rs []RecallResult, limit int, now time.Time) []RecallResult {
+// truncates. cfg carries the per-namespace resolved configuration.
+func applyBoosts(rs []RecallResult, limit int, now time.Time, cfg Config) []RecallResult {
 	for i := range rs {
 		rs[i].fusedScore, rs[i].recencyF, rs[i].importanceF = rs[i].Score, 1, 1
 	}
-	if !b.reranks() && !anyFeedback(rs) {
+	reranksOn := (cfg.RecencyWeight > 0 && cfg.RecencyHalfLife > 0) || cfg.ImportanceWeight > 0
+	if !reranksOn && !anyFeedback(rs) {
 		return truncate(rs, limit)
 	}
-	w, hl, iw := b.config.RecencyWeight, b.config.RecencyHalfLife, b.config.ImportanceWeight
+	w, hl, iw := cfg.RecencyWeight, cfg.RecencyHalfLife, cfg.ImportanceWeight
 	for i := range rs {
 		imp := importanceFactor(rs[i].Importance, iw)
 		f, rec := imp, 1.0
@@ -587,24 +642,24 @@ func (b *Brain) runRecallWithEmbedding(ctx context.Context, sql string, args []a
 		var emb pgvector.Vector
 		if kind == "fact" {
 			if includeEmbedding {
-				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &r.Confidence, &createdAt, &r.Importance, &r.Score, &emb); err != nil {
+				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &r.Confidence, &createdAt, &r.Importance, &r.Tags, &r.Score, &emb); err != nil {
 					return nil, fmt.Errorf("scan fact: %w", err)
 				}
 				r.embedding = emb.Slice()
 			} else {
-				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &r.Confidence, &createdAt, &r.Importance, &r.Score); err != nil {
+				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &r.Confidence, &createdAt, &r.Importance, &r.Tags, &r.Score); err != nil {
 					return nil, fmt.Errorf("scan fact: %w", err)
 				}
 			}
 		} else {
 			var occurredAt time.Time
 			if includeEmbedding {
-				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &occurredAt, &createdAt, &r.Importance, &r.Score, &emb); err != nil {
+				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &occurredAt, &createdAt, &r.Importance, &r.Tags, &r.Score, &emb); err != nil {
 					return nil, fmt.Errorf("scan episode: %w", err)
 				}
 				r.embedding = emb.Slice()
 			} else {
-				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &occurredAt, &createdAt, &r.Importance, &r.Score); err != nil {
+				if err := rows.Scan(&r.ID, &r.NamespaceID, &r.Content, &occurredAt, &createdAt, &r.Importance, &r.Tags, &r.Score); err != nil {
 					return nil, fmt.Errorf("scan episode: %w", err)
 				}
 			}

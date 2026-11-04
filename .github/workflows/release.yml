@@ -31,7 +31,9 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.25.0'
+          # Reads the go directive from go.mod, so a release never builds with an
+          # older toolchain than the module requires.
+          go-version-file: go.mod
           cache: true
 
       - name: Build Binary
@@ -43,7 +45,15 @@ jobs:
         run: |
           EXT=""
           if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
-          go build -ldflags="-s -w" -o cortexiq-${{ matrix.label }}$EXT ./cmd/cli/
+          VERSION="${{ github.ref_name }}"
+          COMMIT="${GITHUB_SHA}"
+          BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          go build \
+            -ldflags="-s -w \
+              -X github.com/Bojanni050/cortexiq/internal/version.Version=${VERSION} \
+              -X github.com/Bojanni050/cortexiq/internal/version.Commit=${COMMIT} \
+              -X github.com/Bojanni050/cortexiq/internal/version.Date=${BUILT_AT}" \
+            -o cortexiq-${{ matrix.label }}$EXT ./cmd/cli/
 
       - name: Upload Binary to Release
         uses: softprops/action-gh-release@v3
@@ -76,10 +86,18 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
+          # Only the exact version. No "latest" and no floating "0.1": a tag that
+          # moves turns "which version runs here" into a guess, and deployment
+          # pins CORTEXIQ_IMAGE_TAG explicitly.
+          #
+          # flavor: latest=false is not redundant. metadata-action's default
+          # flavor is latest=auto, which adds `latest` to every semver tag on its
+          # own — removing type=raw,value=latest did not stop it, and v0.1.1
+          # shipped with a `latest` tag because of that.
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
 
       - name: Build and Push
         uses: docker/build-push-action@v7
@@ -89,5 +107,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.release.published_at }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

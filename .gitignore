@@ -2,13 +2,16 @@
 # Binaries
 /cortexiq
 /cli
-cortexiq-*
+/cortexiq-*
 
 # Environment files
 .env
 *.env
 .env.*
 !.env.example
+
+# Host-specific compose file (template is docker-compose.prod.example.yml)
+docker-compose.prod.yml
 
 # IDE
 .idea/

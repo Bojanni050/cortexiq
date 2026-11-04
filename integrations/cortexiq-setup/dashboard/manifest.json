@@ -1,0 +1,14 @@
+{
+  "name": "cortexiq-setup",
+  "label": "CortexIQ",
+  "description": "CortexIQ geheugen-provider: installatiestatus, configuratie en verbindingstest.",
+  "icon": "database",
+  "version": "0.1.0",
+  "tab": {
+    "path": "/cortexiq",
+    "position": "after:config"
+  },
+  "entry": "dist/index.js",
+  "css": "dist/style.css",
+  "api": "plugin_api.py"
+}

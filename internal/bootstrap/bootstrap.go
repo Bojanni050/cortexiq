@@ -15,6 +15,7 @@ import (
 	"github.com/Bojanni050/cortexiq/internal/config"
 	"github.com/Bojanni050/cortexiq/internal/db"
 	"github.com/Bojanni050/cortexiq/internal/embedder"
+	"github.com/Bojanni050/cortexiq/internal/llmreg"
 	"github.com/Bojanni050/cortexiq/internal/observability"
 	"github.com/Bojanni050/cortexiq/internal/queries"
 	"github.com/Bojanni050/cortexiq/internal/reasoner"
@@ -106,6 +107,24 @@ func New(ctx context.Context) (*Context, error) {
 	}
 
 	rerank := reranker.NewHTTP(cfg.RerankerBaseURL, cfg.RerankerAPIKey, cfg.RerankerModel)
+
+	// Custom write-ignore patterns are a process-wide setting (not per-namespace
+	// yet); they are compiled once here and installed before the brain serves
+	// any write.
+	if cfg.WriteIgnorePatterns != "" {
+		var patterns []string
+		for _, p := range strings.FieldsFunc(cfg.WriteIgnorePatterns, func(r rune) bool {
+			return r == '\n' || r == ','
+		}) {
+			if p = strings.TrimSpace(p); p != "" {
+				patterns = append(patterns, p)
+			}
+		}
+		if len(patterns) > 0 {
+			brain.SetWriteIgnorePatterns(patterns)
+		}
+	}
+
 	br, err := brain.New(pool, cachedEmb, reas, q, brain.Config{
 		BatchSize:                      cfg.ConsolidationBatchSize,
 		SimilarityThreshold:            cfg.ConsolidationSimilarityThreshold,
@@ -135,10 +154,45 @@ func New(ctx context.Context) (*Context, error) {
 		RerankCandidates:               cfg.RerankCandidates,
 		MinEpisodeLength:               cfg.ExtractionMinChars,
 		SocialFilter:                   cfg.SocialFilter,
+		WriteFilter:                    cfg.WriteFilter,
+		WriteFilterRedactSecrets:       cfg.WriteFilterRedactSecrets,
 	})
 	if err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("build brain: %w", err)
+	}
+
+	// Retractions made before migration 00043 have no value key, and a
+	// rejection without one blocks nothing. Key them now. Idempotent, so a
+	// failure is logged and retried at the next start rather than stopping the
+	// server: the rest of the memory works without it, but say so loudly.
+	if n, err := br.BackfillValueKeys(ctx); err != nil {
+		logger.Error("backfill of retraction value keys failed; old rejections do not block yet", "error", err)
+	} else if n > 0 {
+		logger.Info("keyed old retractions", "count", n)
+	}
+
+	// Triage is optional and served by its own, cheaper model: it decides whether
+	// a cluster of episodes is worth extracting at all. Anything wrong with this
+	// client must not stop the brain from running, because triage failing open
+	// (everything durable) is always a safe degradation — but a bad model name
+	// would fail on every run, so a construction error still stops startup.
+	if cfg.TriageModel != "" {
+		triage, err := reasoner.NewOpenAI(cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.TriageModel, triageMaxTokens, true)
+		if err != nil {
+			pool.Close()
+			return nil, fmt.Errorf("build triage reasoner: %w", err)
+		}
+		br.SetTriage(triage)
+	}
+
+	// A model chosen in the dashboard is a row, and a row has to be read again
+	// after a restart or it lasts only as long as the process that accepted it.
+	// The database therefore wins over the environment at startup, exactly as it
+	// does when the change is made live.
+	if err := applyModelBindings(ctx, pool, br, cfg); err != nil {
+		pool.Close()
+		return nil, err
 	}
 
 	return &Context{
@@ -242,6 +296,10 @@ func buildEmbedder(cfg *config.Config) (embedder.Embedder, error) {
 	)
 }
 
+// triageMaxTokens bounds the cheap classifier's answer: a verdict and one short
+// sentence. Anything longer is a model that ignored the schema.
+const triageMaxTokens = 200
+
 func buildReasoner(cfg *config.Config) (reasoner.Reasoner, error) {
 	return reasoner.NewOpenAI(
 		cfg.OpenAIBaseURL,
@@ -250,4 +308,48 @@ func buildReasoner(cfg *config.Config) (reasoner.Reasoner, error) {
 		cfg.ReasonerMaxTokens,
 		cfg.ReasonerJSONMode,
 	)
+}
+
+// applyModelBindings points the brain at the models the dashboard stored. Only
+// the purposes that can change under a running process are applied; embedding and
+// reranker are deliberately left to their startup configuration.
+func applyModelBindings(ctx context.Context, pool *pgxpool.Pool, br *brain.Brain, cfg *config.Config) error {
+	bindings, err := llmreg.NewStore(pool).Bindings(ctx)
+	if err != nil {
+		return fmt.Errorf("load model bindings: %w", err)
+	}
+	if len(bindings) == 0 {
+		return nil
+	}
+	providers, err := llmreg.NewStore(pool).Providers(ctx)
+	if err != nil {
+		return fmt.Errorf("load providers: %w", err)
+	}
+	bySlug := make(map[string]llmreg.Provider, len(providers))
+	for _, p := range providers {
+		bySlug[p.Slug] = p
+	}
+	for purpose, b := range bindings {
+		if purpose != llmreg.PurposeReasoner && purpose != llmreg.PurposeTriage {
+			continue
+		}
+		p, ok := bySlug[b.Provider]
+		if !ok {
+			return fmt.Errorf("model binding for %s names provider %q, which does not exist", purpose, b.Provider)
+		}
+		maxTokens := cfg.ReasonerMaxTokens
+		if purpose == llmreg.PurposeTriage {
+			maxTokens = triageMaxTokens
+		}
+		client, err := reasoner.NewOpenAI(p.BaseURL, p.APIKey, b.Model, maxTokens, true)
+		if err != nil {
+			return fmt.Errorf("build %s model %q: %w", purpose, b.Model, err)
+		}
+		if purpose == llmreg.PurposeTriage {
+			br.SetTriage(client)
+			continue
+		}
+		br.SetReasoner(client)
+	}
+	return nil
 }

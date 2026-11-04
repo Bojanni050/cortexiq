@@ -3,11 +3,13 @@
 package webui
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,17 +17,25 @@ import (
 
 	"github.com/Bojanni050/cortexiq/internal/auth"
 	"github.com/Bojanni050/cortexiq/internal/brain"
+	"github.com/Bojanni050/cortexiq/internal/llmreg"
 	"github.com/Bojanni050/cortexiq/internal/models"
 	"github.com/Bojanni050/cortexiq/internal/schedule"
 	"github.com/Bojanni050/cortexiq/internal/scope"
 )
 
-//go:embed static/index.html static/vendor/*
+//go:embed static/index.html static/vendor/* static/brand/*
 var staticFS embed.FS
 
 // Handler serves the dashboard UI and the /api/v1 JSON endpoints.
 type Handler struct {
 	Brain *brain.Brain
+	// Registry holds the providers and per-purpose model choices made in the
+	// dashboard. When nil, the model endpoints report that they are unavailable
+	// rather than falling back to the environment silently.
+	Registry *llmreg.Store
+	// Models is what the environment configured, shown next to a dashboard
+	// choice so an override never hides the deployment's own settings.
+	Models ModelEnv
 	// Auth, when enabled, requires a Bearer token on every /api/v1 call and
 	// carries the token's read/write scope. The static dashboard shell itself
 	// holds no data and stays public.
@@ -39,10 +49,14 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/ui", h.serveIndex)
 	mux.HandleFunc("/ui/", h.serveIndex)
 	mux.HandleFunc("/ui/vendor/", h.serveVendor)
+	mux.HandleFunc("/ui/brand/", h.serveBrand)
 	api := http.NewServeMux()
 	api.HandleFunc("/api/v1/recall", h.recall)
 	api.HandleFunc("/api/v1/reflect", h.reflect)
 	api.HandleFunc("/api/v1/remember", h.remember)
+	api.HandleFunc("/api/v1/invalidate", h.invalidate)
+	api.HandleFunc("/api/v1/tags/timeline", h.tagTimeline)
+	api.HandleFunc("/api/v1/tags", h.tags)
 	api.HandleFunc("/api/v1/namespaces", h.namespaces)
 	api.HandleFunc("/api/v1/namespaces/", h.namespaceItem)
 	api.HandleFunc("/api/v1/episodes", h.episodes)
@@ -62,11 +76,18 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/mental-models", h.mentalModels)
 	api.HandleFunc("/api/v1/mental-models/", h.mentalModelItem)
 	api.HandleFunc("/api/v1/runs", h.runs)
+	api.HandleFunc("/api/v1/status", h.status)
+	api.HandleFunc("/api/v1/retractions", h.retractions)
+	api.HandleFunc("/api/v1/purge-log", h.purgeLog)
 	api.HandleFunc("/api/v1/consolidation", h.consolidation)
 	api.HandleFunc("/api/v1/graph", h.graph)
 	api.HandleFunc("/api/v1/stats", h.stats)
 	api.HandleFunc("/api/v1/settings/schedule", h.schedule)
 	api.HandleFunc("/api/v1/metrics", h.metrics)
+	api.HandleFunc("/api/v1/providers", h.providers)
+	api.HandleFunc("/api/v1/providers/", h.providerItem)
+	api.HandleFunc("/api/v1/models", h.models)
+	api.HandleFunc("/api/v1/models/", h.modelItem)
 	mux.Handle("/api/v1/", auth.Require(h.Auth, readOnlyWeb(api)))
 }
 
@@ -142,7 +163,8 @@ func errStatus(err error) int {
 		errors.Is(err, brain.ErrFailureNotFound),
 		errors.Is(err, brain.ErrContradictionNotFound),
 		errors.Is(err, brain.ErrCausalLinkNotFound),
-		errors.Is(err, brain.ErrHypothesisNotFound):
+		errors.Is(err, brain.ErrHypothesisNotFound),
+		errors.Is(err, brain.ErrMentalModelNotFound):
 		return http.StatusNotFound
 	// The request itself is wrong, so a client can tell its own mistake from a
 	// server failure.
@@ -150,9 +172,25 @@ func errStatus(err error) int {
 		errors.Is(err, brain.ErrContentTooLong),
 		errors.Is(err, brain.ErrInvalidPath),
 		errors.Is(err, brain.ErrNamespacesRequired),
-		errors.Is(err, brain.ErrNamespaceNotFound):
+		errors.Is(err, brain.ErrNamespaceNotFound),
+		errors.Is(err, brain.ErrMentalModelNotGrounded),
+		errors.Is(err, brain.ErrMentalModelRefreshInFlight),
+		errors.Is(err, brain.ErrReasonRequired),
+		errors.Is(err, brain.ErrInvalidExternalKey),
+		errors.Is(err, brain.ErrSupersedesNeedsKey):
 		return http.StatusBadRequest
 	case errors.Is(err, brain.ErrResolutionRequired):
+		return http.StatusBadRequest
+	// The target is still there and still readable, but it already carries a
+	// retraction: a second one would say the same thing twice.
+	case errors.Is(err, brain.ErrAlreadyRetracted),
+		errors.Is(err, brain.ErrExternalKeyExists):
+		return http.StatusConflict
+	case errors.Is(err, brain.ErrExternalKeyNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, llmreg.ErrProviderNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, llmreg.ErrModelRequired), errors.Is(err, llmreg.ErrPurposeUnknown):
 		return http.StatusBadRequest
 	case errors.Is(err, brain.ErrReadOnly):
 		return http.StatusForbidden
@@ -202,6 +240,38 @@ func pagination(r *http.Request) brain.Pagination {
 func intQuery(r *http.Request, name string) int {
 	n, _ := strconv.Atoi(r.URL.Query().Get(name))
 	return n
+}
+
+// parseIDList reads a comma-separated list of positive ids. The cap matches one
+// page of list rows: a dashboard page can name at most two facts per link, and a
+// larger list means the caller is asking for something other than labels.
+func parseIDList(raw string) ([]int64, error) {
+	const maxIDs = 200
+	parts := strings.Split(raw, ",")
+	if len(parts) > maxIDs {
+		return nil, fmt.Errorf("ids: at most %d per request", maxIDs)
+	}
+	seen := make(map[int64]bool, len(parts))
+	ids := make([]int64, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(p, 10, 64)
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("ids: %q is not a positive id", p)
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil, errors.New("ids: empty list")
+	}
+	return ids, nil
 }
 
 // pathID reads the id (and optional action) from /api/v1/<resource>/<id>[/<action>].
@@ -262,6 +332,7 @@ type factJSON struct {
 	ValidUntil  *time.Time `json:"valid_until"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
+	Tags        []string   `json:"tags"`
 }
 
 func factToJSON(f models.Fact) factJSON {
@@ -269,8 +340,51 @@ func factToJSON(f models.Fact) factJSON {
 		ID: f.ID, NamespaceID: f.NamespaceID, Content: f.Content,
 		Confidence: f.Confidence, Entity: f.Entity, Property: f.Property,
 		Value: f.Value, ValidFrom: f.ValidFrom, ValidUntil: f.ValidUntil,
-		CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
+		CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt, Tags: nonNilStrings(f.Tags),
 	}
+}
+
+// nonNilStrings keeps a JSON list from turning into null when a memory carries no
+// tags; the dashboard then renders "" instead of having to special-case null.
+func nonNilStrings(v []string) []string {
+	if v == nil {
+		return []string{}
+	}
+	return v
+}
+
+// tagsParam reads ?tags=a,b&tags=c into a list, the same shape the mental-model
+// endpoints accept.
+func tagsParam(r *http.Request) []string {
+	var tags []string
+	for _, v := range r.URL.Query()["tags"] {
+		for _, t := range strings.Split(v, ",") {
+			if t = strings.TrimSpace(t); t != "" {
+				tags = append(tags, t)
+			}
+		}
+	}
+	return tags
+}
+
+// sinceParam reads ?since= as the lower bound for reporting endpoints. A bound
+// that cannot be parsed is ignored rather than fatal: the endpoint still answers
+// the unfiltered question, which is more useful than a 400 for a typo.
+func sinceParam(r *http.Request) *time.Time {
+	since, err := parseTimeBound(r.URL.Query().Get("since"))
+	if err != nil {
+		return nil
+	}
+	return since
+}
+
+// monthsParam reads how many months a trend looks back, defaulting to a year.
+func monthsParam(r *http.Request) int {
+	n := intQuery(r, "months")
+	if n <= 0 {
+		return 12
+	}
+	return n
 }
 
 type episodeJSON struct {
@@ -279,6 +393,22 @@ type episodeJSON struct {
 	Content     string    `json:"content"`
 	OccurredAt  time.Time `json:"occurred_at"`
 	CreatedAt   time.Time `json:"created_at"`
+	Tags        []string  `json:"tags"`
+}
+
+func episodeToJSON(e models.Episode) episodeJSON {
+	return episodeJSON{
+		ID: e.ID, NamespaceID: e.NamespaceID, Content: e.Content,
+		OccurredAt: e.OccurredAt, CreatedAt: e.CreatedAt, Tags: nonNilStrings(e.Tags),
+	}
+}
+
+// episodeDetail is one episode plus the facts it was consolidated into. The
+// dashboard's context panel is the only caller: it answers "what did this
+// memory become?" without a second round trip.
+type episodeDetail struct {
+	Episode episodeJSON `json:"episode"`
+	Facts   []factJSON  `json:"facts"`
 }
 
 func (h *Handler) episodes(w http.ResponseWriter, r *http.Request) {
@@ -286,18 +416,18 @@ func (h *Handler) episodes(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
 		return
 	}
-	items, err := h.Brain.ListEpisodes(r.Context(), namespacesParam(r), pagination(r))
+	items, err := h.Brain.ListEpisodes(r.Context(), namespacesParam(r), tagsParam(r), pagination(r))
 	if !hdl(w, err) {
 		return
 	}
-	n, err := h.Brain.CountEpisodes(r.Context(), namespacesParam(r))
+	n, err := h.Brain.CountEpisodes(r.Context(), namespacesParam(r), tagsParam(r))
 	if !hdl(w, err) {
 		return
 	}
 	total(w, n)
 	out := make([]episodeJSON, 0, len(items))
 	for _, e := range items {
-		out = append(out, episodeJSON{ID: e.ID, NamespaceID: e.NamespaceID, Content: e.Content, OccurredAt: e.OccurredAt, CreatedAt: e.CreatedAt})
+		out = append(out, episodeToJSON(e))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -308,14 +438,44 @@ func (h *Handler) episodeItem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	if action != "" || r.Method != http.MethodDelete {
-		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
-		return
+	switch action {
+	case "":
+		switch r.Method {
+		case http.MethodGet:
+			e, err := h.Brain.GetEpisode(r.Context(), id)
+			if !hdl(w, err) {
+				return
+			}
+			facts, err := h.Brain.FactsFromEpisode(r.Context(), id)
+			if !hdl(w, err) {
+				return
+			}
+			out := make([]factJSON, 0, len(facts))
+			for _, f := range facts {
+				out = append(out, factToJSON(f))
+			}
+			writeJSON(w, http.StatusOK, episodeDetail{Episode: episodeToJSON(*e), Facts: out})
+		case http.MethodDelete:
+			counts, err := h.Brain.PurgeEpisode(r.Context(), id, brain.PurgeOptions{
+				Reason: "deleted from the dashboard",
+				Actor:  "dashboard",
+			})
+			if !hdl(w, err) {
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"status": "purged", "removed": counts})
+		default:
+			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		}
+	case "retract":
+		// The dashboard works from an id: retracting by query would let a
+		// near-duplicate episode answer for the one the reader clicked.
+		h.doRetract(w, r, func(reason, actor string) (*brain.Retraction, error) {
+			return h.Brain.RetractEpisodeByID(r.Context(), id, reason, actor)
+		})
+	default:
+		writeErr(w, http.StatusNotFound, errors.New("not found"))
 	}
-	if !hdl(w, h.Brain.PurgeEpisode(r.Context(), id)) {
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "purged"})
 }
 
 func (h *Handler) facts(w http.ResponseWriter, r *http.Request) {
@@ -324,6 +484,27 @@ func (h *Handler) facts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	query := r.URL.Query()
+	// ids resolves a known set of facts regardless of age or ordering. The
+	// dashboard uses it for causal-link labels, which point at facts that may sit
+	// outside the newest page. It ignores every other filter on purpose.
+	if raw := query.Get("ids"); raw != "" {
+		ids, err := parseIDList(raw)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		items, err := h.Brain.FactsByIDs(r.Context(), ids)
+		if !hdl(w, err) {
+			return
+		}
+		out := make([]factJSON, 0, len(items))
+		for _, f := range items {
+			out = append(out, factToJSON(f))
+		}
+		total(w, len(out))
+		writeJSON(w, http.StatusOK, map[string]any{"items": out, "total": len(out)})
+		return
+	}
 	from, err := parseTimeBound(query.Get("from"))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid from: %w", err))
@@ -349,11 +530,11 @@ func (h *Handler) facts(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid known_to: %w", err))
 		return
 	}
-	items, err := h.Brain.QueryFactsWindow(r.Context(), namespacesParam(r), nil, nil, asOf, from, to, knownFrom, knownTo, pagination(r))
+	items, err := h.Brain.QueryFactsWindow(r.Context(), namespacesParam(r), nil, nil, asOf, from, to, knownFrom, knownTo, tagsParam(r), pagination(r))
 	if !hdl(w, err) {
 		return
 	}
-	count, err := h.Brain.CountFactsWindow(r.Context(), namespacesParam(r), nil, nil, asOf, from, to, knownFrom, knownTo)
+	count, err := h.Brain.CountFactsWindow(r.Context(), namespacesParam(r), nil, nil, asOf, from, to, knownFrom, knownTo, tagsParam(r))
 	if !hdl(w, err) {
 		return
 	}
@@ -381,10 +562,14 @@ func (h *Handler) factItem(w http.ResponseWriter, r *http.Request) {
 			}
 			writeJSON(w, http.StatusOK, factToJSON(*f))
 		case http.MethodDelete:
-			if !hdl(w, h.Brain.PurgeFact(r.Context(), id)) {
+			counts, err := h.Brain.PurgeFact(r.Context(), id, brain.PurgeOptions{
+				Reason: "deleted from the dashboard",
+				Actor:  "dashboard",
+			})
+			if !hdl(w, err) {
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]string{"status": "purged"})
+			writeJSON(w, http.StatusOK, map[string]any{"status": "purged", "removed": counts})
 		default:
 			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
 		}
@@ -400,9 +585,87 @@ func (h *Handler) factItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	case "sources":
+		if r.Method != http.MethodGet {
+			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+			return
+		}
+		episodes, err := h.Brain.EpisodesForFact(r.Context(), id)
+		if !hdl(w, err) {
+			return
+		}
+		out := make([]episodeJSON, 0, len(episodes))
+		for _, e := range episodes {
+			out = append(out, episodeToJSON(e))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"episodes": out})
+	case "retract":
+		h.doRetract(w, r, func(reason, actor string) (*brain.Retraction, error) {
+			return h.Brain.RetractFact(r.Context(), id, reason, actor)
+		})
 	default:
 		writeErr(w, http.StatusNotFound, errors.New("not found"))
 	}
+}
+
+// retractBody is what the dashboard sends when it withdraws a memory. The
+// reason is required: brain rejects a retraction without one, because it would
+// then be indistinguishable from a forget.
+type retractBody struct {
+	Reason string `json:"reason"`
+	Actor  string `json:"actor"`
+}
+
+// doRetract runs the shared part of both retract handlers: read the reason, pick
+// the actor, and answer with the recorded retraction.
+func (h *Handler) doRetract(w http.ResponseWriter, r *http.Request, retract func(reason, actor string) (*brain.Retraction, error)) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	var body retractBody
+	if err := readBody(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	actor := strings.TrimSpace(body.Actor)
+	if actor == "" {
+		actor = "dashboard"
+	}
+	res, err := retract(body.Reason, actor)
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// retractions lists recorded withdrawals. They are the counterweight to a purge:
+// the claim is gone from memory but not from the record.
+func (h *Handler) retractions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	items, err := h.Brain.Retractions(r.Context(), namespacesParam(r), intQuery(r, "limit"))
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+// purgeLog lists hard deletes. It is deliberately global and not filtered by
+// namespace: a purge record outlives the namespace it happened in, which may
+// itself have been purged since.
+func (h *Handler) purgeLog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	items, err := h.Brain.PurgeLog(r.Context(), intQuery(r, "limit"))
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
@@ -421,6 +684,8 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 		// Types limits the search to "fact", "episode", "failure" and/or "goal";
 		// empty means facts and episodes.
 		Types []string `json:"types"`
+		// Tags narrows the search to memories carrying every listed tag (AND).
+		Tags []string `json:"tags"`
 		// AsOf is an RFC 3339 moment: recall what was known then.
 		AsOf string `json:"as_of"`
 		From string `json:"from"`
@@ -443,7 +708,7 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 	if len(body.Namespaces) == 0 {
 		body.Namespaces = []string{"/"}
 	}
-	opts := brain.RecallOptions{Types: body.Types}
+	opts := brain.RecallOptions{Types: body.Types, Tags: body.Tags}
 	for _, t := range body.Types {
 		if t != "fact" && t != "episode" && t != "failure" && t != "goal" {
 			writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid type %q: use fact, episode, failure or goal", t))
@@ -616,6 +881,14 @@ func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
 		Namespaces []string `json:"namespaces"`
 		Importance *float32 `json:"importance"`
 		OccurredAt string   `json:"occurred_at"`
+		Tags       []string `json:"tags"`
+		// ExternalKey makes the write keyed (idempotent; see brain.RememberOptions).
+		// Sources is accepted as an alias of ExternalRefs so a client ported from
+		// Hindsight keeps its field name.
+		ExternalKey  string   `json:"external_key"`
+		ExternalRefs []string `json:"external_refs"`
+		Sources      []string `json:"sources"`
+		Supersedes   bool     `json:"supersedes"`
 	}
 	if err := readBody(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -638,7 +911,15 @@ func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	id, err := h.Brain.RememberWithImportance(r.Context(), rememberNamespace(body.Namespace, body.Namespaces), body.Content, occurredAt, importance)
+	out, err := h.Brain.RememberWithOutcome(r.Context(), rememberNamespace(body.Namespace, body.Namespaces), body.Content, brain.RememberOptions{
+		OccurredAt:   occurredAt,
+		Importance:   importance,
+		Tags:         body.Tags,
+		ExternalKey:  body.ExternalKey,
+		ExternalRefs: append(body.ExternalRefs, body.Sources...),
+		Supersedes:   body.Supersedes,
+	})
+	id, decision := out.ID, out.Decision
 	if errors.Is(err, brain.ErrSocialCloser) {
 		// Nothing is wrong with the request; the content just is not a memory.
 		// 200 (not 201) keeps clients from reporting a row that was never created,
@@ -649,10 +930,37 @@ func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if errors.Is(err, brain.ErrWriteFiltered) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"skipped":       true,
+			"reason":        err.Error(),
+			"secret_labels": decision.SecretLabels,
+			"noise_score":   decision.NoiseScore,
+		})
+		return
+	}
 	if !hdl(w, err) {
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "message": "Memory remembered successfully"})
+	resp := map[string]any{"id": id, "message": "Memory remembered successfully"}
+	if decision.Action == "warn" {
+		resp["warning"] = "stored with warnings"
+		resp["reasons"] = decision.Reasons
+		resp["secret_labels"] = decision.SecretLabels
+		resp["noise_score"] = decision.NoiseScore
+	}
+	if out.SupersededID != 0 {
+		resp["superseded"] = out.SupersededID
+		resp["facts_ended"] = out.FactsEnded
+	}
+	if out.Unchanged {
+		// A replay of a keyed write: nothing was created, so 200 and not 201.
+		resp["unchanged"] = true
+		resp["message"] = "Memory already up to date"
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 // rememberNamespace picks the target namespace for a write: the first explicit
@@ -667,6 +975,77 @@ func rememberNamespace(single string, many []string) string {
 		}
 	}
 	return "/"
+}
+
+// invalidate retires the live episode holding an external_key — the pure
+// invalidation of a rejection, for mirrors keyed by the caller's own ids
+// (design-gaia-parity.md, phase 3). With a reason the withdrawal is recorded
+// as a retraction. 200 on retirement as on a replay; 404 when the key never
+// held an episode in this namespace, which is how a desynchronised mirror
+// announces itself.
+func (h *Handler) invalidate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	var body struct {
+		Namespace   string `json:"namespace"`
+		ExternalKey string `json:"external_key"`
+		Reason      string `json:"reason"`
+		Actor       string `json:"actor"`
+	}
+	if err := readBody(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if strings.TrimSpace(body.ExternalKey) == "" {
+		writeErr(w, http.StatusBadRequest, errors.New("external_key is required"))
+		return
+	}
+	out, err := h.Brain.InvalidateKeyed(r.Context(),
+		rememberNamespace(body.Namespace, nil), body.ExternalKey, body.Reason, body.Actor)
+	if !hdl(w, err) {
+		return
+	}
+	resp := map[string]any{
+		"id":                  out.ID,
+		"content":             out.Content,
+		"already_invalidated": out.AlreadyInvalidated,
+		"facts_ended":         out.FactsEnded,
+	}
+	if out.Retraction != nil {
+		resp["retraction"] = out.Retraction
+	}
+	if out.AlreadyInvalidated {
+		resp["message"] = "Already invalidated"
+	} else {
+		resp["message"] = "Memory invalidated"
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) tags(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	items, err := h.Brain.ListTags(r.Context(), namespacesParam(r), sinceParam(r), pagination(r).Limit)
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, nonNil(items))
+}
+
+func (h *Handler) tagTimeline(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	items, err := h.Brain.TagTimeline(r.Context(), namespacesParam(r), tagsParam(r), monthsParam(r))
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, nonNil(items))
 }
 
 func (h *Handler) namespaces(w http.ResponseWriter, r *http.Request) {
@@ -712,6 +1091,11 @@ func (h *Handler) namespaceItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug := parts[2]
+	// /api/v1/namespaces/{slug}/config is the namespace's configuration.
+	if len(parts) >= 4 && parts[3] == "config" {
+		h.namespaceConfig(w, r)
+		return
+	}
 	if r.Method != http.MethodGet {
 		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
 		return
@@ -721,6 +1105,55 @@ func (h *Handler) namespaceItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, ns)
+}
+
+// namespaceConfig serves /api/v1/namespaces/{slug}/config: GET returns the
+// effective configuration (defaults merged with ancestor and own overrides) and
+// the namespace's own overrides; PUT replaces the own overrides; DELETE removes
+// them so the namespace inherits again. DELETE with ?key= removes one key.
+func (h *Handler) namespaceConfig(w http.ResponseWriter, r *http.Request) {
+	slug := strings.TrimPrefix(r.URL.Path, "/api/v1/namespaces/")
+	slug = strings.TrimSuffix(strings.TrimSuffix(slug, "/config"), "/")
+	switch r.Method {
+	case http.MethodGet:
+		cfg, err := h.Brain.GetNamespaceConfig(r.Context(), slug)
+		if !hdl(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, cfg)
+	case http.MethodPut:
+		var body struct {
+			Overrides map[string]any `json:"overrides"`
+		}
+		if err := readBody(r, &body); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := h.Brain.SetNamespaceConfig(r.Context(), slug, body.Overrides); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		cfg, err := h.Brain.GetNamespaceConfig(r.Context(), slug)
+		if !hdl(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, cfg)
+	case http.MethodDelete:
+		if key := r.URL.Query().Get("key"); key != "" {
+			if err := h.Brain.DeleteNamespaceConfigKey(r.Context(), slug, key); err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
+		} else {
+			if err := h.Brain.DeleteNamespaceConfig(r.Context(), slug); err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+	}
 }
 
 func (h *Handler) goals(w http.ResponseWriter, r *http.Request) {
@@ -1182,6 +1615,37 @@ func (h *Handler) stats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, st)
 }
 
+// generateMentalModelInBackground runs a refresh after the response is sent.
+// The request context dies with the response, so the refresh gets its own
+// lifetime; it keeps the request's values (trace/scope), not its cancellation.
+func (h *Handler) generateMentalModelInBackground(ctx context.Context, id int64) {
+	base := context.WithoutCancel(ctx)
+	go func() {
+		ctx, cancel := context.WithTimeout(base, 5*time.Minute)
+		defer cancel()
+		// A generation may already be running for this model (the sweep, or the
+		// refresh that preceded an edit). Wait for it and try again: dropping the
+		// request would leave the content answering the old question.
+		for attempt := 0; attempt < 10; attempt++ {
+			_, err := h.Brain.RefreshMentalModel(ctx, id)
+			if err == nil {
+				return
+			}
+			if errors.Is(err, brain.ErrMentalModelRefreshInFlight) {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(3 * time.Second):
+					continue
+				}
+			}
+			log.Printf("mental model %d: background generation failed: %v", id, err)
+			return
+		}
+		log.Printf("mental model %d: background generation still in flight after 30s", id)
+	}()
+}
+
 func (h *Handler) mentalModels(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -1210,6 +1674,10 @@ func (h *Handler) mentalModels(w http.ResponseWriter, r *http.Request) {
 			Namespaces  []string `json:"namespaces"`
 			Tags        []string `json:"tags"`
 			MaxTokens   int      `json:"max_tokens"`
+			// Async returns as soon as the row exists and generates its content
+			// in the background. The dashboard uses it so the dialog can close
+			// immediately instead of holding the user for a 30-second reflect.
+			Async bool `json:"async"`
 		}
 		if err := readBody(r, &body); err != nil {
 			writeErr(w, http.StatusBadRequest, err)
@@ -1219,19 +1687,39 @@ func (h *Handler) mentalModels(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, errors.New("name and source_query are required"))
 			return
 		}
-		if len(body.Namespaces) == 0 {
-			body.Namespaces = []string{"/"}
+		// No namespace (or "/") means a global model: it reads every namespace and
+		// is available to reflect everywhere. A named namespace scopes it there.
+		var nsID *int64
+		if len(body.Namespaces) > 0 {
+			nsPath := strings.TrimSpace(body.Namespaces[0])
+			if nsPath != "" && nsPath != "/" {
+				id, err := h.Brain.NamespaceIDByPath(r.Context(), nsPath)
+				if !hdl(w, err) {
+					return
+				}
+				nsID = &id
+			}
 		}
-		nsIDs, err := h.Brain.ResolveNamespaceIDs(r.Context(), body.Namespaces)
-		if !hdl(w, err) {
-			return
-		}
-		mm, err := h.Brain.CreateMentalModel(r.Context(), nsIDs[0], brain.CreateMentalModelOptions{
+		opts := brain.CreateMentalModelOptions{
 			Name:        body.Name,
 			SourceQuery: body.SourceQuery,
 			Tags:        body.Tags,
 			MaxTokens:   body.MaxTokens,
-		})
+			NamespaceID: nsID,
+		}
+		if body.Async {
+			mm, err := h.Brain.CreateMentalModelQueued(r.Context(), opts)
+			if !hdl(w, err) {
+				return
+			}
+			// The request context dies with the response, so the refresh needs
+			// its own lifetime. It keeps the request's values (trace/scope) but
+			// not its cancellation.
+			h.generateMentalModelInBackground(r.Context(), mm.ID)
+			writeJSON(w, http.StatusAccepted, mm)
+			return
+		}
+		mm, err := h.Brain.CreateMentalModel(r.Context(), opts)
 		if !hdl(w, err) {
 			return
 		}
@@ -1261,12 +1749,50 @@ func (h *Handler) mentalModelItem(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+		case http.MethodPatch:
+			var body struct {
+				Name        string   `json:"name"`
+				SourceQuery string   `json:"source_query"`
+				Tags        []string `json:"tags"`
+				MaxTokens   int      `json:"max_tokens"`
+			}
+			if err := readBody(r, &body); err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
+			mm, err := h.Brain.UpdateMentalModel(r.Context(), id, brain.UpdateMentalModelOptions{
+				Name:        body.Name,
+				SourceQuery: body.SourceQuery,
+				Tags:        body.Tags,
+				MaxTokens:   body.MaxTokens,
+			})
+			if !hdl(w, err) {
+				return
+			}
+			writeJSON(w, http.StatusOK, mm)
 		default:
 			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
 		}
 	case "refresh":
 		if r.Method != http.MethodPost {
 			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+			return
+		}
+		var body struct {
+			Async bool `json:"async"`
+		}
+		if r.ContentLength > 0 {
+			if err := readBody(r, &body); err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
+		}
+		if _, err := h.Brain.GetMentalModel(r.Context(), id); !hdl(w, err) {
+			return
+		}
+		if body.Async {
+			h.generateMentalModelInBackground(r.Context(), id)
+			writeJSON(w, http.StatusAccepted, map[string]any{"mental_model_id": id, "status": "queued"})
 			return
 		}
 		mm, err := h.Brain.RefreshMentalModel(r.Context(), id)

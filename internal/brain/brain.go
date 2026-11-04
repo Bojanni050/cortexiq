@@ -151,6 +151,15 @@ type Config struct {
 	// it would cost an embedding, give the extractor a claim nobody made and show
 	// up in recall as noise. It returns ErrSocialCloser and stores nothing.
 	SocialFilter bool
+	// WriteFilter is the pre-write gate in front of every write path (MCP, HTTP,
+	// CLI): "off" (default, no filtering), "warn" (store but report reasons) or
+	// "strict" (reject secrets and terminal/stack-trace output). See
+	// write_filter.go.
+	WriteFilter string
+	// WriteFilterRedactSecrets, in warn mode, stores the redacted form of a
+	// write that contains a secret instead of the original. Off (default)
+	// stores the original and only reports the warning.
+	WriteFilterRedactSecrets bool
 }
 
 const defaultRelationshipBatchSize = 5
@@ -175,6 +184,7 @@ func DefaultConfig() Config {
 		RelationshipBatchSize:          defaultRelationshipBatchSize,
 		MinEpisodeLength:               defaultMinEpisodeLength,
 		SocialFilter:                   true,
+		WriteFilter:                    WriteFilterOff,
 		HybridRecall:                   true,
 	}
 }
@@ -183,6 +193,7 @@ type Brain struct {
 	pool     *pgxpool.Pool
 	embedder embedder.Embedder
 	reasoner reasoner.Reasoner
+	triage   TriageReasoner
 	queries  *queries.Queries
 	config   Config
 
@@ -193,7 +204,31 @@ type Brain struct {
 	episodeNS       map[int64]struct{}
 	episodeSignal   chan struct{}
 	scheduleChanged chan struct{}
+
+	// mmMu guards mmRefreshing, the set of mental models this process is
+	// currently synthesizing. It keeps the consolidation sweep and a manual
+	// refresh from paying for the same LLM call twice; across processes the
+	// worst case is a duplicate synthesis, not a lost one.
+	mmMu         sync.Mutex
+	mmRefreshing map[int64]struct{}
 }
+
+// TriageReasoner classifies a cluster of episodes before the extractor reads
+// it. It is kept as its own small interface, rather than another method on
+// Reasoner, because it is served by a cheaper model and may be absent.
+type TriageReasoner interface {
+	Triage(ctx context.Context, texts []string) (*reasoner.TriageResult, error)
+}
+
+// SetTriage installs the cheap classifier that runs before extraction. It is
+// called once at startup, before the server takes work; leaving it unset keeps
+// consolidation exactly as it was.
+func (b *Brain) SetTriage(t TriageReasoner) { b.triage = t }
+
+// SetReasoner swaps the model behind consolidation without a restart. The
+// budget wrapper is applied again, so a runtime swap cannot escape the
+// per-run call limit.
+func (b *Brain) SetReasoner(r reasoner.Reasoner) { b.reasoner = budgetReasoner{inner: r} }
 
 func New(pool *pgxpool.Pool, e embedder.Embedder, r reasoner.Reasoner, q *queries.Queries, cfg Config) (*Brain, error) {
 	if pool == nil {
@@ -217,6 +252,7 @@ func New(pool *pgxpool.Pool, e embedder.Embedder, r reasoner.Reasoner, q *querie
 
 		episodeSignal:   make(chan struct{}, 1),
 		scheduleChanged: make(chan struct{}, 1),
+		mmRefreshing:    make(map[int64]struct{}),
 	}, nil
 }
 
@@ -295,6 +331,17 @@ func (b *Brain) resolveNamespaceID(ctx context.Context, path string) (int64, err
 		return 0, ErrNamespaceNotFound
 	}
 	return id, nil
+}
+
+// NamespaceIDByPath resolves exactly one path to its own namespace ID, without
+// descendants. Use it when a row is filed under a namespace: ResolveNamespaceIDs
+// answers "/" with every namespace, and taking its first element would file the
+// row under an arbitrary one.
+func (b *Brain) NamespaceIDByPath(ctx context.Context, path string) (int64, error) {
+	if err := validatePath(path); err != nil {
+		return 0, err
+	}
+	return b.resolveNamespaceID(ctx, path)
 }
 
 // ResolveNamespaceIDs resolves a list of paths to namespace IDs.

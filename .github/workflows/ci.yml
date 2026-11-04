@@ -67,6 +67,23 @@ jobs:
           CORTEXIQ_TEST_DSN: postgres://cortexiq:cortexiq@localhost:5432/cortexiq_test?sslmode=disable
         run: go test ./...
 
+      # Coverage is measured with the database attached: without it the brain
+      # package reports 26% instead of 67%, and the number would mean nothing.
+      # The baseline only ratchets up. Raise it in the same pull request that
+      # raises coverage.
+      - name: Coverage (must not drop)
+        env:
+          CORTEXIQ_TEST_DSN: postgres://cortexiq:cortexiq@localhost:5432/cortexiq_test?sslmode=disable
+        run: |
+          go test ./... -count=1 -covermode=count -coverprofile=coverage.out
+          total="$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}' | tr -d '%')"
+          baseline="$(tr -d '[:space:]' < .github/coverage-baseline.txt)"
+          echo "total coverage: ${total}% (baseline ${baseline}%)"
+          if ! awk -v t="${total}" -v b="${baseline}" 'BEGIN { exit !(t + 0.2 >= b) }'; then
+            echo "FAIL: coverage ${total}% dropped below the baseline ${baseline}%"
+            exit 1
+          fi
+
       # Guard: the integration tests skip themselves without a database, which
       # would silently turn them into no-ops. Fail if any of them was skipped.
       - name: Integration tests ran (not skipped)
@@ -78,3 +95,42 @@ jobs:
             echo "Integration tests were skipped"; exit 1
           fi
           grep -c -- '--- PASS: TestIntegration' integration.log
+
+  race:
+    name: Race detector
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: cortexiq
+          POSTGRES_PASSWORD: cortexiq
+          POSTGRES_DB: cortexiq_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cortexiq -d cortexiq_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      # The consolidation pipeline runs the reasoner and the embedder from
+      # goroutines; a data race there corrupts memory silently, which is the one
+      # failure mode this project cannot afford. Kept as its own job so a slow
+      # race run never hides a plain test failure.
+      - name: Test with the race detector
+        env:
+          CORTEXIQ_TEST_DSN: postgres://cortexiq:cortexiq@localhost:5432/cortexiq_test?sslmode=disable
+        run: go test -race ./... -count=1

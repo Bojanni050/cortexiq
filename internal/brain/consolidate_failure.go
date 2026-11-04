@@ -3,14 +3,14 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/Bojanni050/cortexiq/internal/models"
-	"github.com/pgvector/pgvector-go"
 )
 
-func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (repeats, patterns, llmCalls int, errs []string) {
+func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (repeats, patterns, refused, llmCalls int, errs []string) {
 	rows, err := b.pool.Query(ctx,
 		`SELECT id, namespace_id, goal_id, content, reason, lesson, created_at, deleted_at
 		 FROM failures WHERE namespace_id = $1 AND deleted_at IS NULL AND id > $2
@@ -114,12 +114,22 @@ func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *
 				errs = append(errs, fmt.Sprintf("embed failure pattern fact: %v", embErr))
 				continue
 			}
-			_, err := b.pool.Exec(ctx,
-				`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, valid_from)
-				 VALUES ($1, $2, $3, $4, $5, $6)`,
-				nsID, r.PatternFact, pgvector.NewVector(vec), b.embedder.Model(), r.Confidence, time.Now().UTC(),
-			)
-			if err != nil {
+			validFrom := time.Now().UTC()
+			if _, err := b.insertFact(ctx, b.pool, factInsert{
+				Origin:         originFailure,
+				NamespaceID:    nsID,
+				Content:        r.PatternFact,
+				Embedding:      vec,
+				EmbeddingModel: b.embedder.Model(),
+				Confidence:     r.Confidence,
+				ValidFrom:      &validFrom,
+				Importance:     DefaultImportance,
+			}); err != nil {
+				if errors.Is(err, ErrRejectedValue) {
+					// A pattern the user rejected earlier. Counted, not an error.
+					refused++
+					continue
+				}
 				errs = append(errs, fmt.Sprintf("insert failure pattern fact: %v", err))
 				continue
 			}

@@ -36,15 +36,33 @@ func rememberCmd(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	bc := getBootstrap(cmd)
-	id, err := bc.Brain.RememberWithImportance(ctx, namespace, content, occurredAt, float32(cmd.Float("importance")))
+	id, decision, err := bc.Brain.RememberWithDecision(ctx, namespace, content, brain.RememberOptions{
+		OccurredAt: occurredAt,
+		Importance: float32(cmd.Float("importance")),
+		Tags:       cmd.StringSlice("tag"),
+	})
 	if errors.Is(err, brain.ErrSocialCloser) {
 		return printJSON(map[string]any{"skipped": true, "reason": err.Error()})
+	}
+	if errors.Is(err, brain.ErrWriteFiltered) {
+		return printJSON(map[string]any{
+			"skipped":       true,
+			"reason":        err.Error(),
+			"secret_labels": decision.SecretLabels,
+			"noise_score":   decision.NoiseScore,
+		})
 	}
 	if err != nil {
 		return err
 	}
 
 	output := map[string]any{"id": id, "message": "Memory remembered successfully"}
+	if decision.Action == "warn" {
+		output["warning"] = "stored with warnings"
+		output["reasons"] = decision.Reasons
+		output["secret_labels"] = decision.SecretLabels
+		output["noise_score"] = decision.NoiseScore
+	}
 	return printJSON(output)
 }
 
@@ -88,7 +106,7 @@ func recallCmd(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	bc := getBootstrap(cmd)
-	results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo, MMR: mmr})
+	results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo, Tags: cmd.StringSlice("tag"), MMR: mmr})
 	if err != nil {
 		return err
 	}
@@ -153,6 +171,7 @@ func reflectCmd(ctx context.Context, cmd *cli.Command) error {
 		KnownFrom:  knownFrom,
 		KnownTo:    knownTo,
 		Types:      types,
+		Tags:       cmd.StringSlice("tag"),
 	})
 	if err != nil {
 		return err
@@ -181,37 +200,144 @@ func forgetCmd(ctx context.Context, cmd *cli.Command) error {
 }
 
 func purgeEpisodeCmd(ctx context.Context, cmd *cli.Command) error {
-	args := cmd.Args()
-	if args.Len() == 0 {
-		return fmt.Errorf("episode ID is required")
-	}
-	var id int64
-	if _, err := fmt.Sscanf(args.First(), "%d", &id); err != nil {
-		return fmt.Errorf("invalid episode ID: %w", err)
-	}
-
-	bc := getBootstrap(cmd)
-	if err := bc.Brain.PurgeEpisode(ctx, id); err != nil {
-		return err
-	}
-	return printJSON(map[string]string{"message": "Episode purged successfully"})
+	return runPurge(cmd, "episode ID is required", func(bc *bootstrap.Context, id int64) (brain.PurgeCounts, error) {
+		return bc.Brain.PurgeEpisode(ctx, id, purgeOptions(cmd))
+	})
 }
 
 func purgeFactCmd(ctx context.Context, cmd *cli.Command) error {
+	return runPurge(cmd, "fact ID is required", func(bc *bootstrap.Context, id int64) (brain.PurgeCounts, error) {
+		return bc.Brain.PurgeFact(ctx, id, purgeOptions(cmd))
+	})
+}
+
+// runPurge parses the id, runs one purge, and prints what was (or would be)
+// removed. A dry run says so in the output so its counts cannot be mistaken
+// for a completed delete.
+func runPurge(cmd *cli.Command, missing string, purge func(*bootstrap.Context, int64) (brain.PurgeCounts, error)) error {
 	args := cmd.Args()
 	if args.Len() == 0 {
-		return fmt.Errorf("fact ID is required")
+		return fmt.Errorf("%s", missing)
 	}
 	var id int64
 	if _, err := fmt.Sscanf(args.First(), "%d", &id); err != nil {
-		return fmt.Errorf("invalid fact ID: %w", err)
+		return fmt.Errorf("invalid id: %w", err)
 	}
 
-	bc := getBootstrap(cmd)
-	if err := bc.Brain.PurgeFact(ctx, id); err != nil {
+	counts, err := purge(getBootstrap(cmd), id)
+	if err != nil {
 		return err
 	}
-	return printJSON(map[string]string{"message": "Fact purged successfully"})
+	out := map[string]any{"removed": counts}
+	if cmd.Bool("dry-run") {
+		out["dry_run"] = true
+		out["message"] = "nothing was deleted; re-run without --dry-run to apply"
+	} else {
+		out["message"] = "purged"
+	}
+	return printJSON(out)
+}
+
+func purgeOptions(cmd *cli.Command) brain.PurgeOptions {
+	return brain.PurgeOptions{
+		Reason: cmd.String("reason"),
+		Actor:  cmd.String("actor"),
+		DryRun: cmd.Bool("dry-run"),
+	}
+}
+
+// purgeNamespaceCmd requires the slug twice: --confirm must repeat the
+// positional argument. A namespace purge cascades to every memory filed under
+// it, so a single typo must not be enough to run it.
+func purgeNamespaceCmd(ctx context.Context, cmd *cli.Command) error {
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("namespace slug is required")
+	}
+	slug := args.First()
+	if cmd.String("confirm") != slug {
+		return fmt.Errorf("refusing to purge %q: pass --confirm %q to confirm", slug, slug)
+	}
+
+	counts, err := getBootstrap(cmd).Brain.PurgeNamespace(ctx, slug, purgeOptions(cmd))
+	if err != nil {
+		return err
+	}
+	out := map[string]any{"namespace": slug, "removed": counts}
+	if cmd.Bool("dry-run") {
+		out["dry_run"] = true
+		out["message"] = "nothing was deleted; re-run without --dry-run to apply"
+	} else {
+		out["message"] = "purged"
+	}
+	return printJSON(out)
+}
+
+// retractCmd withdraws a claim and records why. Either a query (the episode it
+// best matches) or --fact selects the target.
+func retractCmd(ctx context.Context, cmd *cli.Command) (err error) {
+	reason := cmd.String("reason")
+	if factID := cmd.Int64("fact"); factID > 0 {
+		var r *brain.Retraction
+		r, err = getBootstrap(cmd).Brain.RetractFact(ctx, factID, reason, cmd.String("actor"))
+		if err != nil {
+			return err
+		}
+		return printJSON(r)
+	}
+
+	args := cmd.Args()
+	if args.Len() == 0 {
+		return fmt.Errorf("a description of the claim is required (or pass --fact <id>)")
+	}
+	query := args.First()
+	if strings.TrimSpace(query) == "" {
+		return fmt.Errorf("description cannot be empty")
+	}
+
+	r, err := getBootstrap(cmd).Brain.RetractEpisode(ctx, cmd.StringSlice("namespaces"), query, reason, cmd.String("actor"))
+	if err != nil {
+		return err
+	}
+	return printJSON(r)
+}
+
+// liftCmd lifts a rejection by retraction id (see `retractions`). The value may
+// then be stored again; the withdrawn row does not come back.
+func liftCmd(ctx context.Context, cmd *cli.Command) error {
+	args := cmd.Args()
+	if args.Len() != 1 {
+		return fmt.Errorf("one retraction id is required (see `retractions`)")
+	}
+	id, err := strconv.ParseInt(args.First(), 10, 64)
+	if err != nil || id <= 0 {
+		return fmt.Errorf("invalid retraction id %q", args.First())
+	}
+	actor := cmd.String("actor")
+	if actor == "" {
+		actor = "cli"
+	}
+	r, err := getBootstrap(cmd).Brain.LiftRetraction(ctx, id, cmd.String("reason"), actor)
+	if err != nil {
+		return err
+	}
+	return printJSON(r)
+}
+
+func retractionsCmd(ctx context.Context, cmd *cli.Command) error {
+	rows, err := getBootstrap(cmd).Brain.Retractions(ctx, cmd.StringSlice("namespaces"), cmd.Int("limit"))
+	if err != nil {
+		return err
+	}
+	return printJSON(rows)
+}
+
+func purgeLogCmd(ctx context.Context, cmd *cli.Command) error {
+	rows, err := getBootstrap(cmd).Brain.PurgeLog(ctx, cmd.Int("limit"))
+	if err != nil {
+		return err
+	}
+	return printJSON(rows)
 }
 
 func factsListCmd(ctx context.Context, cmd *cli.Command) error {
@@ -259,7 +385,7 @@ func factsListCmd(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	bc := getBootstrap(cmd)
-	facts, err := bc.Brain.QueryFactsWindow(ctx, namespaces, since, until, asOf, from, to, knownFrom, knownTo, page)
+	facts, err := bc.Brain.QueryFactsWindow(ctx, namespaces, since, until, asOf, from, to, knownFrom, knownTo, cmd.StringSlice("tag"), page)
 	if err != nil {
 		return err
 	}
@@ -307,15 +433,21 @@ func mentalModelCreateCmd(ctx context.Context, cmd *cli.Command) error {
 	maxTokens := cmd.Int("max-tokens")
 
 	bc := getBootstrap(cmd)
-	nsIDs, err := bc.Brain.ResolveNamespaceIDs(ctx, []string{namespace})
-	if err != nil || len(nsIDs) == 0 {
-		return fmt.Errorf("namespace %q not found", namespace)
+	// "/" (the default) means a global model; a named namespace scopes it there.
+	var nsID *int64
+	if namespace != "" && namespace != "/" {
+		id, err := bc.Brain.NamespaceIDByPath(ctx, namespace)
+		if err != nil {
+			return fmt.Errorf("namespace %q not found", namespace)
+		}
+		nsID = &id
 	}
-	mm, err := bc.Brain.CreateMentalModel(ctx, nsIDs[0], brain.CreateMentalModelOptions{
+	mm, err := bc.Brain.CreateMentalModel(ctx, brain.CreateMentalModelOptions{
 		Name:        name,
 		SourceQuery: query,
 		Tags:        tags,
 		MaxTokens:   maxTokens,
+		NamespaceID: nsID,
 	})
 	if err != nil {
 		return err

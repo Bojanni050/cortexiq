@@ -8,7 +8,6 @@ import (
 
 	"github.com/Bojanni050/cortexiq/internal/models"
 	"github.com/jackc/pgx/v5"
-	"github.com/pgvector/pgvector-go"
 )
 
 var (
@@ -241,14 +240,18 @@ func (b *Brain) ConfirmHypothesis(ctx context.Context, id int64) (*models.Hypoth
 	}
 	defer tx.Rollback(ctx)
 
-	var factID int64
-	err = tx.QueryRow(ctx,
-		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, valid_from)
-		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		current.NamespaceID, current.Content, pgvector.NewVector(vec), b.embedder.Model(), current.Confidence, now,
-	).Scan(&factID)
+	factID, err := b.insertFact(ctx, tx, factInsert{
+		Origin:         originHypothesis,
+		NamespaceID:    current.NamespaceID,
+		Content:        current.Content,
+		Embedding:      vec,
+		EmbeddingModel: b.embedder.Model(),
+		Confidence:     current.Confidence,
+		ValidFrom:      &now,
+		Importance:     DefaultImportance,
+	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("insert fact from hypothesis: %w", err)
+		return nil, nil, err
 	}
 
 	var h models.Hypothesis
@@ -272,13 +275,13 @@ func (b *Brain) ConfirmHypothesis(ctx context.Context, id int64) (*models.Hypoth
 	var f models.Fact
 	err = tx.QueryRow(ctx,
 		`SELECT id, namespace_id, content, embedding, embedding_model, confidence,
-		 entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at
+		 entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at, tags
 		 FROM facts WHERE id = $1`,
 		factID,
 	).Scan(
 		&f.ID, &f.NamespaceID, &f.Content, &f.Embedding, &f.EmbeddingModel,
 		&f.Confidence, &f.Entity, &f.Property, &f.Value,
-		&f.ValidFrom, &f.ValidUntil, &f.CreatedAt, &f.UpdatedAt, &f.DeletedAt,
+		&f.ValidFrom, &f.ValidUntil, &f.CreatedAt, &f.UpdatedAt, &f.DeletedAt, &f.Tags,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("scan confirmed fact: %w", err)

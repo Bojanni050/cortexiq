@@ -25,11 +25,21 @@ COPY . .
 ARG TARGETOS
 ARG TARGETARCH
 
+# Build identity, injected so `cortexiq version` inside the container answers
+# without shelling into the image (distroless has no shell anyway).
+# Pass with --build-arg; the defaults keep a plain `docker build` honest.
+ARG VERSION=dev
+ARG COMMIT=none
+ARG BUILD_DATE=unknown
+
 # 4. Build the binary.
 # CGO_ENABLED=0 creates a fully static binary (no C library dependencies).
 # -ldflags="-s -w" strips debug info for a smaller binary.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
-    -ldflags="-s -w" \
+    -ldflags="-s -w \
+      -X github.com/Bojanni050/cortexiq/internal/version.Version=${VERSION} \
+      -X github.com/Bojanni050/cortexiq/internal/version.Commit=${COMMIT} \
+      -X github.com/Bojanni050/cortexiq/internal/version.Date=${BUILD_DATE}" \
     -o /out/cortexiq \
     ./cmd/cli/
 

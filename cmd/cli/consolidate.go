@@ -19,6 +19,7 @@ import (
 
 func consolidateRunCmd(ctx context.Context, cmd *cli.Command) error {
 	namespaces := cmd.StringSlice("namespaces")
+	tags := cmd.StringSlice("tag")
 	dryRun := cmd.Bool("dry-run")
 
 	bc := getBootstrap(cmd)
@@ -26,6 +27,7 @@ func consolidateRunCmd(ctx context.Context, cmd *cli.Command) error {
 	if dryRun {
 		return printJSON(map[string]any{
 			"namespaces": namespaces,
+			"tags":       tags,
 			"status":     "dry-run requested",
 		})
 	}
@@ -41,7 +43,7 @@ func consolidateRunCmd(ctx context.Context, cmd *cli.Command) error {
 
 	var results []brain.ConsolidationResult
 	for _, id := range ids {
-		result, err := bc.Brain.ConsolidateByID(ctx, id)
+		result, err := bc.Brain.ConsolidateByIDWithTags(ctx, id, tags)
 		if err != nil {
 			log.Printf("Consolidation failed for namespace ID %d: %v", id, err)
 			continue

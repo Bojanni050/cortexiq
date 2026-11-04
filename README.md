@@ -7,10 +7,11 @@ Every LLM starts every conversation from zero. CortexIQ gives your agent persist
 
 Open source. Self-hosted. Works with any MCP-compatible agent.
 
+**[Status](docs/STATUS.md)** — what is live, what is switched off on purpose, and what is still open.
+
 ---
 
-> **Don't want to self-host?**
-> **[usestash.io](https://usestash.io)** is the hosted cloud version — sign in with Google, copy one MCP URL, and you're done. Free to start.
+> **Hosted alternative:** [usestash.io](https://usestash.io) hosts the upstream Stash cloud — a different product built on the same foundation, not CortexIQ. CortexIQ itself is self-hosted; see Quick Start below.
 
 ---
 
@@ -52,7 +53,38 @@ A vote never edits the fact and never touches confidence, `valid_from`/`valid_un
 
 Every caller has one standing vote per fact — changing your mind replaces it (`replaced: true`), so nobody wins an argument by voting more often. Votes are kept append-only in `fact_feedback` for audit, but only each principal's latest vote counts. Recalls with `as_of` or a `known_from`/`known_to` window ignore feedback: today's opinion must not rewrite what was known then.
 
+## Removing memory: forget, retract, purge
+
+Three verbs, because "remove this" means three different things:
+
+| You mean | Use | What happens |
+|---|---|---|
+| Stop using it | `forget` | Soft delete. Hidden from recall; makes no claim about whether it was true. |
+| It was wrong | `retract` | Soft delete **and a record** of what was withdrawn and why. |
+| It must not exist | `purge` | Hard delete. The row, the facts only it sourced and the cached copy of its text are gone. No undo. |
+
+```bash
+cortexiq forget "the queue is kafka"                     # stop using it
+cortexiq retract "the queue is kafka"   --reason "the queue is Redis, migrated in March"        # withdraw and keep the correction
+cortexiq retract --fact 42 --reason "..."                 # by id
+cortexiq retractions                                      # what was withdrawn, and why
+
+cortexiq purge fact 42 --reason "user asked for removal"
+cortexiq purge episode 17 --reason "..." --dry-run        # report what would go first
+cortexiq purge namespace /projects/old --confirm /projects/old --reason "..."
+cortexiq purge-log                                        # audit trail: what, when, why
+```
+
+`retract` requires a reason because a withdrawal is itself a claim about the world; without the correction it is just a delete. The retraction is stored in `retractions` together with the claim as it was, so a later reader finds the correction instead of an unexplained hole.
+
+`purge` also deletes facts that were sourced *only* by the purged episode — otherwise the memory survives under another name — and the `embedding_cache` row that still held the original text. A namespace purge refuses to run while the namespace has children, and requires the slug twice. Every purge is written to `purge_log`, never with the content, by design.
+
+MCP clients use one tool with a `mode`: `forget` (default), `retract` or `purge`, plus `reason` for the last two.
+
+The dashboard offers the same choice on every memory row: `retract` next to `purge`, with a reason the API also insists on. The **Lifecycle** tab puts retractions and purges in one timeline — what was withdrawn, why, and by whom — so the audit trail does not require a shell.
+
 ## What is not worth storing
+
 
 A memory server that stores "dank je wel, tot morgen" is one whose recall fills with noise. Every write goes through the same gate (`Remember`), and content that says nothing — greetings, thanks, acknowledgements and the function words around them — is refused with `skipped: true` instead of becoming an episode:
 
@@ -90,8 +122,19 @@ A **mental model** is a curated, high-quality summary about a specific topic —
 
 Mental models are the highest-quality knowledge in the system: facts are extracted from episodes, reflect answers are generated on demand, but a mental model is a *persistent artifact* you control. Use them for topics that come up repeatedly — deployment processes, architecture decisions, "how we handle X".
 
+A model is **global by default**: it is synthesized from every namespace, refreshed when anything anywhere changes, and found by `reflect` from any namespace. Give it a namespace to scope it to that namespace and its children:
+
 ```bash
-# Create a mental model from a source query
+# Global: reads every namespace and is available everywhere
+cortexiq mental-model create "User" "What do we know about the user?"
+
+# Scoped: reads only /projects/myapp and its children
+cortexiq mental-model create "Kafka Migration" "What do we know about the Kafka migration?" \
+  --namespace /projects/myapp --tags infrastructure,messaging
+```
+
+```bash
+# Create a scoped mental model from a source query
 cortexiq mental-model create "Kafka Migration" "What do we know about the Kafka migration?" \
   --namespace /projects/myapp --tags infrastructure,messaging
 
@@ -113,7 +156,15 @@ cortexiq mental-model delete 42
 
 The same operations are available as MCP tools (`mental_model_create`, `mental_model_list`, `mental_model_get`, `mental_model_refresh`, `mental_model_delete`, `mental_model_search`) and as REST endpoints (`GET/POST /api/v1/mental-models`, `GET/DELETE /api/v1/mental-models/<id>`, `POST /api/v1/mental-models/<id>/refresh`, `POST /api/v1/mental-models/search`).
 
-**How reflect uses mental models:** every `reflect` call first searches mental models semantically. Matching models appear in the synthesis prompt *before* raw memories, labelled as "curated summaries". The LLM is instructed to prefer them. Results are marked `is_stale: true` when they haven't been refreshed in 24 hours.
+**How reflect uses mental models:** every `reflect` call first searches mental models semantically. Matching models appear in the synthesis prompt *before* raw memories, labelled as "curated summaries". The LLM is instructed to prefer them. Results carry `is_stale` and a `stale_reason`.
+
+**Freshness is measured against the memories, not the clock.** Every model stores `last_memory_seen_at` — the database-time snapshot its content was synthesized from — and `based_on`, the ids of the memories it actually read. A model is stale when a memory in its scope — every namespace for a global model, the chosen namespace and its children for a scoped one — was written or edited after that snapshot (`new_memories`), or when one of the memories it cites no longer exists (`retracted_grounding`). The second check is what catches a `forget`: deleting a fact writes nothing new for a watermark to see. Models created before this bookkeeping existed have no grounding record and report `no_grounding` until their first refresh re-synthesizes them.
+
+**Refreshes are guarded and automatic.** Consolidation refreshes up to three stale models per namespace per run, oldest first, and never touches the same model more than once an hour (a global model sees every change, so without that floor every five-minute run would buy it again). A refresh that finds no memories to ground the summary keeps the existing content and stamps `last_refresh_failed_at` / `last_refresh_error` instead of replacing a good summary with "I don't know"; automatic refresh then pauses that model until an explicit `mental-model refresh` succeeds. Creating a mental model in a namespace with no memories fails with the same `not grounded` error rather than storing an empty one.
+
+The dashboard creates models in the background: the dialog closes as soon as the row exists, the list shows `generating…`, and the row is replaced with the synthesized content (or the failure) when it lands. The API does the same with `"async": true` and answers `202 Accepted`; without it the POST blocks and returns the finished model, which is the path the CLI and MCP tools use.
+
+A model can be edited from the dashboard's **Edit** button (or `PATCH /api/v1/mental-models/<id>`) to change its name, source query, tags or token budget. A rename leaves the stored content valid; changing the source query marks it stale with `stale_reason: "source_changed"` until a refresh rebuilds it, and **Save & refresh** does that in the background. Content is written as a durable document: no citation links, memory ids or agent bookkeeping.
 
 **Mental models vs facts vs reflect:**
 
@@ -237,9 +288,42 @@ http://localhost:8080/mcp   # Streamable HTTP
 
 Both serve the same tools. Streamable HTTP is what hosted clients speak — Mistral Le Chat and Vibe, monday, Gemini Enterprise; SSE still works for Claude Desktop, Cursor, opencode and the rest. `/mcp` sends a heartbeat and `/sse` a JSON-RPC ping every 15 s, so an idle stream is not cut by clients that time out a silent body after 300 s.
 
-A web dashboard is also served at `http://localhost:9090/ui` — browse and manage memories, goals, hypotheses, contradictions, and failures from your browser. The JSON API lives on that **same 9090 listener** (`POST /api/v1/recall`, `POST /api/v1/remember`, `GET /api/v1/...`); the 8080 listener speaks MCP only.
+A web dashboard is also served at `http://localhost:9090/ui` — browse and manage memories, goals, hypotheses, contradictions, and failures from your browser. It has a collapsible context column: open an episode to see the facts it was consolidated into, or a fact to see the episodes behind it. The JSON API lives on that **same 9090 listener** (`POST /api/v1/recall`, `POST /api/v1/remember`, `GET /api/v1/...`); the 8080 listener speaks MCP only.
 
 Recall results carry an `id` that is only unique **within its own table**: facts and episodes have separate id sequences, and the same number exists in both. Every result therefore also carries a typed field — `fact_id` for a fact, `episode_id` for an episode — and a `type` (`"fact"` or `"episode"`). Act on the typed field, not on `id`: `DELETE /api/v1/facts/<an episode id>` deletes an unrelated fact, and the server cannot tell that you meant a different row.
+
+### Connecting a client in one command
+
+`cortexiq connect` registers the server with the clients installed on this
+machine — Cursor, Claude Code and opencode by default, or one of them with
+`--app cursor`:
+
+```bash
+cortexiq connect --token <token> --url http://localhost:8080/mcp   # this project
+cortexiq connect --global --env-ref CORTEXIQ_API_TOKEN             # every project
+cortexiq connect --dry-run                                         # show, change nothing
+cortexiq disconnect --app cursor                                   # undo
+```
+
+Cursor's `.cursor/mcp.json` is edited directly; Claude Code and opencode are
+configured through their own CLI so the rest of their configuration is left
+alone. With `--env-ref` the file holds an environment reference rather than the
+secret. `cortexiq connect` picks the streamable HTTP endpoint (`/mcp`), which is
+what current clients speak.
+
+Give each app its own token:
+
+```bash
+cortexiq token new --name opencode
+```
+
+That prints a secret (once — it is stored nowhere) and the entry to add to
+`CORTEXIQ_API_TOKENS` on the server.
+
+A token deliberately carries no namespace. Memories are filed by project, and an
+app works in more than one of them, so a client is asked where each memory
+belongs with every write: `remember` refuses without a namespace and points at
+`list_namespaces`, which is the tool that answers the question.
 
 ### Time-aware recall
 
@@ -271,6 +355,10 @@ separately with `CORTEXIQ_TEMPORAL_ARM=false`.
 
 The REST API accepts the same explicit bounds on `POST /api/v1/recall`, for
 example `{"query":"project updates","from":"2025-03-01","to":"2025-04-01"}`.
+A known set of facts can be resolved by id with `GET /api/v1/facts?ids=5,9,18`,
+which ignores the other filters and includes deleted rows; the dashboard uses it to
+label causal links, whose facts can be older than any list page.
+
 For `GET /api/v1/facts` and `cortexiq facts`, `from`/`to` filter validity
 overlap and `as_of`, `known_from`, `known_to` filter knowledge time; the older `since`/`until` filters still mean `created_at`.
 
@@ -328,7 +416,11 @@ listing others.
 - `scope`: `rw` (default, read and write) or `ro` (read only). Read-only tokens
   may only run read operations; the dashboard allows `GET`/`HEAD` and
   `POST /api/v1/recall`, and the MCP server allows only read tools (`recall`,
-  `query_*`, `list_*`, `get_context`, `trace_causal_chain`).
+  `reflect`, `query_*`, `list_*`, `get_context`, `trace_causal_chain`,
+  `memory_stats`). `reflect` is on that list although it costs a model call: it
+  writes nothing, and without it a read-only client cannot ask a question of the
+  memory it is allowed to read. `init` is not, because it creates the `/self`
+  scaffold — a read-only token that reports 403 there is working as intended.
 - `name`: only used in logs and error messages.
 
 Point any MCP-compatible client at that URL. Example configs:

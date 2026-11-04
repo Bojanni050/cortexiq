@@ -22,8 +22,10 @@ type Token struct {
 	Scope  string `json:"scope"` // "rw" (default) or "ro"
 	// LegacyNamespaces parses the removed namespace allowlist, which is no
 	// longer enforced. It is kept so start-up can point at a config that still
-	// carries it instead of dropping the restriction silently.
-	LegacyNamespaces []string `json:"namespaces"`
+	// carries it instead of dropping the restriction silently. Omitted from
+	// JSON when absent, so a freshly generated token line does not advertise a
+	// field with no meaning.
+	LegacyNamespaces []string `json:"namespaces,omitempty"`
 }
 
 // Set is an immutable collection of tokens.

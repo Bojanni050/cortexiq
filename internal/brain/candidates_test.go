@@ -86,7 +86,7 @@ func TestClusterEpisodesWithoutCapIsThresholdOnly(t *testing.T) {
 		clusterEpisode(3, "CortexIQ draait op poort 9090 na herstart", []float32{0, 1, 0}),
 	}
 
-	clusters := clusterBrain(0.85, 0, 0).clusterEpisodes(episodes)
+	clusters := clusterEpisodes(episodes, clusterBrain(0.85, 0, 0).config)
 	if len(clusters) != 2 {
 		t.Fatalf("clusters = %d, want 2", len(clusters))
 	}
@@ -107,7 +107,7 @@ func TestClusterEpisodesWithCapAddsLexicalTwinBelowThreshold(t *testing.T) {
 		clusterEpisode(3, "De honden krijgen om zeven uur eten", []float32{0, 0, 1}),
 	}
 
-	clusters := clusterBrain(0.85, 4, 0).clusterEpisodes(episodes)
+	clusters := clusterEpisodes(episodes, clusterBrain(0.85, 4, 0).config)
 	if len(clusters) != 2 {
 		t.Fatalf("clusters = %d, want 2", len(clusters))
 	}
@@ -132,7 +132,7 @@ func TestClusterEpisodesCapBoundsOnlyTheLexicalExtras(t *testing.T) {
 		clusterEpisode(7, "CortexIQ draait op poort 9092", []float32{0, 1, 1}),
 	}
 
-	clusters := clusterBrain(0.85, 2, 0).clusterEpisodes(episodes)
+	clusters := clusterEpisodes(episodes, clusterBrain(0.85, 2, 0).config)
 	if got := len(clusters[0]); got != 1+3+2 {
 		t.Fatalf("first cluster has %d episodes, want seed + 3 semantic + cap 2 lexical = 6", got)
 	}
@@ -162,11 +162,11 @@ func TestClusterEpisodesLexicalFloorKeepsClustersFromPadding(t *testing.T) {
 		clusterEpisode(2, "De hond draait rondjes bij de poort van het park", []float32{0, 1, 0}),
 	}
 
-	padded := clusterBrain(0.85, 4, 0).clusterEpisodes(episodes)
+	padded := clusterEpisodes(episodes, clusterBrain(0.85, 4, 0).config)
 	if len(padded) != 1 {
 		t.Fatalf("without a floor: %d clusters, want the unrelated episode padded in (1)", len(padded))
 	}
-	floored := clusterBrain(0.85, 4, 0.2).clusterEpisodes(episodes)
+	floored := clusterEpisodes(episodes, clusterBrain(0.85, 4, 0.2).config)
 	if len(floored) != 2 {
 		t.Fatalf("with a floor: %d clusters, want 2", len(floored))
 	}
@@ -177,7 +177,7 @@ func TestClusterEpisodesKeepsSeedWithoutEmbedding(t *testing.T) {
 		{ID: 1, Content: "CortexIQ draait op poort 9090"},
 		clusterEpisode(2, "CortexIQ draait op poort 9090", []float32{1, 0, 0}),
 	}
-	clusters := clusterBrain(0.85, 4, 0).clusterEpisodes(episodes)
+	clusters := clusterEpisodes(episodes, clusterBrain(0.85, 4, 0).config)
 	if len(clusters) != 2 || len(clusters[0]) != 1 || clusters[0][0].ID != 1 {
 		t.Fatalf("clusters = %+v, want [1] then [2]", clusters)
 	}

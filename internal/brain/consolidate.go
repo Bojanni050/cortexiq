@@ -14,7 +14,6 @@ import (
 	"github.com/Bojanni050/cortexiq/internal/observability"
 	"github.com/Bojanni050/cortexiq/internal/reasoner"
 	"github.com/jackc/pgx/v5"
-	"github.com/pgvector/pgvector-go"
 )
 
 // ConsolidationResult describes the outcome of a consolidation run.
@@ -25,6 +24,11 @@ type ConsolidationResult struct {
 	EpisodesSkipped   int           `json:"episodes_skipped"`
 	FactsCreated      int           `json:"facts_created"`
 	FactsDeduplicated int           `json:"facts_deduplicated"`
+	// FactsRefused counts facts not stored because their value was rejected
+	// earlier in the namespace and the rejection stands. A tombstone that fires
+	// stores nothing, so without this count it looks like a run that found
+	// nothing.
+	FactsRefused int `json:"facts_refused"`
 	// DedupNearMisses counts facts that were stored as new while a near-twin —
 	// a candidate above dedupNearMissFloor — was already there. Duplicates are
 	// born in that band and nothing else reports on it.
@@ -43,13 +47,33 @@ type ConsolidationResult struct {
 	HypothesesUpdated          int      `json:"hypotheses_updated"`
 	FactsDecayed               int      `json:"facts_decayed"`
 	FactsExpired               int      `json:"facts_expired"`
+	MentalModelsRefreshed      int      `json:"mental_models_refreshed"`
+	MentalModelsFailed         int      `json:"mental_models_failed"`
 	LLMCalls                   int      `json:"llm_calls"`
 	LLMCallsLimited            bool     `json:"llm_calls_limited"`
 	Errors                     []string `json:"errors,omitempty"`
+	// TagFilter is set when the run was scoped to a tag instead of the whole
+	// namespace. Such a run only does the episode-to-fact stage and leaves the
+	// namespace-wide stages (relationships, patterns, mental models) untouched.
+	TagFilter []string `json:"tag_filter,omitempty"`
 }
 
 // Consolidate runs the full 8-stage consolidation pipeline for a namespace.
 func (b *Brain) Consolidate(ctx context.Context, namespaceSlug string) (ConsolidationResult, error) {
+	return b.ConsolidateWithTags(ctx, namespaceSlug, nil)
+}
+
+// ConsolidateWithTags runs consolidation with an optional tag selection. With no
+// tags it is exactly the full pipeline. With tags it is a targeted run: only the
+// episodes carrying every tag are read, and only the episode-to-fact stage runs.
+//
+// Two deliberate restrictions. The checkpoint is not advanced, because a tag
+// filter leaves gaps and a checkpoint that jumps over them would skip the
+// untagged episodes in those gaps forever. The later stages are skipped, because
+// they operate on facts and mental models for the whole namespace — running them
+// on a partial selection would make their output depend on which tag you happened
+// to pick.
+func (b *Brain) ConsolidateWithTags(ctx context.Context, namespaceSlug string, tags []string) (ConsolidationResult, error) {
 	if err := validatePath(namespaceSlug); err != nil {
 		return ConsolidationResult{}, err
 	}
@@ -57,7 +81,14 @@ func (b *Brain) Consolidate(ctx context.Context, namespaceSlug string) (Consolid
 	if err != nil {
 		return ConsolidationResult{}, err
 	}
-	return b.ConsolidateByID(ctx, nsID)
+	return b.consolidateByIDWithTags(ctx, nsID, tags)
+}
+
+// ConsolidateByIDWithTags is ConsolidateByID with an optional tag selection, for
+// callers that already resolved a namespace ID. With no tags it runs the full
+// pipeline; with tags it is the targeted run described on ConsolidateWithTags.
+func (b *Brain) ConsolidateByIDWithTags(ctx context.Context, nsID int64, tags []string) (ConsolidationResult, error) {
+	return b.consolidateByIDWithTags(ctx, nsID, tags)
 }
 
 // ConsolidateByID runs the full 8-stage consolidation pipeline for a namespace by ID.
@@ -71,11 +102,63 @@ func (b *Brain) Consolidate(ctx context.Context, namespaceSlug string) (Consolid
 // 7. Hypothesis Evidence Scanning         (auto-confirm/reject pending hypotheses)
 // 8. Confidence Decay                     (pure-SQL, no LLM)
 func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationResult, error) {
+	return b.consolidateByIDWithTags(ctx, nsID, nil)
+}
+
+// consolidateByIDWithTags is ConsolidateByID with an optional tag selection. A
+// non-empty tag set turns the run into the scoped form described on
+// ConsolidateWithTags.
+func (b *Brain) consolidateByIDWithTags(ctx context.Context, nsID int64, tags []string) (ConsolidationResult, error) {
+	tagFilter, err := NormalizeTags(tags)
+	if err != nil {
+		return ConsolidationResult{}, err
+	}
+	if len(tagFilter) > 0 {
+		return b.consolidateTagScoped(ctx, nsID, tagFilter)
+	}
+	return b.consolidateNamespace(ctx, nsID)
+}
+
+// consolidateTagScoped runs the episode-to-fact stage over the episodes that
+// carry every tag and nothing else. It never touches the consolidation
+// checkpoint or the namespace-wide stages; see ConsolidateWithTags for why.
+func (b *Brain) consolidateTagScoped(ctx context.Context, nsID int64, tags []string) (ConsolidationResult, error) {
 	start := time.Now()
-	ctx = withLLMBudget(ctx, b.config.MaxLLMCallsPerRun)
 
 	var namespaceSlug string
 	_ = b.pool.QueryRow(ctx, "SELECT slug FROM namespaces WHERE id = $1", nsID).Scan(&namespaceSlug)
+
+	nsCfg := b.namespaceRunConfig(ctx, nsID)
+	ctx = withLLMBudget(ctx, nsCfg.MaxLLMCallsPerRun)
+
+	result := ConsolidationResult{Namespace: namespaceSlug, TagFilter: tags}
+
+	created, deduped, read, skipped, nearMisses, refused, llmCalls, contFound, contAuto, errs := b.consolidateEpisodesToFacts(ctx, nsID, nil, tags)
+	result.FactsCreated = created
+	result.FactsDeduplicated = deduped
+	result.EpisodesRead = read
+	result.EpisodesSkipped = skipped
+	result.DedupNearMisses = nearMisses
+	result.FactsRefused = refused
+	result.LLMCalls = llmCalls
+	result.ContradictionsFound = contFound
+	result.ContradictionsAutoResolved = contAuto
+	result.Errors = errs
+	result.Duration = time.Since(start)
+	return result, nil
+}
+
+func (b *Brain) consolidateNamespace(ctx context.Context, nsID int64) (ConsolidationResult, error) {
+	start := time.Now()
+
+	var namespaceSlug string
+	_ = b.pool.QueryRow(ctx, "SELECT slug FROM namespaces WHERE id = $1", nsID).Scan(&namespaceSlug)
+
+	// Per-namespace overrides resolve over the ancestor chain with the global
+	// config as the default; a namespace without overrides gets exactly the
+	// process configuration.
+	nsCfg := b.namespaceRunConfig(ctx, nsID)
+	ctx = withLLMBudget(ctx, nsCfg.MaxLLMCallsPerRun)
 
 	result := ConsolidationResult{Namespace: namespaceSlug}
 
@@ -86,12 +169,13 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 
 	// Stage 1: Episodes -> Facts (+ Stage 4: Contradiction detection)
 	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
-		factsCreated, factsDeduped, episodesRead, episodesSkipped, nearMisses, llmCalls, contFound, contAuto, errs := b.consolidateEpisodesToFacts(ctx, nsID, cp)
+		factsCreated, factsDeduped, episodesRead, episodesSkipped, nearMisses, refused, llmCalls, contFound, contAuto, errs := b.consolidateEpisodesToFacts(ctx, nsID, cp, nil)
 		result.FactsCreated = factsCreated
 		result.FactsDeduplicated = factsDeduped
 		result.EpisodesRead = episodesRead
 		result.EpisodesSkipped = episodesSkipped
 		result.DedupNearMisses = nearMisses
+		result.FactsRefused = refused
 		result.LLMCalls += llmCalls
 		result.ContradictionsFound = contFound
 		result.ContradictionsAutoResolved = contAuto
@@ -125,9 +209,10 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 
 	// Stage 7: Failure Pattern Detection
 	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
-		repeats, patterns, llmCalls, errs := b.consolidateFailurePatterns(ctx, nsID, cp)
+		repeats, patterns, refused, llmCalls, errs := b.consolidateFailurePatterns(ctx, nsID, cp)
 		result.FailureRepeatsDetected = repeats
 		result.FailurePatternsFound = patterns
+		result.FactsRefused += refused
 		result.LLMCalls += llmCalls
 		result.Errors = append(result.Errors, errs...)
 	}
@@ -159,6 +244,19 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 			result.FactsDecayed = decayResult.FactsDecayed
 			result.FactsExpired = decayResult.FactsExpired
 		}
+	}
+
+	// Stage 9: refresh mental models whose ground truth changed since their last
+	// synthesis. Best effort by design: a model that cannot refresh is recorded
+	// on its own row and in the result, but never fails the consolidation.
+	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
+		summary, err := b.refreshStaleMentalModels(ctx, nsID)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("refresh mental models: %v", err))
+		}
+		result.MentalModelsRefreshed = summary.Refreshed
+		result.MentalModelsFailed = summary.Failed
+		result.Errors = append(result.Errors, summary.Errors...)
 	}
 
 	// Save progress
@@ -206,8 +304,24 @@ func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationR
 
 // --- Stage 1: Episodes -> Facts ---
 
-func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (created, deduped, read, skipped, nearMisses, llmCalls, contradictionsFound, contradictionsAutoResolved int, errs []string) {
-	sql, args, err := b.queries.FetchEpisodes(nsID, cp.LastEpisodeID, b.config.BatchSize)
+// taggedConsolidationLimit bounds a tag-scoped run: it reads matching episodes
+// from the start of the namespace, so this is how many one run will look at.
+const taggedConsolidationLimit = 500
+
+func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *models.ConsolidationProgress, tags []string) (created, deduped, read, skipped, nearMisses, refused, llmCalls, contradictionsFound, contradictionsAutoResolved int, errs []string) {
+	nsCfg := b.namespaceRunConfig(ctx, nsID)
+	var sql string
+	var args []any
+	var err error
+	if len(tags) > 0 {
+		sql, args, err = b.queries.FetchEpisodesByTags(nsID, 0, taggedConsolidationLimit, tags)
+	} else {
+		afterID := int64(0)
+		if cp != nil {
+			afterID = cp.LastEpisodeID
+		}
+		sql, args, err = b.queries.FetchEpisodes(nsID, afterID, nsCfg.BatchSize)
+	}
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("build fetch episodes: %v", err))
 		return
@@ -254,12 +368,12 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 	// a claim into the fragment. A bare "2" became "CortexIQ includes the content
 	// '2' … as a signal or reminder". Skipped episodes count as done, otherwise
 	// the checkpoint stops on them and nothing after them is ever consolidated.
-	extractable, fragments := partitionFragments(episodes, b.config.MinEpisodeLength)
+	extractable, fragments := partitionFragments(episodes, nsCfg.MinEpisodeLength)
 	markDone(fragments)
 	skipped = len(fragments)
 
 	// Cluster by vector similarity
-	clusters := b.clusterEpisodes(extractable)
+	clusters := clusterEpisodes(extractable, nsCfg)
 
 	scanErrs := len(errs)
 
@@ -280,6 +394,22 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 			episodeIDs = append(episodeIDs, e.ID)
 		}
 
+		// Triage refuses work the extractor should not be given: a cluster of
+		// acknowledgements holds no facts, and asked anyway the extractor will
+		// sometimes read one into it. A triage episode counts as skipped so the
+		// checkpoint moves past it, exactly like a fragment.
+		if b.triage != nil {
+			tv, err := b.triage.Triage(ctx, texts)
+			llmCalls++
+			if err != nil {
+				errs = append(errs, fmt.Sprintf("triage: %v", err))
+			} else if tv != nil && tv.Verdict == reasoner.TriageChatter {
+				skipped += len(cluster)
+				markDone(cluster)
+				continue
+			}
+		}
+
 		facts, err := b.reasoner.ReasonStructured(ctx, texts, subject)
 		llmCalls++
 		if err != nil {
@@ -291,7 +421,7 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 		// facts (nothing durable in the episodes) it is done right away.
 		clusterOK := true
 		for _, sf := range facts {
-			r, err := b.storeFact(ctx, nsID, sf, episodeIDs)
+			r, err := b.storeFactWithConfig(ctx, nsID, sf, episodeIDs, nsCfg)
 			llmCalls += r.llmCalls
 			if err != nil {
 				errs = append(errs, err.Error())
@@ -303,6 +433,9 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 			}
 			if r.deduped {
 				deduped++
+			}
+			if r.refused {
+				refused++
 			}
 			if r.nearMiss {
 				nearMisses++
@@ -319,7 +452,7 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 	// would lose them, so only move the checkpoint when the fetch was clean.
 	// The ids come from the whole fetched batch, fragments included: a skipped
 	// fragment is done and must count when the checkpoint walks forward.
-	if scanErrs == 0 {
+	if cp != nil && scanErrs == 0 {
 		ids := make([]int64, len(episodes))
 		for i, e := range episodes {
 			ids[i] = e.ID
@@ -364,7 +497,7 @@ func contiguousCheckpoint(ids []int64, done map[int64]bool, current int64) int64
 	return next
 }
 
-func (b *Brain) clusterEpisodes(episodes []models.Episode) [][]models.Episode {
+func clusterEpisodes(episodes []models.Episode, cfg Config) [][]models.Episode {
 	if len(episodes) == 0 {
 		return nil
 	}
@@ -386,7 +519,7 @@ func (b *Brain) clusterEpisodes(episodes []models.Episode) [][]models.Episode {
 			continue
 		}
 
-		for _, member := range b.clusterMembers(seed, episodes, clustered, cache) {
+		for _, member := range clusterMembers(seed, episodes, clustered, cache, cfg) {
 			cluster = append(cluster, member)
 			clustered[member.ID] = true
 		}
@@ -417,9 +550,9 @@ func (b *Brain) clusterEpisodes(episodes []models.Episode) [][]models.Episode {
 // twin can be merged instead of becoming a duplicate. Every fact the call
 // produces is linked to every episode in the cluster, so extras widen
 // provenance: keep the cap small.
-func (b *Brain) clusterMembers(seed models.Episode, episodes []models.Episode, clustered map[int64]bool, cache trigramCache) []models.Episode {
+func clusterMembers(seed models.Episode, episodes []models.Episode, clustered map[int64]bool, cache trigramCache, cfg Config) []models.Episode {
 	seedVec := seed.Embedding.Slice()
-	threshold := float32(b.config.SimilarityThreshold)
+	threshold := float32(cfg.SimilarityThreshold)
 
 	var members []models.Episode
 	inCluster := make(map[int64]bool)
@@ -437,7 +570,7 @@ func (b *Brain) clusterMembers(seed models.Episode, episodes []models.Episode, c
 		}
 	}
 
-	cap := b.config.CandidateCap
+	cap := cfg.CandidateCap
 	if cap <= 0 {
 		return members
 	}
@@ -450,7 +583,7 @@ func (b *Brain) clusterMembers(seed models.Episode, episodes []models.Episode, c
 		score := trigramJaccard(cache.of(seed), cache.of(candidate))
 		lexical = append(lexical, clusterCandidate{episode: candidate, score: score})
 	}
-	for _, c := range rankCandidates(lexical, float32(b.config.LexicalFloor), cap) {
+	for _, c := range rankCandidates(lexical, float32(cfg.LexicalFloor), cap) {
 		members = append(members, c.episode)
 	}
 	return members
@@ -459,6 +592,9 @@ func (b *Brain) clusterMembers(seed models.Episode, episodes []models.Episode, c
 // storeResult describes what storeFact did with one synthesized fact.
 type storeResult struct {
 	created, deduped bool
+	// refused says the fact's value was rejected earlier and the rejection
+	// stands, so nothing was stored. The episodes still count as handled.
+	refused bool
 	// nearMiss says the fact was stored as new while a near-twin already existed.
 	nearMiss       bool
 	contradictions int
@@ -470,6 +606,12 @@ type storeResult struct {
 // duplicate (reinforcing that one) or inserts it, links its source episodes and
 // checks it for contradictions.
 func (b *Brain) storeFact(ctx context.Context, nsID int64, sf *reasoner.StructuredFact, episodeIDs []int64) (storeResult, error) {
+	return b.storeFactWithConfig(ctx, nsID, sf, episodeIDs, b.config)
+}
+
+// storeFactWithConfig is storeFact with an explicit configuration, so the
+// consolidation run can pass its per-namespace resolved config.
+func (b *Brain) storeFactWithConfig(ctx context.Context, nsID int64, sf *reasoner.StructuredFact, episodeIDs []int64, cfg Config) (storeResult, error) {
 	var r storeResult
 
 	vec, err := b.embedder.Embed(ctx, sf.Summary)
@@ -477,7 +619,7 @@ func (b *Brain) storeFact(ctx context.Context, nsID int64, sf *reasoner.Structur
 		return r, fmt.Errorf("embed fact: %w", err)
 	}
 
-	out, err := b.findDuplicate(ctx, nsID, vec, sf.Summary)
+	out, err := b.findDuplicateWithConfig(ctx, nsID, vec, sf.Summary, cfg)
 	r.llmCalls += out.LLMCalls
 	if err != nil {
 		return r, fmt.Errorf("check duplicate: %w", err)
@@ -494,16 +636,27 @@ func (b *Brain) storeFact(ctx context.Context, nsID int64, sf *reasoner.Structur
 	confidence := calculateConfidence(len(episodeIDs), sf.Entity != "" && sf.Property != "")
 	now := time.Now().UTC()
 
-	var factID int64
-	err = b.pool.QueryRow(ctx,
-		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence, entity, property, value, valid_from, importance)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-		nsID, sf.Summary, pgvector.NewVector(vec), b.embedder.Model(), confidence,
-		strPtrOrNull(sf.Entity), strPtrOrNull(sf.Property), strPtrOrNull(sf.Value), now,
-		b.sourceImportance(ctx, episodeIDs),
-	).Scan(&factID)
+	factID, err := b.insertFact(ctx, b.pool, factInsert{
+		Origin:         originConsolidation,
+		NamespaceID:    nsID,
+		Content:        sf.Summary,
+		Embedding:      vec,
+		EmbeddingModel: b.embedder.Model(),
+		Confidence:     confidence,
+		Entity:         strPtrOrNull(sf.Entity),
+		Property:       strPtrOrNull(sf.Property),
+		Value:          strPtrOrNull(sf.Value),
+		ValidFrom:      &now,
+		Importance:     b.sourceImportance(ctx, episodeIDs),
+		Tags:           b.sourceTags(ctx, episodeIDs),
+		ExternalRefs:   b.sourceRefs(ctx, episodeIDs),
+	})
+	if errors.Is(err, ErrRejectedValue) {
+		r.refused = true
+		return r, nil
+	}
 	if err != nil {
-		return r, fmt.Errorf("insert fact: %w", err)
+		return r, err
 	}
 	r.created = true
 
@@ -534,9 +687,12 @@ func (b *Brain) storeFact(ctx context.Context, nsID int64, sf *reasoner.Structur
 func (b *Brain) reinforceFact(ctx context.Context, factID int64, episodeIDs []int64) {
 	_, _ = b.pool.Exec(ctx,
 		`UPDATE facts SET confidence = LEAST(1.0, confidence + (1 - confidence) * $2),
-		        importance = GREATEST(importance, $3), updated_at = now()
+		        importance = GREATEST(importance, $3),
+		        tags = (SELECT COALESCE(array_agg(DISTINCT t ORDER BY t), '{}') FROM unnest(tags || $4) AS t),
+		        external_refs = (SELECT COALESCE(array_agg(DISTINCT r ORDER BY r), '{}') FROM unnest(external_refs || $5::text[]) AS r),
+		        updated_at = now()
 		 WHERE id = $1`,
-		factID, reinforceStep, b.sourceImportance(ctx, episodeIDs),
+		factID, reinforceStep, b.sourceImportance(ctx, episodeIDs), b.sourceTags(ctx, episodeIDs), b.sourceRefs(ctx, episodeIDs),
 	)
 	for _, eid := range episodeIDs {
 		_, _ = b.pool.Exec(ctx,
@@ -544,6 +700,27 @@ func (b *Brain) reinforceFact(ctx context.Context, factID int64, episodeIDs []in
 			factID, eid,
 		)
 	}
+}
+
+// sourceTags is the union of the tags on the given source episodes, sorted so
+// the stored array is deterministic. It is how a fact keeps its topics after
+// consolidation: recall returns mostly facts, so a tag that only lives on the
+// episode it came from would stop filtering the moment the episode is
+// consolidated. Best effort — tags are annotation and must never fail
+// consolidation; an empty result is an empty array, never NULL.
+func (b *Brain) sourceTags(ctx context.Context, episodeIDs []int64) []string {
+	tags := []string{}
+	if len(episodeIDs) == 0 {
+		return tags
+	}
+	if err := b.pool.QueryRow(ctx,
+		`SELECT COALESCE(array_agg(DISTINCT t ORDER BY t), '{}')
+		   FROM episodes e, unnest(e.tags) AS t
+		  WHERE e.id = ANY($1)`, episodeIDs,
+	).Scan(&tags); err != nil {
+		return []string{}
+	}
+	return tags
 }
 
 // sourceImportance is the highest importance among the given source episodes: a

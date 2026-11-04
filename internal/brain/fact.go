@@ -80,14 +80,14 @@ func checkFactWindows(asOf, from, to, knownFrom, knownTo *time.Time) error {
 // (created_at <= asOf < known_until), which includes facts that were replaced or
 // expired since. A nil asOf lists every fact, like QueryFacts.
 func (b *Brain) QueryFactsAsOf(ctx context.Context, namespaceSlugs []string, since, until, asOf *time.Time, page Pagination) ([]models.Fact, error) {
-	return b.QueryFactsWindow(ctx, namespaceSlugs, since, until, asOf, nil, nil, nil, nil, page)
+	return b.QueryFactsWindow(ctx, namespaceSlugs, since, until, asOf, nil, nil, nil, nil, nil, page)
 }
 
 // QueryFactsWindow filters facts whose validity intervals overlap [from,to) (valid
 // time) and whose knowledge intervals overlap [knownFrom,knownTo) (knowledge
 // time), while retaining since/until as created_at filters and asOf as the point
 // form of the knowledge axis. asOf cannot be combined with knownFrom/knownTo.
-func (b *Brain) QueryFactsWindow(ctx context.Context, namespaceSlugs []string, since, until, asOf, from, to, knownFrom, knownTo *time.Time, page Pagination) ([]models.Fact, error) {
+func (b *Brain) QueryFactsWindow(ctx context.Context, namespaceSlugs []string, since, until, asOf, from, to, knownFrom, knownTo *time.Time, tags []string, page Pagination) ([]models.Fact, error) {
 	if err := checkFactWindows(asOf, from, to, knownFrom, knownTo); err != nil {
 		return nil, err
 	}
@@ -99,8 +99,9 @@ func (b *Brain) QueryFactsWindow(ctx context.Context, namespaceSlugs []string, s
 	page = page.Sanitize()
 
 	where, args := factWhereWindow(nsIDs, since, until, asOf, from, to, knownFrom, knownTo)
+	where, args = tagWhere(where, args, tags)
 	query := `SELECT id, namespace_id, content, embedding, embedding_model, confidence,
-	          entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at
+	          entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at, tags
 	          FROM facts WHERE ` + where +
 		fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
 	args = append(args, page.Limit, page.Offset)
@@ -118,7 +119,7 @@ func (b *Brain) QueryFactsWindow(ctx context.Context, namespaceSlugs []string, s
 			&f.ID, &f.NamespaceID, &f.Content, &f.Embedding, &f.EmbeddingModel,
 			&f.Confidence, &f.Entity, &f.Property, &f.Value,
 			&f.ValidFrom, &f.ValidUntil,
-			&f.CreatedAt, &f.UpdatedAt, &f.DeletedAt,
+			&f.CreatedAt, &f.UpdatedAt, &f.DeletedAt, &f.Tags,
 		); err != nil {
 			return nil, fmt.Errorf("scan fact: %w", err)
 		}
@@ -130,10 +131,10 @@ func (b *Brain) QueryFactsWindow(ctx context.Context, namespaceSlugs []string, s
 // CountFacts counts the facts QueryFactsAsOf would return for the same filters,
 // ignoring paging, so a caller can tell a full page from a truncated one.
 func (b *Brain) CountFacts(ctx context.Context, namespaceSlugs []string, since, until, asOf *time.Time) (int, error) {
-	return b.CountFactsWindow(ctx, namespaceSlugs, since, until, asOf, nil, nil, nil, nil)
+	return b.CountFactsWindow(ctx, namespaceSlugs, since, until, asOf, nil, nil, nil, nil, nil)
 }
 
-func (b *Brain) CountFactsWindow(ctx context.Context, namespaceSlugs []string, since, until, asOf, from, to, knownFrom, knownTo *time.Time) (int, error) {
+func (b *Brain) CountFactsWindow(ctx context.Context, namespaceSlugs []string, since, until, asOf, from, to, knownFrom, knownTo *time.Time, tags []string) (int, error) {
 	if err := checkFactWindows(asOf, from, to, knownFrom, knownTo); err != nil {
 		return 0, err
 	}
@@ -142,6 +143,7 @@ func (b *Brain) CountFactsWindow(ctx context.Context, namespaceSlugs []string, s
 		return 0, err
 	}
 	where, args := factWhereWindow(nsIDs, since, until, asOf, from, to, knownFrom, knownTo)
+	where, args = tagWhere(where, args, tags)
 	return b.countWhere(ctx, "facts", where, args...)
 }
 
@@ -157,31 +159,19 @@ func (b *Brain) UpdateFactConfidence(ctx context.Context, factID int64, confiden
 	return nil
 }
 
-// PurgeFact hard-deletes a fact by ID.
-func (b *Brain) PurgeFact(ctx context.Context, factID int64) error {
-	tag, err := b.pool.Exec(ctx, "DELETE FROM facts WHERE id = $1", factID)
-	if err != nil {
-		return fmt.Errorf("purge fact: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrFactNotFound
-	}
-	return nil
-}
-
 // GetFact returns a single fact by ID.
 func (b *Brain) GetFact(ctx context.Context, factID int64) (*models.Fact, error) {
 	var f models.Fact
 	err := b.pool.QueryRow(ctx,
 		`SELECT id, namespace_id, content, embedding, embedding_model, confidence,
-		 entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at
+		 entity, property, value, valid_from, valid_until, created_at, updated_at, deleted_at, tags
 		 FROM facts WHERE id = $1`,
 		factID,
 	).Scan(
 		&f.ID, &f.NamespaceID, &f.Content, &f.Embedding, &f.EmbeddingModel,
 		&f.Confidence, &f.Entity, &f.Property, &f.Value,
 		&f.ValidFrom, &f.ValidUntil,
-		&f.CreatedAt, &f.UpdatedAt, &f.DeletedAt,
+		&f.CreatedAt, &f.UpdatedAt, &f.DeletedAt, &f.Tags,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -190,6 +180,46 @@ func (b *Brain) GetFact(ctx context.Context, factID int64) (*models.Fact, error)
 		return nil, fmt.Errorf("get fact: %w", err)
 	}
 	return &f, nil
+}
+
+// FactsByIDs returns the facts named by ids. The dashboard needs this to label
+// causal links: a link names two facts, and those can be far older than the
+// newest page /facts returns (ORDER BY created_at DESC, capped at 1000 rows), so
+// looking the text up in that page turns every old link into "not available".
+//
+// Deleted facts are included on purpose. A link outlives the fact it points at,
+// and the caller decides how to show that rather than having it look like a
+// missing row. Embeddings are not selected: they are not needed here, and a row
+// without one would fail the scan.
+func (b *Brain) FactsByIDs(ctx context.Context, ids []int64) ([]models.Fact, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := b.pool.Query(ctx,
+		`SELECT id, namespace_id, content, confidence, entity, property, value,
+		        valid_from, valid_until, created_at, updated_at, deleted_at, tags
+		 FROM facts WHERE id = ANY($1)`,
+		ids,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("facts by ids: %w", err)
+	}
+	defer rows.Close()
+
+	var facts []models.Fact
+	for rows.Next() {
+		var f models.Fact
+		if err := rows.Scan(
+			&f.ID, &f.NamespaceID, &f.Content, &f.Confidence,
+			&f.Entity, &f.Property, &f.Value,
+			&f.ValidFrom, &f.ValidUntil,
+			&f.CreatedAt, &f.UpdatedAt, &f.DeletedAt, &f.Tags,
+		); err != nil {
+			return nil, fmt.Errorf("scan fact by id: %w", err)
+		}
+		facts = append(facts, f)
+	}
+	return facts, rows.Err()
 }
 
 // QueryRelationships returns relationships across namespaces matching the given slug paths.

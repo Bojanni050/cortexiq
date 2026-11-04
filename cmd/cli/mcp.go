@@ -58,10 +58,69 @@ func skippedResult(err error) (*mcp.CallToolResult, error) {
 	return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(payload)}}}, nil
 }
 
+// splitList parses the comma-separated form MCP arguments use for lists
+// (namespaces, types, tags). Empty entries are dropped so a trailing comma is
+// harmless.
+func splitList(raw string) []string {
+	var out []string
+	for _, v := range strings.Split(raw, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// ErrNamespaceRequired is what a write tool answers when it was handed no
+// namespace. It names the tool that answers "where does this belong" instead of
+// only saying what is missing: the client reads this text and can correct itself
+// in the next call, which a bare "namespace is required" does not allow.
+var ErrNamespaceRequired = errors.New(
+	`namespace is required: a memory filed without one disappears into everything else. ` +
+		`Call list_namespaces and pass the path this belongs to, for example /projects/myapp. ` +
+		`Pass "/" explicitly if it really belongs at the root.`)
+
+// requiredNamespace validates the namespace a write was handed. An explicit "/"
+// is a choice and is kept — the refusal catches the silence, it does not forbid
+// the root.
+func requiredNamespace(raw string) (string, error) {
+	ns := strings.TrimSpace(raw)
+	if ns == "" {
+		return "", ErrNamespaceRequired
+	}
+	return ns, nil
+}
+
+// toolErrorResult turns a failed tool into a normal tool result carrying the
+// error text. Without it the SDK answers a handler error with a JSON-RPC
+// -32603, and hosted clients (Claude connectors, Le Chat) replace that with a
+// generic "the connector returned an error or an invalid response": the caller
+// learns nothing and cannot correct itself. A result with IsError is what the
+// protocol asks for a tool that ran and failed, and the log line is the only
+// trace a failed call leaves on the server.
+func toolErrorResult(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		result, err := next(ctx, request)
+		if err == nil {
+			return result, nil
+		}
+		log.Printf("tool %s failed: %v", request.Params.Name, err)
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+}
+
 func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
+	// WithInstructions is the field a client puts in front of the model on
+	// initialize; WithDescription only labels the server. Both carry the same
+	// text on purpose: the Prime Directive ("store without waiting to be asked")
+	// only ever reaches the model through instructions, and a server that merely
+	// describes itself gets a client that waits to be asked.
+	primeDirective := render("server_description")
 	mcpServer := server.NewMCPServer("cortexiq", "0.3.0",
 		server.WithToolCapabilities(true),
-		server.WithDescription(render("server_description")),
+		server.WithInstructions(primeDirective),
+		server.WithDescription(primeDirective),
+		server.WithToolHandlerMiddleware(toolErrorResult),
 	)
 
 	mcpServer.AddTool(mcp.NewTool("init",
@@ -98,23 +157,113 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("namespace", mcp.Description(render("remember_namespace"))),
 		mcp.WithString("occurred_at", mcp.Description(render("occurred_at_param"))),
 		mcp.WithNumber("importance", mcp.Description(render("remember_importance")), mcp.DefaultNumber(0.5)),
+		mcp.WithString("tags", mcp.Description(render("remember_tags"))),
+		mcp.WithString("external_key", mcp.Description(render("remember_external_key"))),
+		mcp.WithString("external_refs", mcp.Description(render("remember_external_refs"))),
+		mcp.WithBoolean("supersedes", mcp.Description(render("remember_supersedes"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		content := request.GetString("content", "")
-		namespace := request.GetString("namespace", "/")
+		namespace, err := requiredNamespace(request.GetString("namespace", ""))
+		if err != nil {
+			return nil, err
+		}
 		importance := float32(request.GetFloat("importance", float64(brain.DefaultImportance)))
 		occurredAt, err := parseAsOf(request.GetString("occurred_at", ""))
 		if err != nil {
 			return nil, fmt.Errorf("invalid occurred_at: %w", err)
 		}
 
-		id, err := bc.Brain.RememberWithImportance(ctx, namespace, content, occurredAt, importance)
+		tags, err := brain.NormalizeTags(splitList(request.GetString("tags", "")))
+		if err != nil {
+			return nil, err
+		}
+		out, err := bc.Brain.RememberWithOutcome(ctx, namespace, content, brain.RememberOptions{
+			OccurredAt:   occurredAt,
+			Importance:   importance,
+			Tags:         tags,
+			ExternalKey:  request.GetString("external_key", ""),
+			ExternalRefs: splitList(request.GetString("external_refs", "")),
+			Supersedes:   request.GetBool("supersedes", false),
+		})
+		id, decision := out.ID, out.Decision
 		if errors.Is(err, brain.ErrSocialCloser) {
 			return skippedResult(err)
+		}
+		if errors.Is(err, brain.ErrWriteFiltered) {
+			b, _ := json.Marshal(map[string]any{
+				"skipped":       true,
+				"reason":        err.Error(),
+				"secret_labels": decision.SecretLabels,
+				"noise_score":   decision.NoiseScore,
+			})
+			return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 		}
 		if err != nil {
 			return nil, err
 		}
-		result := map[string]any{"id": id, "message": "Memory remembered successfully"}
+		stored := tags
+		if stored == nil {
+			stored = []string{}
+		}
+		result := map[string]any{"id": id, "tags": stored, "message": "Memory remembered successfully"}
+		if out.SupersededID != 0 {
+			result["superseded"] = out.SupersededID
+			result["facts_ended"] = out.FactsEnded
+		}
+		if out.Unchanged {
+			result["unchanged"] = true
+			result["message"] = "Memory already up to date"
+		}
+		if len(tags) == 0 && !out.Unchanged {
+			// The memory is stored; what is missing is the tag. Say so on the turn
+			// where the writer can still act on it, and hand over the vocabulary
+			// this namespace already uses so the next write reuses it.
+			result["untagged"] = true
+			result["hint"] = untaggedHint(ctx, bc.Brain, namespace)
+		}
+		if decision.Action == "warn" {
+			result["warning"] = "stored with warnings"
+			result["reasons"] = decision.Reasons
+			result["secret_labels"] = decision.SecretLabels
+			result["noise_score"] = decision.NoiseScore
+		}
+		b, _ := json.Marshal(result)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
+	mcpServer.AddTool(mcp.NewTool("invalidate",
+		mcp.WithDescription(render("invalidate_description")),
+		mcp.WithString("namespace", mcp.Description(render("remember_namespace")), mcp.Required()),
+		mcp.WithString("external_key", mcp.Description(render("invalidate_external_key")), mcp.Required()),
+		mcp.WithString("reason", mcp.Description(render("invalidate_reason"))),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		namespace, err := requiredNamespace(request.GetString("namespace", ""))
+		if err != nil {
+			return nil, err
+		}
+		out, err := bc.Brain.InvalidateKeyed(ctx, namespace,
+			request.GetString("external_key", ""),
+			request.GetString("reason", ""),
+			"mcp",
+		)
+		if err != nil {
+			return nil, err
+		}
+		result := map[string]any{
+			"id":                  out.ID,
+			"already_invalidated": out.AlreadyInvalidated,
+			"facts_ended":         out.FactsEnded,
+			"message": map[bool]string{
+				true:  "Already invalidated",
+				false: "Memory invalidated",
+			}[out.AlreadyInvalidated],
+		}
+		if out.Content != "" {
+			result["content"] = out.Content
+		}
+		if out.Retraction != nil {
+			result["retraction"] = out.Retraction
+		}
 		b, _ := json.Marshal(result)
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
@@ -130,6 +279,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("from", mcp.Description(render("from_param"))),
 		mcp.WithString("to", mcp.Description(render("to_param"))),
 		mcp.WithString("types", mcp.Description(render("recall_types"))),
+		mcp.WithString("tags", mcp.Description(render("recall_tags"))),
 		mcp.WithNumber("mmr", mcp.Description(render("recall_mmr"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query := request.GetString("query", "")
@@ -154,10 +304,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			return nil, fmt.Errorf("invalid known_to: %w", err)
 		}
 		var types []string
-		for _, t := range strings.Split(request.GetString("types", ""), ",") {
-			if t = strings.TrimSpace(strings.ToLower(t)); t == "" {
-				continue
-			}
+		for _, t := range splitList(request.GetString("types", "")) {
 			// An unknown type would otherwise match neither store and return an
 			// empty list that looks like "nothing remembered".
 			if t != "fact" && t != "episode" && t != "failure" && t != "goal" {
@@ -181,7 +328,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			mmr = &v
 		}
 
-		results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo, Types: types, MMR: mmr})
+		results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo, Types: types, Tags: splitList(request.GetString("tags", "")), MMR: mmr})
 		if err != nil {
 			return nil, err
 		}
@@ -201,6 +348,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("known_from", mcp.Description(render("known_from_param"))),
 		mcp.WithString("known_to", mcp.Description(render("known_to_param"))),
 		mcp.WithString("types", mcp.Description(render("recall_types"))),
+		mcp.WithString("tags", mcp.Description(render("reflect_tags"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query := request.GetString("query", "")
 		if strings.TrimSpace(query) == "" {
@@ -260,6 +408,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			KnownFrom:  knownFrom,
 			KnownTo:    knownTo,
 			Types:      types,
+			Tags:       splitList(request.GetString("tags", "")),
 		})
 		if err != nil {
 			return nil, err
@@ -272,6 +421,8 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithDescription(render("forget_description")),
 		mcp.WithString("about", mcp.Description(render("forget_about")), mcp.Required()),
 		mcp.WithString("namespaces", mcp.Description(render("namespaces_param"))),
+		mcp.WithString("mode", mcp.Description(render("forget_mode"))),
+		mcp.WithString("reason", mcp.Description(render("forget_reason"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		about := request.GetString("about", "")
 		nsRaw := request.GetString("namespaces", "/")
@@ -283,17 +434,43 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			}
 		}
 
-		if err := bc.Brain.ForgetEpisode(ctx, namespaces, about); err != nil {
-			return nil, err
+		mode := strings.ToLower(strings.TrimSpace(request.GetString("mode", "forget")))
+		reason := request.GetString("reason", "")
+
+		var payload any = map[string]bool{"ok": true}
+		switch mode {
+		case "", "forget":
+			if err := bc.Brain.ForgetEpisode(ctx, namespaces, about); err != nil {
+				return nil, err
+			}
+		case "retract":
+			r, err := bc.Brain.RetractEpisode(ctx, namespaces, about, reason, "mcp")
+			if err != nil {
+				return nil, err
+			}
+			payload = r
+		case "purge":
+			counts, err := bc.Brain.PurgeEpisodeByQuery(ctx, namespaces, about, brain.PurgeOptions{
+				Reason: reason,
+				Actor:  "mcp",
+			})
+			if err != nil {
+				return nil, err
+			}
+			payload = counts
+		default:
+			return nil, fmt.Errorf("mode must be forget, retract or purge (got %q)", mode)
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: `{"ok": true}`}}}, nil
+
+		b, _ := json.Marshal(payload)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
 	mcpServer.AddTool(mcp.NewTool("mental_model_create",
 		mcp.WithDescription("Create a mental model: a curated summary generated by reflect on a source query. Stored for fast retrieval and searched first in future reflect calls."),
 		mcp.WithString("name", mcp.Description("Human-readable name for the mental model"), mcp.Required()),
 		mcp.WithString("source_query", mcp.Description("The query to run to generate the mental model content"), mcp.Required()),
-		mcp.WithString("namespaces", mcp.Description("Namespace path (default: /)")),
+		mcp.WithString("namespaces", mcp.Description("File the model in this namespace and scope it there (it reads that namespace and its children). Omit or / for a global model that reads every namespace and is available everywhere.")),
 		mcp.WithString("tags", mcp.Description("Comma-separated tags for scoped visibility")),
 		mcp.WithNumber("max_tokens", mcp.Description("Maximum tokens for generated content (256-8192, default 2048)")),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -302,23 +479,31 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		if strings.TrimSpace(name) == "" || strings.TrimSpace(query) == "" {
 			return nil, fmt.Errorf("name and source_query are required")
 		}
-		nsRaw := request.GetString("namespaces", "/")
+		nsRaw := strings.TrimSpace(request.GetString("namespaces", "/"))
 		var tags []string
 		for _, t := range strings.Split(request.GetString("tags", ""), ",") {
 			if t = strings.TrimSpace(t); t != "" {
 				tags = append(tags, t)
 			}
 		}
-		nsIDs, err := bc.Brain.ResolveNamespaceIDs(ctx, []string{nsRaw})
-		if err != nil || len(nsIDs) == 0 {
-			return nil, fmt.Errorf("namespace %q not found", nsRaw)
+		// "/" (the default) or an empty value means a global model: it reads every
+		// namespace and is available to reflect everywhere. A named namespace
+		// scopes it to that namespace and its children.
+		var nsID *int64
+		if nsRaw != "" && nsRaw != "/" {
+			id, err := bc.Brain.NamespaceIDByPath(ctx, nsRaw)
+			if err != nil {
+				return nil, fmt.Errorf("namespace %q not found", nsRaw)
+			}
+			nsID = &id
 		}
 		maxTokens := request.GetInt("max_tokens", 2048)
-		mm, err := bc.Brain.CreateMentalModel(ctx, nsIDs[0], brain.CreateMentalModelOptions{
+		mm, err := bc.Brain.CreateMentalModel(ctx, brain.CreateMentalModelOptions{
 			Name:        name,
 			SourceQuery: query,
 			Tags:        tags,
 			MaxTokens:   maxTokens,
+			NamespaceID: nsID,
 		})
 		if err != nil {
 			return nil, err
@@ -465,6 +650,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 	mcpServer.AddTool(mcp.NewTool("consolidate",
 		mcp.WithDescription(render("consolidate_description")),
 		mcp.WithString("namespaces", mcp.Description(render("namespaces_param"))),
+		mcp.WithString("tags", mcp.Description(render("consolidate_tags"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		nsRaw := request.GetString("namespaces", "/")
 		var namespaces []string
@@ -473,6 +659,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 				namespaces = append(namespaces, ns)
 			}
 		}
+		tags := splitList(request.GetString("tags", ""))
 
 		ids, err := bc.Brain.ResolveNamespaceIDs(ctx, namespaces)
 		if err != nil {
@@ -481,13 +668,14 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 
 		var summaries []map[string]any
 		for _, id := range ids {
-			result, err := bc.Brain.ConsolidateByID(ctx, id)
+			result, err := bc.Brain.ConsolidateByIDWithTags(ctx, id, tags)
 			if err != nil {
 				summaries = append(summaries, map[string]any{"namespace_id": id, "error": err.Error()})
 				continue
 			}
 			summaries = append(summaries, map[string]any{
 				"namespace":                    result.Namespace,
+				"tag_filter":                   result.TagFilter,
 				"episodes_read":                result.EpisodesRead,
 				"facts_created":                result.FactsCreated,
 				"facts_deduplicated":           result.FactsDeduplicated,
@@ -592,6 +780,29 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
+	mcpServer.AddTool(mcp.NewTool("list_tags",
+		mcp.WithDescription(render("list_tags_description")),
+		mcp.WithString("namespaces", mcp.Description(render("list_tags_namespaces"))),
+		mcp.WithString("since", mcp.Description("Only count memories stored on or after this time (RFC3339 or YYYY-MM-DD). Use it for reporting a period.")),
+		mcp.WithNumber("limit", mcp.Description(render("pagination_limit")), mcp.DefaultNumber(100)),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		since, err := parseAsOf(request.GetString("since", ""))
+		if err != nil {
+			return nil, fmt.Errorf("invalid since: %w", err)
+		}
+		namespaces := splitList(request.GetString("namespaces", ""))
+		tags, err := bc.Brain.ListTags(ctx, namespaces, since, request.GetInt("limit", 100))
+		if err != nil {
+			return nil, err
+		}
+		coverage, err := bc.Brain.TagCoverage(ctx, namespaces)
+		if err != nil {
+			return nil, err
+		}
+		b, _ := json.Marshal(map[string]any{"tags": tags, "coverage": coverage})
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
 	mcpServer.AddTool(mcp.NewTool("memory_stats",
 		mcp.WithDescription("Return memory statistics: total entries stored, database size, and the date range of the oldest and newest stored memories."),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -683,7 +894,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			return nil, fmt.Errorf("invalid known_to: %w", err)
 		}
 
-		facts, err := bc.Brain.QueryFactsWindow(ctx, namespaces, nil, nil, asOf, from, to, knownFrom, knownTo, page)
+		facts, err := bc.Brain.QueryFactsWindow(ctx, namespaces, nil, nil, asOf, from, to, knownFrom, knownTo, nil, page)
 		if err != nil {
 			return nil, err
 		}
@@ -796,14 +1007,17 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		causeID := request.GetInt("cause_id", 0)
 		effectID := request.GetInt("effect_id", 0)
 		confidence := float32(request.GetFloat("confidence", 0.8))
-		namespace := request.GetString("namespace", "/")
-
-		nsIDs, err := bc.Brain.ResolveNamespaceIDs(ctx, []string{namespace})
+		namespace, err := requiredNamespace(request.GetString("namespace", ""))
 		if err != nil {
 			return nil, err
 		}
 
-		link, err := bc.Brain.CreateCausalLink(ctx, nsIDs[0], int64(causeID), int64(effectID), confidence)
+		nsID, err := bc.Brain.NamespaceIDByPath(ctx, namespace)
+		if err != nil {
+			return nil, err
+		}
+
+		link, err := bc.Brain.CreateCausalLink(ctx, nsID, int64(causeID), int64(effectID), confidence)
 		if err != nil {
 			return nil, err
 		}
@@ -869,7 +1083,10 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		content := request.GetString("content", "")
 		verificationPlan := request.GetString("verification_plan", "")
 		confidence := float32(request.GetFloat("confidence", 0.5))
-		namespace := request.GetString("namespace", "/")
+		namespace, err := requiredNamespace(request.GetString("namespace", ""))
+		if err != nil {
+			return nil, err
+		}
 
 		var sourceFactIDs []int64
 		if raw := request.GetString("source_fact_ids", ""); raw != "" {
@@ -880,12 +1097,12 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			}
 		}
 
-		nsIDs, err := bc.Brain.ResolveNamespaceIDs(ctx, []string{namespace})
+		nsID, err := bc.Brain.NamespaceIDByPath(ctx, namespace)
 		if err != nil {
 			return nil, err
 		}
 
-		h, err := bc.Brain.CreateHypothesis(ctx, nsIDs[0], content, verificationPlan, confidence, sourceFactIDs)
+		h, err := bc.Brain.CreateHypothesis(ctx, nsID, content, verificationPlan, confidence, sourceFactIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -972,7 +1189,10 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		content := request.GetString("content", "")
 		priority := request.GetInt("priority", 0)
-		namespace := request.GetString("namespace", "/")
+		namespace, err := requiredNamespace(request.GetString("namespace", ""))
+		if err != nil {
+			return nil, err
+		}
 
 		var parentID *int64
 		if pid := request.GetInt("parent_id", 0); pid != 0 {
@@ -980,12 +1200,12 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			parentID = &pid64
 		}
 
-		nsIDs, err := bc.Brain.ResolveNamespaceIDs(ctx, []string{namespace})
+		nsID, err := bc.Brain.NamespaceIDByPath(ctx, namespace)
 		if err != nil {
 			return nil, err
 		}
 
-		g, err := bc.Brain.CreateGoal(ctx, nsIDs[0], content, parentID, priority)
+		g, err := bc.Brain.CreateGoal(ctx, nsID, content, parentID, priority)
 		if err != nil {
 			return nil, err
 		}
@@ -1070,7 +1290,10 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		content := request.GetString("content", "")
 		reason := request.GetString("reason", "")
 		lesson := request.GetString("lesson", "")
-		namespace := request.GetString("namespace", "/")
+		namespace, err := requiredNamespace(request.GetString("namespace", ""))
+		if err != nil {
+			return nil, err
+		}
 
 		var goalID *int64
 		if gid := request.GetInt("goal_id", 0); gid != 0 {
@@ -1078,12 +1301,12 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			goalID = &gid64
 		}
 
-		nsIDs, err := bc.Brain.ResolveNamespaceIDs(ctx, []string{namespace})
+		nsID, err := bc.Brain.NamespaceIDByPath(ctx, namespace)
 		if err != nil {
 			return nil, err
 		}
 
-		f, err := bc.Brain.CreateFailure(ctx, nsIDs[0], content, reason, lesson, goalID)
+		f, err := bc.Brain.CreateFailure(ctx, nsID, content, reason, lesson, goalID)
 		if err != nil {
 			return nil, err
 		}
@@ -1108,12 +1331,19 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 
 // readOnlyTools are the MCP tools a read-only token may call. Everything else
 // (remember, consolidate, create_*, delete_*, ...) is rejected before it reaches
-// the server.
+// the server. init belongs to the rejected side: it creates the /self scaffold.
+//
+// reflect is here although it costs a model call: it reads, and it writes
+// nothing, so refusing it would leave a read-only token unable to ask a question
+// of the memory it is allowed to read. Its absence was reported as a 403 on a
+// read tool, which is exactly the confusion this list exists to avoid.
 var readOnlyTools = map[string]bool{
 	"recall":              true,
+	"reflect":             true,
 	"query_facts":         true,
 	"query_relationships": true,
 	"list_namespaces":     true,
+	"list_tags":           true,
 	"list_goals":          true,
 	"list_hypotheses":     true,
 	"list_contradictions": true,

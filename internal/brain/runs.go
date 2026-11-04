@@ -13,7 +13,7 @@ import (
 const runHistoryRetention = 30 * 24 * time.Hour
 
 const runColumns = `id, namespace_id, namespace_slug, started_at, duration_ms,
-	episodes_read, episodes_skipped, facts_created, facts_deduplicated, relationships_found,
+	episodes_read, episodes_skipped, facts_created, facts_deduplicated, facts_refused, relationships_found,
 	causal_links_found, patterns_found, contradictions_found,
 	goals_annotated, goals_suggested_complete,
 	failure_repeats_detected, failure_patterns_found,
@@ -33,15 +33,15 @@ func (b *Brain) SaveConsolidationRun(ctx context.Context, nsID int64, res Consol
 	_, err := b.pool.Exec(ctx,
 		`INSERT INTO consolidation_runs (
 			namespace_id, namespace_slug, started_at, duration_ms,
-			episodes_read, episodes_skipped, facts_created, facts_deduplicated, relationships_found,
+			episodes_read, episodes_skipped, facts_created, facts_deduplicated, facts_refused, relationships_found,
 			causal_links_found, patterns_found, contradictions_found,
 			goals_annotated, goals_suggested_complete,
 			failure_repeats_detected, failure_patterns_found,
 			hypotheses_auto_confirmed, hypotheses_auto_rejected, hypotheses_updated,
 			facts_decayed, facts_expired, dedup_near_misses, llm_calls, llm_calls_limited, errors, error_sample)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
 		nsID, res.Namespace, startedAt, res.Duration.Milliseconds(),
-		res.EpisodesRead, res.EpisodesSkipped, res.FactsCreated, res.FactsDeduplicated, res.RelationshipsFound,
+		res.EpisodesRead, res.EpisodesSkipped, res.FactsCreated, res.FactsDeduplicated, res.FactsRefused, res.RelationshipsFound,
 		res.CausalLinksFound, res.PatternsFound, res.ContradictionsFound,
 		res.GoalsAnnotated, res.GoalsSuggestedComplete,
 		res.FailureRepeatsDetected, res.FailurePatternsFound,
@@ -101,7 +101,7 @@ func (b *Brain) ListConsolidationRuns(ctx context.Context, namespaceSlugs []stri
 	for rows.Next() {
 		var run models.ConsolidationRun
 		if err := rows.Scan(&run.ID, &run.NamespaceID, &run.NamespaceSlug, &run.StartedAt, &run.DurationMS,
-			&run.EpisodesRead, &run.EpisodesSkipped, &run.FactsCreated, &run.FactsDeduplicated, &run.RelationshipsFound,
+			&run.EpisodesRead, &run.EpisodesSkipped, &run.FactsCreated, &run.FactsDeduplicated, &run.FactsRefused, &run.RelationshipsFound,
 			&run.CausalLinksFound, &run.PatternsFound, &run.ContradictionsFound,
 			&run.GoalsAnnotated, &run.GoalsSuggestedComplete,
 			&run.FailureRepeatsDetected, &run.FailurePatternsFound,

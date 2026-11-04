@@ -50,6 +50,10 @@ type ReflectOptions struct {
 	KnownTo   *time.Time
 	// Types limits which memory types are recalled. Empty means facts and episodes.
 	Types []string
+	// Tags narrows the grounding recall to memories carrying every listed tag
+	// (AND, not OR), the same way RecallOptions.Tags does. Mental models keep
+	// their own filter (MentalModelTags); this only applies to recalled memories.
+	Tags []string
 	// MMR overrides the server MMR lambda for the grounding recall. nil keeps
 	// the server config; 0 disables MMR; 0..1 balances relevance vs diversity.
 	MMR *float64
@@ -59,6 +63,9 @@ type ReflectOptions struct {
 	SkipMentalModels bool
 	// MentalModelTags filters mental model search to models with any of these tags.
 	MentalModelTags []string
+	// Instructions are appended to the system prompt. The default prompt is
+	// written for answering a question; a mental model needs document rules.
+	Instructions string
 }
 
 // reflectSystemPrompt is the system prompt for the reflect synthesis. It tells
@@ -121,6 +128,7 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 		KnownFrom: opts.KnownFrom,
 		KnownTo:   opts.KnownTo,
 		Types:     opts.Types,
+		Tags:      opts.Tags,
 		MMR:       opts.MMR,
 	}
 	results, err := b.RecallWith(ctx, namespaces, query, limit, recallOpts)
@@ -174,7 +182,7 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 	sb.WriteString("\n")
 
 	messages := []reasoner.ChatMessage{
-		{Role: "system", Content: reflectSystemPrompt},
+		{Role: "system", Content: reflectSystemPrompt + instructionsSuffix(opts.Instructions)},
 		{Role: "user", Content: sb.String()},
 	}
 
@@ -192,6 +200,15 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 	}, nil
 }
 
+// instructionsSuffix renders caller instructions as an extra system-prompt
+// paragraph, or "" when there are none.
+func instructionsSuffix(instructions string) string {
+	if strings.TrimSpace(instructions) == "" {
+		return ""
+	}
+	return "\n\n" + instructions
+}
+
 // formatMentalModelsForReflect renders curated mental models for the synthesis
 // prompt. They appear before raw memories because they are higher quality.
 func formatMentalModelsForReflect(models []MentalModelSearchResult) string {
@@ -202,7 +219,11 @@ func formatMentalModelsForReflect(models []MentalModelSearchResult) string {
 	for i, mm := range models {
 		stale := ""
 		if mm.IsStale {
-			stale = " [STALE - may need refresh]"
+			stale = " [STALE"
+			if mm.StaleReason != "" {
+				stale += ": " + mm.StaleReason
+			}
+			stale += " - may need refresh]"
 		}
 		fmt.Fprintf(&sb, "%d. [%s]%s\n%s\n", i+1, mm.Name, stale, mm.Content)
 	}
