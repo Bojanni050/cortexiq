@@ -122,3 +122,9 @@ voor de regel dat er na 1000 regels een nieuw walkthrough-bestand komt.
 - Conclusions: release-and-deploy vóór de gaia-logos-port; db.Open draait goose.Up bij start, dus migratie 00042 komt automatisch mee — geen handmatige stap.
 - Actions: PR #9 gesquash-merged (36772cd, alle CI-slots groen); release v0.1.17 gepubliceerd (image ghcr.io/bojanni050/cortexiq:0.1.17); CORTEXIQ_IMAGE_TAG=0.1.17 in /opt/cortexiq/.env, docker compose pull + up -d. Prod check: migratie 42 toegepast (kolommen external_key/external_refs/superseded_by aanwezig), /api/v1/remember met external_key herhaald → unchanged, invalidate → retire + retraction, herhaald → already_invalidated, onbekende sleutel → 404. Rooktest-namespace en -episodes opgeruimd.
 
+
+## 2026-11-04 (Hertoets Agent Memory Atlas op HEAD f620a20)
+
+- Findings: de audit van 4 nov las commit f8847f3 (26 okt); sindsdien 72 commits, waaronder keyed invalidate (v0.1.17) en `requiredNamespace` (caec750). Niet duidelijk of die de gaten uit de audit dichtten.
+- Conclusions: statisch hertoetst, niets gedraaid. Gat 1 (waarde-sleutel op de retractie) blijft open: `invalidate` is gesleuteld op een door de caller gekozen `external_key`, `retractions` wordt op geen enkel schrijfpad gelezen. Gat 4 (vijf `INSERT INTO facts`), bronplicht voor hypothese/failure-facts, rebuild, decay-splitsing en recall-poort zijn ongewijzigd. Verbeterd: schrijven zonder namespace faalt hard, supersede/invalidate sluiten afgeleide facts atomair. Nieuw: `invalidate` zonder reden laat geen retractie-record na.
+- Actions: `docs/audit-agent-memory-atlas-hertoets.md` toegevoegd (uitslag per punt met bestand en regel, aanbevolen volgorde); geen code gewijzigd; validated tegen `git show f8847f3`, grep en lezen van `invalidate.go`, `episode.go`, `dedup.go`, `decay.go`, `mcp.go`. De retractietest op een draaiende installatie is niet uitgevoerd.
