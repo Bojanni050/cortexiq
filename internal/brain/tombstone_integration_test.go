@@ -29,8 +29,13 @@ const tombstoneImplemented = false
 
 func TestIntegrationRejectedValueStaysRejected(t *testing.T) {
 	e := newEnv(t, nil)
-	const rejected = "the queue is kafka"
-	const other = "the cache is redis"
+	// Both statements are longer than the default MinEpisodeLength (24): a
+	// shorter episode is a fragment and never reaches the extractor, so the
+	// first version of this test (an 18-character claim) never got a fact.
+	// They share almost no words, so they land in separate clusters and the
+	// second consolidation cannot merge one into the other.
+	const rejected = "the message queue between the services is kafka"
+	const other = "nightly backups are copied to the offsite storage box"
 
 	activeCount := func(content string) int {
 		t.Helper()
@@ -61,7 +66,7 @@ func TestIntegrationRejectedValueStaysRejected(t *testing.T) {
 	}
 
 	// 2. The value is rejected, with a reason. The fact is no longer active.
-	if _, err := e.b.RetractFact(e.ctx, factID, "the queue is nats, we migrated in March", "test"); err != nil {
+	if _, err := e.b.RetractFact(e.ctx, factID, "the message queue is nats, we migrated in March", "test"); err != nil {
 		t.Fatalf("RetractFact: %v", err)
 	}
 	if n := activeCount(rejected); n != 0 {
