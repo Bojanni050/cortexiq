@@ -3,7 +3,9 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -85,4 +87,76 @@ func (b *Brain) BackfillValueKeys(ctx context.Context) (int, error) {
 		}
 		after = last
 	}
+}
+
+var (
+	// ErrRetractionNotFound means no retraction has this id.
+	ErrRetractionNotFound = errors.New("brain: retraction not found")
+	// ErrAlreadyLifted means the rejection was lifted before.
+	ErrAlreadyLifted = errors.New("brain: this rejection was already lifted")
+	// ErrLiftReasonRequired means a lift arrived without a reason. Taking a block
+	// away is a decision someone has to be able to read back.
+	ErrLiftReasonRequired = errors.New("brain: lifting a rejection needs a reason — say why the value may be stored again")
+)
+
+// retractionColumns is the column list scanRetraction reads, in order.
+const retractionColumns = `id, namespace_id, target_type, target_id, content, reason, retracted_by, created_at,
+	lifted_at, lifted_by, lift_reason`
+
+func scanRetraction(row pgx.Row) (Retraction, error) {
+	var (
+		r         Retraction
+		createdAt time.Time
+		liftedAt  *time.Time
+	)
+	if err := row.Scan(&r.ID, &r.NamespaceID, &r.TargetType, &r.TargetID, &r.Content, &r.Reason,
+		&r.RetractedBy, &createdAt, &liftedAt, &r.LiftedBy, &r.LiftReason); err != nil {
+		return r, err
+	}
+	r.CreatedAt = createdAt.UTC().Format(time.RFC3339)
+	if liftedAt != nil {
+		s := liftedAt.UTC().Format(time.RFC3339)
+		r.LiftedAt = &s
+	}
+	return r, nil
+}
+
+// LiftRetraction lifts a rejection: the value may be stored again. The
+// retraction stays as the record of what was withdrawn and why, and now also of
+// who lifted it and why. Lifting does not bring the withdrawn row back; the
+// value is allowed in again, and a later write stores it as a new fact.
+func (b *Brain) LiftRetraction(ctx context.Context, id int64, reason, actor string) (*Retraction, error) {
+	if err := requireWrite(ctx); err != nil {
+		return nil, err
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return nil, ErrLiftReasonRequired
+	}
+	if len(reason) > maxReasonLen {
+		return nil, fmt.Errorf("brain: lift reason is longer than %d characters", maxReasonLen)
+	}
+	actor = strings.TrimSpace(actor)
+	if actor == "" {
+		actor = "unknown"
+	}
+
+	tag, err := b.pool.Exec(ctx,
+		`UPDATE retractions SET lifted_at = now(), lifted_by = $2, lift_reason = $3
+		  WHERE id = $1 AND lifted_at IS NULL`, id, actor, reason)
+	if err != nil {
+		return nil, fmt.Errorf("lift retraction: %w", err)
+	}
+	r, err := scanRetraction(b.pool.QueryRow(ctx,
+		`SELECT `+retractionColumns+` FROM retractions WHERE id = $1`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrRetractionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lift retraction: read back: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, ErrAlreadyLifted
+	}
+	return &r, nil
 }

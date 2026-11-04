@@ -213,6 +213,16 @@ func main() {
 				},
 			},
 			{
+				Name:      "lift",
+				Usage:     "Lift a rejection so the value may be stored again",
+				ArgsUsage: "<retraction-id>",
+				Action:    liftCmd,
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "reason", Aliases: []string{"r"}, Usage: "Why the value may be stored again (required)"},
+					&cli.StringFlag{Name: "actor", Usage: "Who is lifting it (default: cli)"},
+				},
+			},
+			{
 				Name:   "retractions",
 				Usage:  "List recorded retractions, newest first",
 				Action: retractionsCmd,

@@ -302,6 +302,28 @@ func retractCmd(ctx context.Context, cmd *cli.Command) (err error) {
 	return printJSON(r)
 }
 
+// liftCmd lifts a rejection by retraction id (see `retractions`). The value may
+// then be stored again; the withdrawn row does not come back.
+func liftCmd(ctx context.Context, cmd *cli.Command) error {
+	args := cmd.Args()
+	if args.Len() != 1 {
+		return fmt.Errorf("one retraction id is required (see `retractions`)")
+	}
+	id, err := strconv.ParseInt(args.First(), 10, 64)
+	if err != nil || id <= 0 {
+		return fmt.Errorf("invalid retraction id %q", args.First())
+	}
+	actor := cmd.String("actor")
+	if actor == "" {
+		actor = "cli"
+	}
+	r, err := getBootstrap(cmd).Brain.LiftRetraction(ctx, id, cmd.String("reason"), actor)
+	if err != nil {
+		return err
+	}
+	return printJSON(r)
+}
+
 func retractionsCmd(ctx context.Context, cmd *cli.Command) error {
 	rows, err := getBootstrap(cmd).Brain.Retractions(ctx, cmd.StringSlice("namespaces"), cmd.Int("limit"))
 	if err != nil {

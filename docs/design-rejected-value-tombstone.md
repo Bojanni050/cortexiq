@@ -1,6 +1,10 @@
 # Ontwerpvoorstel: afgewezen-waarde-tombstone
 
-Status: **voorstel, niets gebouwd.** Besluiten van de eigenaar staan in "Wat ik van jou nodig heb".
+Status: **gebouwd (2026-11-04), nog niet in productie.** De eigenaar koos alle vijf de aanbevelingen: sleutel A (genormaliseerde tekst), weigeren met teller, `golang.org/x/text` direct, opheffen in dezelfde migratie, ook import toetsen. Variant B (entity, property, value) is niet gebouwd en blijft een aparte stap.
+
+Wat er staat: migratie `00043_add_value_tombstone.sql`; `valueKey` in `internal/brain/valuekey.go`; `insertRetractionRow`, `BackfillValueKeys` en `LiftRetraction` in `internal/brain/tombstone.go`; de check `checkRejectedValue` in `internal/brain/fact_insert.go`; `facts_refused` in de consolidatierun; het CLI-commando `cortexiq lift <retraction-id> --reason ...`. De integratietests draaien alleen in CI en zijn bij het schrijven hiervan nog niet gezien.
+
+Daaronder staat het oorspronkelijke voorstel, ongewijzigd.
 
 ## Waarom
 

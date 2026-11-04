@@ -32,6 +32,11 @@ type Retraction struct {
 	Reason      string `json:"reason"`
 	RetractedBy string `json:"retracted_by"`
 	CreatedAt   string `json:"created_at"`
+	// LiftedAt is set once the rejection was lifted: the value may be stored
+	// again. The retraction itself stays, as the record of what was withdrawn.
+	LiftedAt   *string `json:"lifted_at,omitempty"`
+	LiftedBy   *string `json:"lifted_by,omitempty"`
+	LiftReason *string `json:"lift_reason,omitempty"`
 }
 
 const maxReasonLen = 2000
@@ -188,7 +193,7 @@ func (b *Brain) Retractions(ctx context.Context, namespaceSlugs []string, limit 
 	}
 
 	rows, err := b.pool.Query(ctx,
-		`SELECT id, namespace_id, target_type, target_id, content, reason, retracted_by, created_at
+		`SELECT `+retractionColumns+`
 		 FROM retractions WHERE namespace_id = ANY($1)
 		 ORDER BY id DESC LIMIT $2`, nsIDs, limit)
 	if err != nil {
@@ -198,13 +203,10 @@ func (b *Brain) Retractions(ctx context.Context, namespaceSlugs []string, limit 
 
 	out := []Retraction{}
 	for rows.Next() {
-		var r Retraction
-		var createdAt time.Time
-		if err := rows.Scan(&r.ID, &r.NamespaceID, &r.TargetType, &r.TargetID,
-			&r.Content, &r.Reason, &r.RetractedBy, &createdAt); err != nil {
+		r, err := scanRetraction(rows)
+		if err != nil {
 			return nil, fmt.Errorf("list retractions: scan: %w", err)
 		}
-		r.CreatedAt = createdAt.UTC().Format(time.RFC3339)
 		out = append(out, r)
 	}
 	return out, rows.Err()
