@@ -47,5 +47,5 @@ require (
 	github.com/openai/openai-go v1.12.0
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
+	golang.org/x/text v0.34.0
 )
