@@ -147,14 +147,11 @@ func (b *Brain) recordRetraction(ctx context.Context, targetType string, targetI
 		Reason:      reason,
 		RetractedBy: actor,
 	}
-	var createdAt time.Time
-	if err := tx.QueryRow(ctx,
-		`INSERT INTO retractions (namespace_id, target_type, target_id, content, reason, retracted_by)
-		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at`,
-		nsID, targetType, targetID, content, reason, actor,
-	).Scan(&r.ID, &createdAt); err != nil {
+	id, createdAt, err := insertRetractionRow(ctx, tx, nsID, targetType, targetID, content, reason, actor)
+	if err != nil {
 		return nil, fmt.Errorf("retract: insert: %w", err)
 	}
+	r.ID = id
 	r.CreatedAt = createdAt.UTC().Format(time.RFC3339)
 
 	if softDelete {

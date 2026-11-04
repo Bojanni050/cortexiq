@@ -162,6 +162,16 @@ func New(ctx context.Context) (*Context, error) {
 		return nil, fmt.Errorf("build brain: %w", err)
 	}
 
+	// Retractions made before migration 00043 have no value key, and a
+	// rejection without one blocks nothing. Key them now. Idempotent, so a
+	// failure is logged and retried at the next start rather than stopping the
+	// server: the rest of the memory works without it, but say so loudly.
+	if n, err := br.BackfillValueKeys(ctx); err != nil {
+		logger.Error("backfill of retraction value keys failed; old rejections do not block yet", "error", err)
+	} else if n > 0 {
+		logger.Info("keyed old retractions", "count", n)
+	}
+
 	// Triage is optional and served by its own, cheaper model: it decides whether
 	// a cluster of episodes is worth extracting at all. Anything wrong with this
 	// client must not stop the brain from running, because triage failing open
