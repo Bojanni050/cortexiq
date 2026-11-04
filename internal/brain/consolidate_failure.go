@@ -3,13 +3,14 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/Bojanni050/cortexiq/internal/models"
 )
 
-func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (repeats, patterns, llmCalls int, errs []string) {
+func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (repeats, patterns, refused, llmCalls int, errs []string) {
 	rows, err := b.pool.Query(ctx,
 		`SELECT id, namespace_id, goal_id, content, reason, lesson, created_at, deleted_at
 		 FROM failures WHERE namespace_id = $1 AND deleted_at IS NULL AND id > $2
@@ -124,6 +125,11 @@ func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *
 				ValidFrom:      &validFrom,
 				Importance:     DefaultImportance,
 			}); err != nil {
+				if errors.Is(err, ErrRejectedValue) {
+					// A pattern the user rejected earlier. Counted, not an error.
+					refused++
+					continue
+				}
 				errs = append(errs, fmt.Sprintf("insert failure pattern fact: %v", err))
 				continue
 			}

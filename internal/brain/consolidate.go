@@ -24,6 +24,11 @@ type ConsolidationResult struct {
 	EpisodesSkipped   int           `json:"episodes_skipped"`
 	FactsCreated      int           `json:"facts_created"`
 	FactsDeduplicated int           `json:"facts_deduplicated"`
+	// FactsRefused counts facts not stored because their value was rejected
+	// earlier in the namespace and the rejection stands. A tombstone that fires
+	// stores nothing, so without this count it looks like a run that found
+	// nothing.
+	FactsRefused int `json:"facts_refused"`
 	// DedupNearMisses counts facts that were stored as new while a near-twin —
 	// a candidate above dedupNearMissFloor — was already there. Duplicates are
 	// born in that band and nothing else reports on it.
@@ -128,12 +133,13 @@ func (b *Brain) consolidateTagScoped(ctx context.Context, nsID int64, tags []str
 
 	result := ConsolidationResult{Namespace: namespaceSlug, TagFilter: tags}
 
-	created, deduped, read, skipped, nearMisses, llmCalls, contFound, contAuto, errs := b.consolidateEpisodesToFacts(ctx, nsID, nil, tags)
+	created, deduped, read, skipped, nearMisses, refused, llmCalls, contFound, contAuto, errs := b.consolidateEpisodesToFacts(ctx, nsID, nil, tags)
 	result.FactsCreated = created
 	result.FactsDeduplicated = deduped
 	result.EpisodesRead = read
 	result.EpisodesSkipped = skipped
 	result.DedupNearMisses = nearMisses
+	result.FactsRefused = refused
 	result.LLMCalls = llmCalls
 	result.ContradictionsFound = contFound
 	result.ContradictionsAutoResolved = contAuto
@@ -163,12 +169,13 @@ func (b *Brain) consolidateNamespace(ctx context.Context, nsID int64) (Consolida
 
 	// Stage 1: Episodes -> Facts (+ Stage 4: Contradiction detection)
 	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
-		factsCreated, factsDeduped, episodesRead, episodesSkipped, nearMisses, llmCalls, contFound, contAuto, errs := b.consolidateEpisodesToFacts(ctx, nsID, cp, nil)
+		factsCreated, factsDeduped, episodesRead, episodesSkipped, nearMisses, refused, llmCalls, contFound, contAuto, errs := b.consolidateEpisodesToFacts(ctx, nsID, cp, nil)
 		result.FactsCreated = factsCreated
 		result.FactsDeduplicated = factsDeduped
 		result.EpisodesRead = episodesRead
 		result.EpisodesSkipped = episodesSkipped
 		result.DedupNearMisses = nearMisses
+		result.FactsRefused = refused
 		result.LLMCalls += llmCalls
 		result.ContradictionsFound = contFound
 		result.ContradictionsAutoResolved = contAuto
@@ -202,9 +209,10 @@ func (b *Brain) consolidateNamespace(ctx context.Context, nsID int64) (Consolida
 
 	// Stage 7: Failure Pattern Detection
 	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
-		repeats, patterns, llmCalls, errs := b.consolidateFailurePatterns(ctx, nsID, cp)
+		repeats, patterns, refused, llmCalls, errs := b.consolidateFailurePatterns(ctx, nsID, cp)
 		result.FailureRepeatsDetected = repeats
 		result.FailurePatternsFound = patterns
+		result.FactsRefused += refused
 		result.LLMCalls += llmCalls
 		result.Errors = append(result.Errors, errs...)
 	}
@@ -300,7 +308,7 @@ func (b *Brain) consolidateNamespace(ctx context.Context, nsID int64) (Consolida
 // from the start of the namespace, so this is how many one run will look at.
 const taggedConsolidationLimit = 500
 
-func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *models.ConsolidationProgress, tags []string) (created, deduped, read, skipped, nearMisses, llmCalls, contradictionsFound, contradictionsAutoResolved int, errs []string) {
+func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *models.ConsolidationProgress, tags []string) (created, deduped, read, skipped, nearMisses, refused, llmCalls, contradictionsFound, contradictionsAutoResolved int, errs []string) {
 	nsCfg := b.namespaceRunConfig(ctx, nsID)
 	var sql string
 	var args []any
@@ -425,6 +433,9 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 			}
 			if r.deduped {
 				deduped++
+			}
+			if r.refused {
+				refused++
 			}
 			if r.nearMiss {
 				nearMisses++
@@ -581,6 +592,9 @@ func clusterMembers(seed models.Episode, episodes []models.Episode, clustered ma
 // storeResult describes what storeFact did with one synthesized fact.
 type storeResult struct {
 	created, deduped bool
+	// refused says the fact's value was rejected earlier and the rejection
+	// stands, so nothing was stored. The episodes still count as handled.
+	refused bool
 	// nearMiss says the fact was stored as new while a near-twin already existed.
 	nearMiss       bool
 	contradictions int
@@ -637,6 +651,10 @@ func (b *Brain) storeFactWithConfig(ctx context.Context, nsID int64, sf *reasone
 		Tags:           b.sourceTags(ctx, episodeIDs),
 		ExternalRefs:   b.sourceRefs(ctx, episodeIDs),
 	})
+	if errors.Is(err, ErrRejectedValue) {
+		r.refused = true
+		return r, nil
+	}
 	if err != nil {
 		return r, err
 	}

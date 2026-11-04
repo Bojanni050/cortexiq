@@ -266,6 +266,7 @@ type ConsolidationRun struct {
 	FactsDecayed            int       `db:"facts_decayed" json:"facts_decayed"`
 	FactsExpired            int       `db:"facts_expired" json:"facts_expired"`
 	DedupNearMisses         int       `db:"dedup_near_misses" json:"dedup_near_misses"`
+	FactsRefused            int       `db:"facts_refused" json:"facts_refused"`
 	LLMCalls                int       `db:"llm_calls" json:"llm_calls"`
 	LLMCallsLimited         bool      `db:"llm_calls_limited" json:"llm_calls_limited"`
 	Errors                  int       `db:"errors" json:"errors"`

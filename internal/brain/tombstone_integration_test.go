@@ -7,27 +7,14 @@ package brain
 // The Agent Memory Atlas calls the tombstone the one mechanism whose silent
 // failure looks exactly like success, and names this sequence as its most
 // useful test: reject a value, assert it again through a new write, and check
-// that it did not come back as an active fact. docs/audit-agent-memory-atlas-hertoets.md
-// (point 1) records that CortexIQ does not hold the line: retractions are keyed
-// on the row, nothing on the write path reads them, and nearestActiveFacts
-// ignores ended facts on purpose, so a re-asserted value becomes a new active
-// fact.
-//
-// Until the value-keyed tombstone exists the test logs that gap and passes
-// instead of failing, so CI stays green, and it fails the other way round: if
-// the gap closes while tombstoneImplemented is still false, the test demands
-// the flag be flipped. It must not use t.Skip: the CI step treats any
-// "--- SKIP" in the integration log as a skipped suite and fails. The positive
-// control below is always strict.
+// that it did not come back as an active fact. docs/design-rejected-value-tombstone.md
+// describes the mechanism. Until it was built (audit point 1) this test logged
+// a KNOWN GAP and passed; it is strict now, and the positive control is what
+// keeps "nothing came back" from meaning "nothing ran".
 
 import (
 	"testing"
 )
-
-// tombstoneImplemented flips to true in the commit that makes a retracted
-// value stay retracted. From then on a re-asserted value that comes back
-// active is a failure, not a known gap.
-const tombstoneImplemented = false
 
 func TestIntegrationRejectedValueStaysRejected(t *testing.T) {
 	e := newEnv(t, nil)
@@ -84,7 +71,8 @@ func TestIntegrationRejectedValueStaysRejected(t *testing.T) {
 	if _, err := e.b.Remember(e.ctx, e.ns, other, nil); err != nil {
 		t.Fatalf("Remember (control): %v", err)
 	}
-	if _, err := e.b.ConsolidateByID(e.ctx, e.nsID); err != nil {
+	res, err := e.b.ConsolidateByID(e.ctx, e.nsID)
+	if err != nil {
 		t.Fatalf("second consolidation: %v", err)
 	}
 
@@ -95,18 +83,14 @@ func TestIntegrationRejectedValueStaysRejected(t *testing.T) {
 		t.Fatalf("positive control: %d active facts for %q; want 1 (the second consolidation did not run as expected)", n, other)
 	}
 
-	// 4. The rejected value must not have come back.
-	back := activeCount(rejected)
-	switch {
-	case back == 0 && !tombstoneImplemented:
-		t.Fatal("the rejected value stayed rejected: the tombstone gap is closed. " +
-			"Set tombstoneImplemented = true so a regression fails this test.")
-	case back == 0:
-		// The tombstone holds.
-	case tombstoneImplemented:
+	// 4. The rejected value must not have come back, and the run must say it
+	// refused something: a tombstone that fires stores nothing, so without the
+	// count it looks like a run that found nothing.
+	if back := activeCount(rejected); back != 0 {
 		t.Fatalf("the rejected value %q came back as %d active fact(s) after being asserted again", rejected, back)
-	default:
-		t.Logf("KNOWN GAP (audit point 1): the retracted value %q came back as %d active fact(s); "+
-			"retractions are keyed on the row and nothing on the write path reads them", rejected, back)
+	}
+	if res.FactsRefused != 1 || res.FactsCreated != 1 {
+		t.Fatalf("second consolidation = %d created, %d refused; want 1 created (the control) and 1 refused (the rejected value)",
+			res.FactsCreated, res.FactsRefused)
 	}
 }
