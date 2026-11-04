@@ -440,7 +440,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		var payload any = map[string]bool{"ok": true}
 		switch mode {
 		case "", "forget":
-			if err := bc.Brain.ForgetEpisode(ctx, namespaces, about); err != nil {
+			if err := bc.Brain.ForgetEpisode(ctx, namespaces, about, "mcp"); err != nil {
 				return nil, err
 			}
 		case "retract":

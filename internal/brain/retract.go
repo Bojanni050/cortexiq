@@ -37,9 +37,17 @@ type Retraction struct {
 	LiftedAt   *string `json:"lifted_at,omitempty"`
 	LiftedBy   *string `json:"lifted_by,omitempty"`
 	LiftReason *string `json:"lift_reason,omitempty"`
+	// Judged is false for an audit entry: a forget, or an invalidate without a
+	// reason. It records who withdrew what and when, makes no claim that the
+	// memory was wrong, and never blocks the value from coming back.
+	Judged bool `json:"judged"`
 }
 
 const maxReasonLen = 2000
+
+// noJudgement is the reason stored on an unjudged audit entry. The column is
+// NOT NULL, and a placeholder that says so is more honest than an empty string.
+const noJudgement = "no judgement recorded"
 
 func validateReason(reason string) error {
 	if strings.TrimSpace(reason) == "" {
@@ -135,7 +143,7 @@ func (b *Brain) recordRetraction(ctx context.Context, targetType string, targetI
 
 	var existing int
 	if err := tx.QueryRow(ctx,
-		`SELECT count(*) FROM retractions WHERE target_type = $1 AND target_id = $2`,
+		`SELECT count(*) FROM retractions WHERE target_type = $1 AND target_id = $2 AND judged`,
 		targetType, targetID,
 	).Scan(&existing); err != nil {
 		return nil, fmt.Errorf("retract: check existing: %w", err)
@@ -151,8 +159,9 @@ func (b *Brain) recordRetraction(ctx context.Context, targetType string, targetI
 		Content:     content,
 		Reason:      reason,
 		RetractedBy: actor,
+		Judged:      true,
 	}
-	id, createdAt, err := insertRetractionRow(ctx, tx, nsID, targetType, targetID, content, reason, actor)
+	id, createdAt, err := insertRetractionRow(ctx, tx, nsID, targetType, targetID, content, reason, actor, true)
 	if err != nil {
 		return nil, fmt.Errorf("retract: insert: %w", err)
 	}

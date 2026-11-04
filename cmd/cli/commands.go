@@ -192,7 +192,7 @@ func forgetCmd(ctx context.Context, cmd *cli.Command) error {
 
 	namespaces := cmd.StringSlice("namespaces")
 	bc := getBootstrap(cmd)
-	if err := bc.Brain.ForgetEpisode(ctx, namespaces, query); err != nil {
+	if err := bc.Brain.ForgetEpisode(ctx, namespaces, query, "cli"); err != nil {
 		return err
 	}
 

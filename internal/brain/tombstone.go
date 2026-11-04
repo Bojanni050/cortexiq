@@ -15,15 +15,21 @@ import (
 // value key next to the claim, so the retraction can be found by what it
 // withdrew and not only by the row it withdrew. A claim with no usable key is
 // stored without one and never blocks anything.
-func insertRetractionRow(ctx context.Context, tx pgx.Tx, nsID int64, targetType string, targetID int64, content, reason, actor string) (id int64, createdAt time.Time, err error) {
+//
+// judged is false for a withdrawal that made no claim about the world (a forget,
+// an invalidate without a reason). Such a row is an audit entry: it never gets a
+// key, so it can never block a value, and the table refuses the combination.
+func insertRetractionRow(ctx context.Context, tx pgx.Tx, nsID int64, targetType string, targetID int64, content, reason, actor string, judged bool) (id int64, createdAt time.Time, err error) {
 	var key *string
-	if k, ok := valueKey(content); ok {
-		key = &k
+	if judged {
+		if k, ok := valueKey(content); ok {
+			key = &k
+		}
 	}
 	err = tx.QueryRow(ctx,
-		`INSERT INTO retractions (namespace_id, target_type, target_id, content, reason, retracted_by, value_key)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, created_at`,
-		nsID, targetType, targetID, content, reason, actor, key,
+		`INSERT INTO retractions (namespace_id, target_type, target_id, content, reason, retracted_by, value_key, judged)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, created_at`,
+		nsID, targetType, targetID, content, reason, actor, key, judged,
 	).Scan(&id, &createdAt)
 	return id, createdAt, err
 }
@@ -45,7 +51,7 @@ func (b *Brain) BackfillValueKeys(ctx context.Context) (int, error) {
 	for {
 		rows, err := b.pool.Query(ctx,
 			`SELECT id, content FROM retractions
-			  WHERE value_key IS NULL AND id > $1
+			  WHERE value_key IS NULL AND judged AND id > $1
 			  ORDER BY id LIMIT $2`, after, backfillBatch)
 		if err != nil {
 			return total, fmt.Errorf("backfill value keys: read: %w", err)
@@ -94,6 +100,10 @@ var (
 	ErrRetractionNotFound = errors.New("brain: retraction not found")
 	// ErrAlreadyLifted means the rejection was lifted before.
 	ErrAlreadyLifted = errors.New("brain: this rejection was already lifted")
+	// ErrNotJudged means the record is an audit entry of a forget, or of an
+	// invalidate without a reason. It never blocked a value, so there is
+	// nothing to lift.
+	ErrNotJudged = errors.New("brain: this record made no judgement and blocks nothing; there is nothing to lift")
 	// ErrLiftReasonRequired means a lift arrived without a reason. Taking a block
 	// away is a decision someone has to be able to read back.
 	ErrLiftReasonRequired = errors.New("brain: lifting a rejection needs a reason — say why the value may be stored again")
@@ -101,7 +111,7 @@ var (
 
 // retractionColumns is the column list scanRetraction reads, in order.
 const retractionColumns = `id, namespace_id, target_type, target_id, content, reason, retracted_by, created_at,
-	lifted_at, lifted_by, lift_reason`
+	lifted_at, lifted_by, lift_reason, judged`
 
 func scanRetraction(row pgx.Row) (Retraction, error) {
 	var (
@@ -110,7 +120,7 @@ func scanRetraction(row pgx.Row) (Retraction, error) {
 		liftedAt  *time.Time
 	)
 	if err := row.Scan(&r.ID, &r.NamespaceID, &r.TargetType, &r.TargetID, &r.Content, &r.Reason,
-		&r.RetractedBy, &createdAt, &liftedAt, &r.LiftedBy, &r.LiftReason); err != nil {
+		&r.RetractedBy, &createdAt, &liftedAt, &r.LiftedBy, &r.LiftReason, &r.Judged); err != nil {
 		return r, err
 	}
 	r.CreatedAt = createdAt.UTC().Format(time.RFC3339)
@@ -143,7 +153,7 @@ func (b *Brain) LiftRetraction(ctx context.Context, id int64, reason, actor stri
 
 	tag, err := b.pool.Exec(ctx,
 		`UPDATE retractions SET lifted_at = now(), lifted_by = $2, lift_reason = $3
-		  WHERE id = $1 AND lifted_at IS NULL`, id, actor, reason)
+		  WHERE id = $1 AND lifted_at IS NULL AND judged`, id, actor, reason)
 	if err != nil {
 		return nil, fmt.Errorf("lift retraction: %w", err)
 	}
@@ -156,6 +166,9 @@ func (b *Brain) LiftRetraction(ctx context.Context, id int64, reason, actor stri
 		return nil, fmt.Errorf("lift retraction: read back: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
+		if !r.Judged {
+			return nil, ErrNotJudged
+		}
 		return nil, ErrAlreadyLifted
 	}
 	return &r, nil

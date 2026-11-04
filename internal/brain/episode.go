@@ -378,15 +378,37 @@ func (b *Brain) findEpisode(ctx context.Context, namespaceSlugs []string, query 
 //
 // Forget says "stop using this" and makes no claim about whether it was true.
 // Use RetractEpisode when the memory was wrong and the correction matters.
-func (b *Brain) ForgetEpisode(ctx context.Context, namespaceSlugs []string, query string) error {
-	id, _, _, err := b.findEpisode(ctx, namespaceSlugs, query)
+//
+// It still leaves an audit entry: an unjudged retraction row with the actor, the
+// time and the text that was forgotten. The entry blocks nothing, so a forgotten
+// value may come back, but a reader can see that it was forgotten and by whom.
+// The soft delete and the entry happen in one transaction.
+func (b *Brain) ForgetEpisode(ctx context.Context, namespaceSlugs []string, query, actor string) error {
+	id, nsID, content, err := b.findEpisode(ctx, namespaceSlugs, query)
 	if err != nil {
 		return err
 	}
-	if _, err := b.pool.Exec(ctx,
+	actor = strings.TrimSpace(actor)
+	if actor == "" {
+		actor = "unknown"
+	}
+
+	tx, err := b.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("forget: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx,
 		"UPDATE episodes SET deleted_at = now() WHERE id = $1", id,
 	); err != nil {
 		return fmt.Errorf("soft delete episode: %w", err)
+	}
+	if _, _, err := insertRetractionRow(ctx, tx, nsID, "episode", id, content, noJudgement, actor, false); err != nil {
+		return fmt.Errorf("forget: record: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("forget: commit: %w", err)
 	}
 	return nil
 }

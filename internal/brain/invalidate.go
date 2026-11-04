@@ -31,8 +31,9 @@ type InvalidateResult struct {
 	// AlreadyInvalidated is true when the key held no live episode; the call
 	// was a replay and changed nothing.
 	AlreadyInvalidated bool `json:"already_invalidated"`
-	// Retraction is the recorded withdrawal, set when the call carried a
-	// reason. Omitted when the caller said only "retire this key".
+	// Retraction is the recorded withdrawal. With a reason it is a judgement
+	// (Judged true) and tombstones the claim; without one it is an audit entry
+	// (Judged false) that blocks nothing. Omitted on a replay: nothing was written.
 	Retraction *Retraction `json:"retraction,omitempty"`
 }
 
@@ -128,13 +129,17 @@ func (b *Brain) InvalidateKeyed(ctx context.Context, namespaceSlug, externalKey,
 		return out, fmt.Errorf("retire invalidated episode: %w", err)
 	}
 
-	var retraction *Retraction
+	// With a reason the withdrawal is a judgement and tombstones the claim.
+	// Without one it is still recorded — who retired what, and when — but as an
+	// unjudged audit entry that blocks nothing: the caller made no claim about
+	// whether the statement was true.
+	reasonText, judged := noJudgement, false
 	if reasonPtr != nil {
-		r, err := b.recordRetractionInTx(ctx, tx, id, nsID, content, *reasonPtr, actor)
-		if err != nil {
-			return out, err
-		}
-		retraction = r
+		reasonText, judged = *reasonPtr, true
+	}
+	retraction, err := b.recordRetractionInTx(ctx, tx, id, nsID, content, reasonText, actor, judged)
+	if err != nil {
+		return out, err
 	}
 
 	ended, err := endFactsOfEpisode(ctx, tx, id)
@@ -153,7 +158,7 @@ func (b *Brain) InvalidateKeyed(ctx context.Context, namespaceSlug, externalKey,
 // caller commits it together with the retirement. A retraction recorded after
 // an uncommitted retirement would contradict it: the row is already gone when
 // the record lands.
-func (b *Brain) recordRetractionInTx(ctx context.Context, tx pgx.Tx, targetID, nsID int64, contentText, reason, actor string) (*Retraction, error) {
+func (b *Brain) recordRetractionInTx(ctx context.Context, tx pgx.Tx, targetID, nsID int64, contentText, reason, actor string, judged bool) (*Retraction, error) {
 	actor = strings.TrimSpace(actor)
 	if actor == "" {
 		actor = "unknown"
@@ -165,8 +170,9 @@ func (b *Brain) recordRetractionInTx(ctx context.Context, tx pgx.Tx, targetID, n
 		Content:     contentText,
 		Reason:      reason,
 		RetractedBy: actor,
+		Judged:      judged,
 	}
-	id, createdAt, err := insertRetractionRow(ctx, tx, nsID, "episode", targetID, contentText, reason, actor)
+	id, createdAt, err := insertRetractionRow(ctx, tx, nsID, "episode", targetID, contentText, reason, actor, judged)
 	if err != nil {
 		return nil, fmt.Errorf("invalidate: record retraction: %w", err)
 	}
