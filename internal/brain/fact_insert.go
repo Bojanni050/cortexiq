@@ -23,6 +23,10 @@ const (
 	originEval          = "eval"
 )
 
+// ErrNoSource means a derived fact arrived without anything to say where it came
+// from. A fact that rests on nothing cannot be traced, rebuilt or doubted.
+var ErrNoSource = errors.New("brain: a derived fact needs a source")
+
 // ErrRejectedValue means the fact was refused because the same value was
 // rejected earlier in this namespace and the rejection has not been lifted.
 // The concrete error is a *RejectedValueError, which says which retraction and
@@ -72,6 +76,14 @@ type factInsert struct {
 	Importance   float32
 	Tags         []string
 	ExternalRefs []string
+
+	// SourceEpisodeIDs are the episodes the fact was derived from. They are
+	// linked in fact_sources by the same statement that writes the fact, so a
+	// fact never exists without the sources the caller named.
+	SourceEpisodeIDs []int64
+	// OriginRef is what a non-consolidation path rested on: "hypothesis:42",
+	// "failure:7". Stored verbatim.
+	OriginRef string
 }
 
 // insertFact is the single place a row enters the facts table. Every path that
@@ -80,25 +92,69 @@ type factInsert struct {
 // rejected-value tombstone, a source requirement — applies to all of them at
 // once. TestFactsAreInsertedInOnePlace keeps it that way.
 func (b *Brain) insertFact(ctx context.Context, q factRower, in factInsert) (int64, error) {
+	if err := requireSource(in); err != nil {
+		return 0, err
+	}
 	if err := checkRejectedValue(ctx, q, in); err != nil {
 		return 0, err
 	}
+	var ref *string
+	if in.OriginRef != "" {
+		ref = &in.OriginRef
+	}
+	// One statement writes the fact and links its source episodes, so it works
+	// the same on a pool and in a transaction, and neither half can exist alone.
+	// A source episode that no longer exists fails the whole statement.
 	var id int64
 	err := q.QueryRow(ctx,
-		`INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence,
-		                    entity, property, value, valid_from, valid_until, known_until,
-		                    created_at, importance, tags, external_refs)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-		         COALESCE($12, now()), $13, $14, $15)
-		 RETURNING id`,
+		`WITH new_fact AS (
+		   INSERT INTO facts (namespace_id, content, embedding, embedding_model, confidence,
+		                      entity, property, value, valid_from, valid_until, known_until,
+		                      created_at, importance, tags, external_refs, origin, origin_ref)
+		   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+		           COALESCE($12, now()), $13, $14, $15, $16, $17)
+		   RETURNING id
+		 ), linked AS (
+		   INSERT INTO fact_sources (fact_id, episode_id)
+		   SELECT new_fact.id, e FROM new_fact, unnest($18::bigint[]) AS e
+		   ON CONFLICT DO NOTHING
+		 )
+		 SELECT id FROM new_fact`,
 		in.NamespaceID, in.Content, pgvector.NewVector(in.Embedding), in.EmbeddingModel, in.Confidence,
 		in.Entity, in.Property, in.Value, in.ValidFrom, in.ValidUntil, in.KnownUntil,
 		in.CreatedAt, in.Importance, tagsOrEmpty(in.Tags), refsOrEmpty(in.ExternalRefs),
+		in.Origin, ref, idsOrEmpty(in.SourceEpisodeIDs),
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("insert fact (%s): %w", in.Origin, err)
 	}
 	return id, nil
+}
+
+// requireSource enforces that a derived fact says where it came from. A
+// consolidated fact must name at least one source episode; a fact from a
+// confirmed hypothesis or a failure pattern must carry the reference it rested
+// on. An import restores history that has no sources in the file, and the eval
+// harness writes fixtures, so both are exempt.
+func requireSource(in factInsert) error {
+	switch in.Origin {
+	case originConsolidation:
+		if len(in.SourceEpisodeIDs) == 0 {
+			return fmt.Errorf("%w: a consolidated fact needs at least one source episode", ErrNoSource)
+		}
+	case originHypothesis, originFailure:
+		if in.OriginRef == "" {
+			return fmt.Errorf("%w: a %s fact needs an origin reference", ErrNoSource, in.Origin)
+		}
+	}
+	return nil
+}
+
+func idsOrEmpty(ids []int64) []int64 {
+	if ids == nil {
+		return []int64{}
+	}
+	return ids
 }
 
 // checkRejectedValue refuses a fact whose value was rejected before. The key is

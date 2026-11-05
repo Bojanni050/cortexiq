@@ -650,6 +650,8 @@ func (b *Brain) storeFactWithConfig(ctx context.Context, nsID int64, sf *reasone
 		Importance:     b.sourceImportance(ctx, episodeIDs),
 		Tags:           b.sourceTags(ctx, episodeIDs),
 		ExternalRefs:   b.sourceRefs(ctx, episodeIDs),
+
+		SourceEpisodeIDs: episodeIDs,
 	})
 	if errors.Is(err, ErrRejectedValue) {
 		r.refused = true
@@ -659,13 +661,6 @@ func (b *Brain) storeFactWithConfig(ctx context.Context, nsID int64, sf *reasone
 		return r, err
 	}
 	r.created = true
-
-	for _, eid := range episodeIDs {
-		_, _ = b.pool.Exec(ctx,
-			"INSERT INTO fact_sources (fact_id, episode_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-			factID, eid,
-		)
-	}
 
 	// Stage 4: Contradiction detection
 	newFact := &models.Fact{

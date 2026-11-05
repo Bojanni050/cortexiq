@@ -70,6 +70,7 @@ type fakeReasoner struct {
 	rels        map[int64][]*reasoner.StructuredRelationship // what ReasonRelationshipsBatch returns, by fact ID
 	patterns    []*reasoner.StructuredPattern                // what ReasonPatterns returns
 	chatAnswer  string                                       // what Chat returns
+	failurePats []*reasoner.FailurePatternResult             // what ReasonFailurePatterns returns
 	chatCalls   int
 }
 
@@ -128,7 +129,7 @@ func (r *fakeReasoner) ReasonGoalProgress(context.Context, []models.Goal, []mode
 	return nil, nil
 }
 func (r *fakeReasoner) ReasonFailurePatterns(context.Context, []models.Failure, []string) ([]*reasoner.FailurePatternResult, error) {
-	return nil, nil
+	return r.failurePats, nil
 }
 func (r *fakeReasoner) ReasonHypothesisEvidence(context.Context, []models.Hypothesis, []models.Fact) ([]*reasoner.HypothesisEvidenceResult, error) {
 	return nil, nil

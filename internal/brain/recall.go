@@ -56,6 +56,12 @@ type RecallResult struct {
 	// memory came from outside CortexIQ. Facts inherit those of their source
 	// episodes. Stored and returned verbatim, never resolved.
 	ExternalRefs []string `json:"external_refs,omitempty"`
+	// Origin is the path that wrote a fact (consolidation, hypothesis,
+	// failure_pattern, import, eval), and OriginRef what a non-consolidation path
+	// rested on ("hypothesis:42"). Both are absent on episodes and on facts
+	// written before they were recorded.
+	Origin    string `json:"origin,omitempty"`
+	OriginRef string `json:"origin_ref,omitempty"`
 	// Feedback is the net of the callers' verdicts on this fact (+1 helpful,
 	// -1 wrong), counting only each principal's latest vote. It is absent when
 	// nobody voted or the votes cancel out, and it scales Score by a bounded

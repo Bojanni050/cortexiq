@@ -16,8 +16,10 @@ import (
 func (e *testEnv) tryInsertFact(t *testing.T, nsID int64, content string) error {
 	t.Helper()
 	vec, _ := fakeEmbedder{}.Embed(e.ctx, content)
+	// originImport: checked by the tombstone like every other path, and asks for
+	// no source, which a bare test fact does not have.
 	_, err := e.b.insertFact(e.ctx, e.b.pool, factInsert{
-		Origin:         originConsolidation,
+		Origin:         originImport,
 		NamespaceID:    nsID,
 		Content:        content,
 		Embedding:      vec,

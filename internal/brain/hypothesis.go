@@ -240,15 +240,41 @@ func (b *Brain) ConfirmHypothesis(ctx context.Context, id int64) (*models.Hypoth
 	}
 	defer tx.Rollback(ctx)
 
+	// The episodes behind the facts the hypothesis was drawn from are the
+	// evidence trail. A hypothesis made from nothing has none, and then the
+	// hypothesis itself is the reference.
+	var sourceEpisodes []int64
+	if len(current.SourceFactIDs) > 0 {
+		rows, err := tx.Query(ctx,
+			`SELECT DISTINCT episode_id FROM fact_sources WHERE fact_id = ANY($1)`, current.SourceFactIDs)
+		if err != nil {
+			return nil, nil, fmt.Errorf("read hypothesis evidence: %w", err)
+		}
+		for rows.Next() {
+			var eid int64
+			if err := rows.Scan(&eid); err != nil {
+				rows.Close()
+				return nil, nil, fmt.Errorf("scan hypothesis evidence: %w", err)
+			}
+			sourceEpisodes = append(sourceEpisodes, eid)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, nil, fmt.Errorf("read hypothesis evidence: %w", err)
+		}
+	}
+
 	factID, err := b.insertFact(ctx, tx, factInsert{
-		Origin:         originHypothesis,
-		NamespaceID:    current.NamespaceID,
-		Content:        current.Content,
-		Embedding:      vec,
-		EmbeddingModel: b.embedder.Model(),
-		Confidence:     current.Confidence,
-		ValidFrom:      &now,
-		Importance:     DefaultImportance,
+		SourceEpisodeIDs: sourceEpisodes,
+		OriginRef:        fmt.Sprintf("hypothesis:%d", id),
+		Origin:           originHypothesis,
+		NamespaceID:      current.NamespaceID,
+		Content:          current.Content,
+		Embedding:        vec,
+		EmbeddingModel:   b.embedder.Model(),
+		Confidence:       current.Confidence,
+		ValidFrom:        &now,
+		Importance:       DefaultImportance,
 	})
 	if err != nil {
 		return nil, nil, err

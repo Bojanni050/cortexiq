@@ -5,10 +5,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Bojanni050/cortexiq/internal/models"
 )
+
+// failureOriginRef names the failures a pattern fact was read from, e.g.
+// "failure:7,9,12".
+func failureOriginRef(failures []models.Failure) string {
+	ids := make([]string, 0, len(failures))
+	for _, f := range failures {
+		ids = append(ids, strconv.FormatInt(f.ID, 10))
+	}
+	return "failure:" + strings.Join(ids, ",")
+}
 
 func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (repeats, patterns, refused, llmCalls int, errs []string) {
 	rows, err := b.pool.Query(ctx,
@@ -59,6 +71,7 @@ func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *
 	defer epRows.Close()
 
 	var episodeTexts []string
+	var episodeIDs []int64
 	var maxEpisodeID int64
 	for epRows.Next() {
 		var e models.Episode
@@ -67,6 +80,7 @@ func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *
 			continue
 		}
 		episodeTexts = append(episodeTexts, e.Content)
+		episodeIDs = append(episodeIDs, e.ID)
 		if e.ID > maxEpisodeID {
 			maxEpisodeID = e.ID
 		}
@@ -84,6 +98,9 @@ func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *
 	}
 
 	llmCalls++
+	// A pattern is read out of the whole batch, so the batch is its source: the
+	// failures it saw and the episodes it saw. Coarse, but true.
+	failureRef := failureOriginRef(failures)
 	results, err := b.reasoner.ReasonFailurePatterns(ctx, failures, episodeTexts)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("reason failure patterns: %v", err))
@@ -124,6 +141,9 @@ func (b *Brain) consolidateFailurePatterns(ctx context.Context, nsID int64, cp *
 				Confidence:     r.Confidence,
 				ValidFrom:      &validFrom,
 				Importance:     DefaultImportance,
+
+				SourceEpisodeIDs: episodeIDs,
+				OriginRef:        failureRef,
 			}); err != nil {
 				if errors.Is(err, ErrRejectedValue) {
 					// A pattern the user rejected earlier. Counted, not an error.

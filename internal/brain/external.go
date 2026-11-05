@@ -142,8 +142,10 @@ func (b *Brain) attachProvenance(ctx context.Context, results []RecallResult) {
 	}
 
 	type prov struct {
-		key  string
-		refs []string
+		key       string
+		refs      []string
+		origin    string
+		originRef string
 	}
 	episodes := make(map[int64]prov, len(episodeIDs))
 	facts := make(map[int64]prov, len(factIDs))
@@ -164,12 +166,12 @@ func (b *Brain) attachProvenance(ctx context.Context, results []RecallResult) {
 	}
 	if len(factIDs) > 0 {
 		rows, err := b.pool.Query(ctx,
-			`SELECT id, external_refs FROM facts WHERE id = ANY($1)`, factIDs)
+			`SELECT id, external_refs, COALESCE(origin, ''), COALESCE(origin_ref, '') FROM facts WHERE id = ANY($1)`, factIDs)
 		if err == nil {
 			for rows.Next() {
 				var id int64
 				var p prov
-				if rows.Scan(&id, &p.refs) == nil {
+				if rows.Scan(&id, &p.refs, &p.origin, &p.originRef) == nil {
 					facts[id] = p
 				}
 			}
@@ -190,6 +192,8 @@ func (b *Brain) attachProvenance(ctx context.Context, results []RecallResult) {
 			continue
 		}
 		results[i].ExternalKey = p.key
+		results[i].Origin = p.origin
+		results[i].OriginRef = p.originRef
 		if len(p.refs) > 0 {
 			results[i].ExternalRefs = p.refs
 		}
