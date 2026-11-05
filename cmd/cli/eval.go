@@ -136,10 +136,31 @@ func evalRecallCmd(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	bc := getBootstrap(cmd)
-	rep, err := bc.Brain.EvalRecall(ctx, docs, qs, brain.RecallEvalOptions{
-		Limit: cmd.Int("limit"),
-		Keep:  cmd.Bool("keep"),
-	})
+	opts := brain.RecallEvalOptions{Limit: cmd.Int("limit"), Keep: cmd.Bool("keep")}
+
+	// A sweep runs the same set once per fusion constant and puts them side by
+	// side. The constant is restored afterwards, whatever happens.
+	if ks := cmd.IntSlice("rrf-k"); len(ks) > 0 {
+		defer brain.SetRRFK(0)
+		type run struct {
+			RRFK   int                    `json:"rrf_k"`
+			Report brain.RecallEvalReport `json:"report"`
+		}
+		var runs []run
+		for _, k := range ks {
+			brain.SetRRFK(k)
+			rep, err := bc.Brain.EvalRecall(ctx, docs, qs, opts)
+			if err != nil {
+				return fmt.Errorf("rrf-k %d: %w", k, err)
+			}
+			runs = append(runs, run{RRFK: k, Report: rep})
+			fmt.Fprintf(os.Stderr, "\n=== rrf-k %d ===", k)
+			printRecallSummary(rep)
+		}
+		return printJSON(runs)
+	}
+
+	rep, err := bc.Brain.EvalRecall(ctx, docs, qs, opts)
 	if err != nil {
 		return err
 	}

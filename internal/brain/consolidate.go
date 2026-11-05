@@ -677,24 +677,35 @@ func (b *Brain) storeFactWithConfig(ctx context.Context, nsID int64, sf *reasone
 }
 
 // reinforceFact records that an existing fact was observed again: it resets the
-// decay clock, nudges confidence towards 1 and links the new episodes as sources.
+// decay clock and strength, nudges confidence towards 1 and links the new
+// episodes as sources. The update and the links are one statement, so a fact is
+// never reinforced without the episodes that reinforced it, or the other way
+// round. Confidence is nudged only by an episode that was not yet a source of
+// the fact: reading the same episode again (a rebuild) is not new evidence.
 // Best effort — a failure here must not fail consolidation.
 func (b *Brain) reinforceFact(ctx context.Context, factID int64, episodeIDs []int64) {
 	_, _ = b.pool.Exec(ctx,
-		`UPDATE facts SET confidence = LEAST(1.0, confidence + (1 - confidence) * $2),
-		        importance = GREATEST(importance, $3),
-		        tags = (SELECT COALESCE(array_agg(DISTINCT t ORDER BY t), '{}') FROM unnest(tags || $4) AS t),
-		        external_refs = (SELECT COALESCE(array_agg(DISTINCT r ORDER BY r), '{}') FROM unnest(external_refs || $5::text[]) AS r),
-		        updated_at = now()
-		 WHERE id = $1`,
+		`WITH reinforced AS (
+		   UPDATE facts SET confidence = CASE
+		            WHEN EXISTS (SELECT 1 FROM unnest($6::bigint[]) AS e
+		                          WHERE NOT EXISTS (SELECT 1 FROM fact_sources s
+		                                             WHERE s.fact_id = $1 AND s.episode_id = e))
+		            THEN LEAST(1.0, confidence + (1 - confidence) * $2)
+		            ELSE confidence END,
+		          strength = 1.0,
+		          importance = GREATEST(importance, $3),
+		          tags = (SELECT COALESCE(array_agg(DISTINCT t ORDER BY t), '{}') FROM unnest(tags || $4) AS t),
+		          external_refs = (SELECT COALESCE(array_agg(DISTINCT r ORDER BY r), '{}') FROM unnest(external_refs || $5::text[]) AS r),
+		          updated_at = now()
+		   WHERE id = $1
+		   RETURNING id
+		 )
+		 INSERT INTO fact_sources (fact_id, episode_id)
+		 SELECT reinforced.id, e FROM reinforced, unnest($6::bigint[]) AS e
+		 ON CONFLICT DO NOTHING`,
 		factID, reinforceStep, b.sourceImportance(ctx, episodeIDs), b.sourceTags(ctx, episodeIDs), b.sourceRefs(ctx, episodeIDs),
+		idsOrEmpty(episodeIDs),
 	)
-	for _, eid := range episodeIDs {
-		_, _ = b.pool.Exec(ctx,
-			"INSERT INTO fact_sources (fact_id, episode_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-			factID, eid,
-		)
-	}
 }
 
 // sourceTags is the union of the tags on the given source episodes, sorted so

@@ -7,6 +7,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -62,6 +63,11 @@ type RecallResult struct {
 	// written before they were recorded.
 	Origin    string `json:"origin,omitempty"`
 	OriginRef string `json:"origin_ref,omitempty"`
+	// Strength is how much a fact is still in use (1 = fully; it falls when
+	// nobody observes or recalls it and CORTEXIQ_DECAY_SPLIT is on). It is absent
+	// at 1, which is every fact until it has started to fade. Confidence is the
+	// separate question of how well the fact is supported.
+	Strength float32 `json:"strength,omitempty"`
 	// Feedback is the net of the callers' verdicts on this fact (+1 helpful,
 	// -1 wrong), counting only each principal's latest vote. It is absent when
 	// nobody voted or the votes cancel out, and it scales Score by a bounded
@@ -92,9 +98,9 @@ type RecallResult struct {
 }
 
 const (
-	// rrfK is the reciprocal-rank-fusion constant; 60 is the value from the
+	// defaultRRFK is the reciprocal-rank-fusion constant; 60 is the value from the
 	// original RRF paper and is robust across rankers.
-	rrfK = 60
+	defaultRRFK = 60
 	// maxKeywordTerms bounds the tsquery size for very long queries.
 	maxKeywordTerms = 12
 	// maxCandidates bounds how many rows each ranker contributes to the fusion.
@@ -283,7 +289,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			tr.To = opts.To.Format(time.RFC3339)
 		}
 		tr.Temporal = temporal
-		tr.MinSimilarity, tr.RRFK = minSimilarity, rrfK
+		tr.MinSimilarity, tr.RRFK = minSimilarity, rrfK()
 		tr.RecencyWeight, tr.RecencyHalfLife, tr.ImportanceWeight = b.config.RecencyWeight, b.config.RecencyHalfLife.String(), b.config.ImportanceWeight
 		tr.MMRLambda = mmrLambda
 	}
@@ -688,6 +694,24 @@ func (b *Brain) runRecallWithEmbedding(ctx context.Context, sql string, args []a
 // non-hybrid recall behaving exactly as before. When hybrid is true scores are
 // always on the fused 0..1 scale, even if the keyword search found nothing, so
 // the scale does not depend on the query.
+var rrfKValue atomic.Int64
+
+func init() { rrfKValue.Store(defaultRRFK) }
+
+// rrfK is the fusion constant in force. It is process-wide: it is set once at
+// start-up from CORTEXIQ_RRF_K, and by `eval recall --rrf-k` between runs of a
+// sweep. Nothing changes it while a server is answering recalls.
+func rrfK() int { return int(rrfKValue.Load()) }
+
+// SetRRFK sets the reciprocal-rank-fusion constant; a value below 1 restores the
+// default (60). A smaller k weights the top ranks of each arm more heavily.
+func SetRRFK(k int) {
+	if k < 1 {
+		k = defaultRRFK
+	}
+	rrfKValue.Store(int64(k))
+}
+
 func fuse(vec, kw []RecallResult, limit int, hybrid bool, minSimilarity float32) []RecallResult {
 	if !hybrid {
 		for i := range vec {
@@ -731,7 +755,7 @@ func fuseArms(arms []rankedArm, scaleArms, limit int, minSimilarity float32) []R
 				entries[r.ID] = e
 				order = append(order, r.ID)
 			}
-			e.score += 1.0 / float64(rrfK+rank+1)
+			e.score += 1.0 / float64(rrfK()+rank+1)
 			switch {
 			case e.res.Match == "":
 				e.res.Match = arm.name
@@ -752,7 +776,7 @@ func fuseArms(arms []rankedArm, scaleArms, limit int, minSimilarity float32) []R
 		}
 	}
 
-	best := float64(scaleArms) / float64(rrfK+1)
+	best := float64(scaleArms) / float64(rrfK()+1)
 	out := make([]RecallResult, 0, len(order))
 	for _, id := range order {
 		e := entries[id]

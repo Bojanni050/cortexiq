@@ -95,7 +95,8 @@ func (r *RecallResult) finishWork(created time.Time, rank int) {
 	r.typedID(r.Type)
 	r.CreatedAt = created.Format(time.RFC3339)
 	r.refTime = created
-	r.fusedScore = float32((1.0 / float64(rrfK+rank+1)) / (2.0 / float64(rrfK+1)))
+	k := rrfK()
+	r.fusedScore = float32((1.0 / float64(k+rank+1)) / (2.0 / float64(k+1)))
 	r.Score = r.fusedScore
 	r.recencyF, r.importanceF = 1, 1
 }

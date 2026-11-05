@@ -324,6 +324,21 @@ func liftCmd(ctx context.Context, cmd *cli.Command) error {
 	return printJSON(r)
 }
 
+// rebuildCmd reports on the derived layer of one namespace. Without --apply it
+// only reads. With --apply the next consolidation reads every episode again;
+// facts are never deleted by it.
+func rebuildCmd(ctx context.Context, cmd *cli.Command) error {
+	args := cmd.Args()
+	if args.Len() != 1 {
+		return fmt.Errorf("one namespace path is required (see `namespaces`)")
+	}
+	rep, err := getBootstrap(cmd).Brain.Rebuild(ctx, args.First(), cmd.Bool("apply"), cmd.Bool("end-retired"))
+	if err != nil {
+		return err
+	}
+	return printJSON(rep)
+}
+
 func retractionsCmd(ctx context.Context, cmd *cli.Command) error {
 	rows, err := getBootstrap(cmd).Brain.Retractions(ctx, cmd.StringSlice("namespaces"), cmd.Int("limit"))
 	if err != nil {

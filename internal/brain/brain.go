@@ -91,10 +91,18 @@ type Config struct {
 	CandidateCap int
 	// LexicalFloor is the lowest trigram score the lexical arm may add; 0 adds
 	// anything that shares a trigram.
-	LexicalFloor                   float64
-	Window                         time.Duration
-	DecayFactor                    float64
-	ExpiryThreshold                float32
+	LexicalFloor    float64
+	Window          time.Duration
+	DecayFactor     float64
+	ExpiryThreshold float32
+	// RRFK is the reciprocal-rank-fusion constant used to merge the recall arms.
+	// 0 keeps the default (60). It is process-wide; see SetRRFK.
+	RRFK int
+	// DecaySplit moves decay off confidence and onto a separate strength. With it
+	// on, a fact that nobody observes or recalls loses strength, not confidence,
+	// and expires on strength. Off (the default) keeps the old behaviour: one
+	// number for both. See docs/design-decay-split.md.
+	DecaySplit                     bool
 	HypothesisAutoConfirmThreshold float32
 	HypothesisAutoRejectThreshold  float32
 	// RelationshipBatchSize is how many facts go into one relationship-extraction call.
@@ -233,6 +241,9 @@ func (b *Brain) SetReasoner(r reasoner.Reasoner) { b.reasoner = budgetReasoner{i
 func New(pool *pgxpool.Pool, e embedder.Embedder, r reasoner.Reasoner, q *queries.Queries, cfg Config) (*Brain, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("brain: pool is required")
+	}
+	if cfg.RRFK > 0 {
+		SetRRFK(cfg.RRFK)
 	}
 	if e == nil {
 		return nil, fmt.Errorf("brain: embedder is required")

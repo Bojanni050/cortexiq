@@ -223,6 +223,16 @@ func main() {
 				},
 			},
 			{
+				Name:      "rebuild",
+				Usage:     "Report on the derived layer of a namespace; --apply prepares a rebuild",
+				ArgsUsage: "<namespace>",
+				Action:    rebuildCmd,
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "apply", Usage: "Reset the episode checkpoint so the next consolidation reads every episode again (never deletes a fact)"},
+					&cli.BoolFlag{Name: "end-retired", Usage: "Also end the active facts whose every source episode was forgotten or retracted"},
+				},
+			},
+			{
 				Name:   "retractions",
 				Usage:  "List recorded retractions, newest first",
 				Action: retractionsCmd,
@@ -349,6 +359,7 @@ func main() {
 							&cli.StringFlag{Name: "queries", Value: "eval/recall_queries.jsonl", Usage: "JSON Lines questions with the expected memory ids"},
 							&cli.IntFlag{Name: "limit", Value: 10, Usage: "Results per question (k)"},
 							&cli.BoolFlag{Name: "keep", Usage: "Keep the temporary /eval/ namespace afterwards"},
+							&cli.IntSliceFlag{Name: "rrf-k", Usage: "Sweep the rank-fusion constant: run the whole set once per value (e.g. 20,60,100)"},
 						},
 					},
 					{

@@ -134,6 +134,8 @@ func New(ctx context.Context) (*Context, error) {
 		CandidateCap:                   cfg.ConsolidationCandidateCap,
 		LexicalFloor:                   cfg.ConsolidationLexicalFloor,
 		Window:                         window,
+		DecaySplit:                     cfg.DecaySplit,
+		RRFK:                           cfg.RRFK,
 		DecayFactor:                    cfg.DecayFactor,
 		ExpiryThreshold:                cfg.ExpiryThreshold,
 		HypothesisAutoConfirmThreshold: cfg.HypothesisAutoConfirmThreshold,

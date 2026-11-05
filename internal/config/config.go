@@ -163,9 +163,14 @@ type Config struct {
 	RelationshipBatchSize int `env:"CORTEXIQ_RELATIONSHIP_BATCH_SIZE" envDefault:"5"`
 	// MaxLLMCallsPerRun hard-limits reasoner API calls in one namespace
 	// consolidation. 0 disables the limit.
-	MaxLLMCallsPerRun              int     `env:"CORTEXIQ_MAX_LLM_CALLS_PER_RUN" envDefault:"0"`
-	DecayFactor                    float64 `env:"CORTEXIQ_DECAY_FACTOR" envDefault:"0.95"`
-	ExpiryThreshold                float32 `env:"CORTEXIQ_EXPIRY_THRESHOLD" envDefault:"0.1"`
+	MaxLLMCallsPerRun int `env:"CORTEXIQ_MAX_LLM_CALLS_PER_RUN" envDefault:"0"`
+	// DecaySplit makes disuse lower a fact's strength instead of its confidence.
+	DecaySplit      bool    `env:"CORTEXIQ_DECAY_SPLIT" envDefault:"false"`
+	DecayFactor     float64 `env:"CORTEXIQ_DECAY_FACTOR" envDefault:"0.95"`
+	ExpiryThreshold float32 `env:"CORTEXIQ_EXPIRY_THRESHOLD" envDefault:"0.1"`
+	// RRFK is the rank-fusion constant for recall. 60 is the paper's default;
+	// measure with `cortexiq eval recall --rrf-k 20,60,100` before changing it.
+	RRFK                           int     `env:"CORTEXIQ_RRF_K" envDefault:"60"`
 	HypothesisAutoConfirmThreshold float32 `env:"CORTEXIQ_HYPOTHESIS_AUTO_CONFIRM_THRESHOLD" envDefault:"0.9"`
 	HypothesisAutoRejectThreshold  float32 `env:"CORTEXIQ_HYPOTHESIS_AUTO_REJECT_THRESHOLD" envDefault:"0.9"`
 }
