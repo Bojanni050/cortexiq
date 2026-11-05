@@ -98,6 +98,10 @@ type Config struct {
 	// RRFK is the reciprocal-rank-fusion constant used to merge the recall arms.
 	// 0 keeps the default (60). It is process-wide; see SetRRFK.
 	RRFK int
+	// TriageLog writes one log line per triage call: the verdict, the reason, how
+	// many episodes and how long it took. Never the episode text. Triage fails
+	// open and leaves no other trace, so this is how to tell it is working.
+	TriageLog bool
 	// DecaySplit moves decay off confidence and onto a separate strength. With it
 	// on, a fact that nobody observes or recalls loses strength, not confidence,
 	// and expires on strength. Off (the default) keeps the old behaviour: one

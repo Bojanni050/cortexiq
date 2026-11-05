@@ -170,7 +170,9 @@ type Config struct {
 	ExpiryThreshold float32 `env:"CORTEXIQ_EXPIRY_THRESHOLD" envDefault:"0.1"`
 	// RRFK is the rank-fusion constant for recall. 60 is the paper's default;
 	// measure with `cortexiq eval recall --rrf-k 20,60,100` before changing it.
-	RRFK                           int     `env:"CORTEXIQ_RRF_K" envDefault:"60"`
+	RRFK int `env:"CORTEXIQ_RRF_K" envDefault:"60"`
+	// TriageLog logs every triage verdict (never the episode text). Off by default.
+	TriageLog                      bool    `env:"CORTEXIQ_TRIAGE_LOG" envDefault:"false"`
 	HypothesisAutoConfirmThreshold float32 `env:"CORTEXIQ_HYPOTHESIS_AUTO_CONFIRM_THRESHOLD" envDefault:"0.9"`
 	HypothesisAutoRejectThreshold  float32 `env:"CORTEXIQ_HYPOTHESIS_AUTO_REJECT_THRESHOLD" envDefault:"0.9"`
 }

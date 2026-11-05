@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"strings"
 	"time"
@@ -399,8 +400,12 @@ func (b *Brain) consolidateEpisodesToFacts(ctx context.Context, nsID int64, cp *
 		// sometimes read one into it. A triage episode counts as skipped so the
 		// checkpoint moves past it, exactly like a fragment.
 		if b.triage != nil {
+			started := time.Now()
 			tv, err := b.triage.Triage(ctx, texts)
 			llmCalls++
+			if b.config.TriageLog {
+				b.logTriage(ctx, nsID, len(cluster), tv, err, time.Since(started))
+			}
 			if err != nil {
 				errs = append(errs, fmt.Sprintf("triage: %v", err))
 			} else if tv != nil && tv.Verdict == reasoner.TriageChatter {
@@ -587,6 +592,25 @@ func clusterMembers(seed models.Episode, episodes []models.Episode, clustered ma
 		members = append(members, c.episode)
 	}
 	return members
+}
+
+// logTriage writes the outcome of one triage call. It logs sizes and the model's
+// own reason, never the episode text: a log is read by more people than memory.
+func (b *Brain) logTriage(ctx context.Context, nsID int64, episodes int, tv *reasoner.TriageResult, err error, took time.Duration) {
+	slug := fmt.Sprintf("#%d", nsID)
+	_ = b.pool.QueryRow(ctx, "SELECT slug FROM namespaces WHERE id = $1", nsID).Scan(&slug)
+	switch {
+	case err != nil:
+		log.Printf("triage: namespace=%s episodes=%d error=%q took=%s (treated as durable)", slug, episodes, err.Error(), took.Round(time.Millisecond))
+	case tv == nil:
+		log.Printf("triage: namespace=%s episodes=%d verdict=none took=%s (treated as durable)", slug, episodes, took.Round(time.Millisecond))
+	default:
+		reason := tv.Reason
+		if len(reason) > 200 {
+			reason = reason[:200]
+		}
+		log.Printf("triage: namespace=%s episodes=%d verdict=%s reason=%q took=%s", slug, episodes, tv.Verdict, reason, took.Round(time.Millisecond))
+	}
 }
 
 // storeResult describes what storeFact did with one synthesized fact.

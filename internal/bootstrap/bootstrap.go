@@ -136,6 +136,7 @@ func New(ctx context.Context) (*Context, error) {
 		Window:                         window,
 		DecaySplit:                     cfg.DecaySplit,
 		RRFK:                           cfg.RRFK,
+		TriageLog:                      cfg.TriageLog,
 		DecayFactor:                    cfg.DecayFactor,
 		ExpiryThreshold:                cfg.ExpiryThreshold,
 		HypothesisAutoConfirmThreshold: cfg.HypothesisAutoConfirmThreshold,
