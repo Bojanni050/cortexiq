@@ -38,6 +38,9 @@ type nearestFact struct {
 	ID      int64
 	Content string
 	Score   float32
+	// Dormant is true for a fact that was ended only because it went unused. It
+	// is a candidate like an active one: seeing it again is the same fact.
+	Dormant bool
 }
 
 // defaultDedupCandidates bounds how many nearest facts one new fact is weighed
@@ -52,14 +55,16 @@ const defaultDedupCandidates = 5
 // thresholds above it, it is not calibrated on our own data.
 const dedupNearMissFloor float32 = 0.75
 
-// nearestActiveFacts returns up to k closest active (not deleted, not expired)
-// facts of the namespace, nearest first. Superseded facts are ignored so a
-// re-observed value is not swallowed by them.
+// nearestActiveFacts returns up to k closest candidate facts of the namespace,
+// nearest first: the active ones, and the ones that were ended only by disuse
+// (dormant; an active fact wins a tie). Facts ended any other way, superseded
+// ones above all, are ignored so a re-observed value is not swallowed by them.
 func (b *Brain) nearestActiveFacts(ctx context.Context, nsID int64, vec []float32, k int) ([]nearestFact, error) {
 	rows, err := b.pool.Query(ctx,
-		`SELECT id, content, 1 - (embedding <=> $2) AS score FROM facts
-		 WHERE namespace_id = $1 AND deleted_at IS NULL AND valid_until IS NULL AND embedding IS NOT NULL
-		 ORDER BY embedding <=> $2 LIMIT $3`,
+		`SELECT id, content, 1 - (embedding <=> $2) AS score, valid_until IS NOT NULL AS dormant FROM facts
+		 WHERE namespace_id = $1 AND deleted_at IS NULL AND embedding IS NOT NULL
+		   AND (valid_until IS NULL OR expired_by_disuse_at IS NOT NULL)
+		 ORDER BY embedding <=> $2, (valid_until IS NULL) DESC LIMIT $3`,
 		nsID, pgvector.NewVector(vec), k,
 	)
 	if err != nil {
@@ -70,7 +75,7 @@ func (b *Brain) nearestActiveFacts(ctx context.Context, nsID int64, vec []float3
 	var out []nearestFact
 	for rows.Next() {
 		var n nearestFact
-		if err := rows.Scan(&n.ID, &n.Content, &n.Score); err != nil {
+		if err := rows.Scan(&n.ID, &n.Content, &n.Score, &n.Dormant); err != nil {
 			return nil, err
 		}
 		out = append(out, n)
@@ -92,6 +97,9 @@ type dedupOutcome struct {
 	DupID int64
 	// Merged says whether DupID holds a duplicate of the new fact.
 	Merged bool
+	// DupDormant says that fact had been ended only by disuse and must be
+	// brought back, not just reinforced.
+	DupDormant bool
 	// LLMCalls counts the review calls made while walking the candidates.
 	LLMCalls int
 	// Candidates is how many neighbours were weighed.
@@ -130,6 +138,13 @@ func (b *Brain) findDuplicateWithConfig(ctx context.Context, nsID int64, vec []f
 			return b.reasoner.ReasonSameFact(ctx, c.Content, summary)
 		},
 	)
+	if out.Merged {
+		for _, c := range candidates {
+			if c.ID == out.DupID {
+				out.DupDormant = c.Dormant
+			}
+		}
+	}
 	return out, err
 }
 

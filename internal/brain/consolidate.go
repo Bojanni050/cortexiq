@@ -625,6 +625,22 @@ func (b *Brain) storeFactWithConfig(ctx context.Context, nsID int64, sf *reasone
 		return r, fmt.Errorf("check duplicate: %w", err)
 	}
 	if out.Merged {
+		if out.DupDormant {
+			// The same claim, seen again after the fact went quiet. A rejection made
+			// while it slept still stands: a revival is a way in like any other.
+			if err := checkRejectedValue(ctx, b.pool, factInsert{
+				Origin: originConsolidation, NamespaceID: nsID, Content: sf.Summary,
+			}); err != nil {
+				if errors.Is(err, ErrRejectedValue) {
+					r.refused = true
+					return r, nil
+				}
+				return r, err
+			}
+			if err := b.reviveFact(ctx, out.DupID); err != nil {
+				return r, err
+			}
+		}
 		b.reinforceFact(ctx, out.DupID, episodeIDs)
 		r.deduped = true
 		return r, nil
@@ -674,6 +690,21 @@ func (b *Brain) storeFactWithConfig(ctx context.Context, nsID int64, sf *reasone
 	}
 	r.contradictions, r.autoResolved, _ = b.DetectContradictions(ctx, nsID, newFact)
 	return r, nil
+}
+
+// reviveFact brings a fact back that was ended only because it went unused. The
+// guard on expired_by_disuse_at means it never touches a fact that was ended for
+// another reason. The gap is not kept on the row: from here on the fact reads as
+// valid, including for an as-of query that falls inside the gap.
+func (b *Brain) reviveFact(ctx context.Context, factID int64) error {
+	if _, err := b.pool.Exec(ctx,
+		`UPDATE facts SET valid_until = NULL, known_until = NULL, expired_by_disuse_at = NULL,
+		        strength = 1.0, updated_at = now()
+		  WHERE id = $1 AND expired_by_disuse_at IS NOT NULL AND deleted_at IS NULL`, factID,
+	); err != nil {
+		return fmt.Errorf("revive fact %d: %w", factID, err)
+	}
+	return nil
 }
 
 // reinforceFact records that an existing fact was observed again: it resets the

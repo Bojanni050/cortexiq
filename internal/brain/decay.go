@@ -44,8 +44,14 @@ func (b *Brain) DecayConfidence(ctx context.Context, nsID int64) (DecayResult, e
 	}
 	result.FactsDecayed = int(decayTag.RowsAffected())
 
+	// Under the split, expiry means disuse, and only that is reversible: the
+	// marker lets an observation of the same claim bring the fact back.
+	marker := ""
+	if b.config.DecaySplit {
+		marker = ", expired_by_disuse_at = now()"
+	}
 	expireTag, err := b.pool.Exec(ctx,
-		`UPDATE facts SET valid_until = now(), known_until = now(), updated_at = now()
+		`UPDATE facts SET valid_until = now(), known_until = now(), updated_at = now()`+marker+`
 		 WHERE namespace_id = $1 AND deleted_at IS NULL AND valid_until IS NULL
 		 AND `+column+` < $2`,
 		nsID, b.config.ExpiryThreshold,
