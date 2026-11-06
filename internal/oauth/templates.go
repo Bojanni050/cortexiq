@@ -75,6 +75,7 @@ var consentTemplate = template.Must(template.New("consent").Parse(`<!doctype htm
   {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
 
   <form method="post" action="/oauth/authorize">
+    <input type="hidden" name="response_type" value="code">
     <input type="hidden" name="client_id" value="{{.ClientID}}">
     <input type="hidden" name="redirect_uri" value="{{.RedirectURI}}">
     <input type="hidden" name="state" value="{{.State}}">

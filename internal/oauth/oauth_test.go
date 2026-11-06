@@ -268,3 +268,41 @@ func TestRequireMCPStaticToken(t *testing.T) {
 		t.Fatalf("principal = %q readOnly = %v", principal, readOnly)
 	}
 }
+
+// TestConsentFormCarriesTheWholeRequest guards the round trip from GET to POST:
+// the consent form is the only thing that hands the request back to us, so a
+// field missing here turns a correct authorization request into a redirect
+// error. response_type was exactly that bug in production.
+func TestConsentFormCarriesTheWholeRequest(t *testing.T) {
+	rec := httptest.NewRecorder()
+	renderConsent(rec, http.StatusOK, consentData{
+		ClientName:     "Claude",
+		ClientID:       "cxq_c_abc",
+		RedirectURI:    "http://localhost:8765/callback",
+		State:          "xyz",
+		Challenge:      strings.Repeat("a", 43),
+		Method:         "S256",
+		Resource:       "https://cortexiq.example.com/mcp",
+		RequestedScope: "memory:read memory:write",
+		WriteOffered:   true,
+		WriteChecked:   true,
+		CSRF:           "csrf-token",
+	})
+	html := rec.Body.String()
+	for _, want := range []string{
+		`name="response_type" value="code"`,
+		`name="client_id" value="cxq_c_abc"`,
+		`name="redirect_uri" value="http://localhost:8765/callback"`,
+		`name="state" value="xyz"`,
+		`name="code_challenge_method" value="S256"`,
+		`name="resource" value="https://cortexiq.example.com/mcp"`,
+		`name="requested_scope" value="memory:read memory:write"`,
+		`name="csrf" value="csrf-token"`,
+		`name="decision" value="approve"`,
+		`name="decision" value="deny"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("consent form misses %s", want)
+		}
+	}
+}
