@@ -14,7 +14,7 @@ func TestValidateProposedHypothesesDropsWhatCannotBeTested(t *testing.T) {
 		{Content: "De API is traag door inefficiënte queries", VerificationPlan: "meet de responstijd", Confidence: 0.9},
 	}
 
-	got := validateProposedHypotheses(raw, nil, 2)
+	got := validateProposedHypotheses(raw, nil, nil, 2)
 
 	if len(got) != 1 {
 		t.Fatalf("want 1 usable proposal, got %d: %+v", len(got), got)
@@ -34,10 +34,10 @@ func TestValidateProposedHypothesesRespectsMax(t *testing.T) {
 		{Content: "De retries veroorzaken de vertraging", VerificationPlan: "c"},
 	}
 
-	if got := validateProposedHypotheses(raw, nil, 2); len(got) != 2 {
+	if got := validateProposedHypotheses(raw, nil, nil, 2); len(got) != 2 {
 		t.Fatalf("want 2 proposals, got %d", len(got))
 	}
-	if got := validateProposedHypotheses(raw, nil, 0); len(got) != 0 {
+	if got := validateProposedHypotheses(raw, nil, nil, 0); len(got) != 0 {
 		t.Fatalf("max 0 should propose nothing, got %d", len(got))
 	}
 }
@@ -55,7 +55,7 @@ func TestValidateProposedHypothesesSkipsRestatements(t *testing.T) {
 		{Content: "De caching-laag maskeert de traagheid", VerificationPlan: "zet caching uit"},
 	}
 
-	got := validateProposedHypotheses(raw, existing, 5)
+	got := validateProposedHypotheses(raw, existing, nil, 5)
 
 	if len(got) != 1 {
 		t.Fatalf("want only the new belief, got %d: %+v", len(got), got)
@@ -73,8 +73,31 @@ func TestValidateProposedHypothesesDedupesWithinTheBatch(t *testing.T) {
 		{Content: "De traagheid komt door de database", VerificationPlan: "b"},
 	}
 
-	if got := validateProposedHypotheses(raw, nil, 5); len(got) != 1 {
+	if got := validateProposedHypotheses(raw, nil, nil, 5); len(got) != 1 {
 		t.Fatalf("want 1, got %d", len(got))
+	}
+}
+
+// The other half of the problem: a proposal that only repeats the fact it was
+// built from. Production produced "Chat attachments larger than 25MB are not
+// sent to the ingest endpoint" straight from a fact saying exactly that, which
+// is a fact with a question mark drawn on it.
+func TestValidateProposedHypothesesDropsRestatedFacts(t *testing.T) {
+	facts := []models.Fact{
+		{ID: 1, Content: "Chat attachments larger than 25MB are not sent to the POST /ingest/attachment endpoint"},
+	}
+	raw := []jsonProposedHypothesis{
+		{Content: "Chat attachments larger than 25MB are not sent to the POST /ingest/attachment endpoint", VerificationPlan: "upload 30MB"},
+		{Content: "Attachments above 25MB will keep being dropped until the limit is raised", VerificationPlan: "raise the limit and retry the same file"},
+	}
+
+	got := validateProposedHypotheses(raw, nil, facts, 5)
+
+	if len(got) != 1 {
+		t.Fatalf("want only the belief that predicts something, got %d: %+v", len(got), got)
+	}
+	if !strings.Contains(got[0].Content, "will keep being dropped") {
+		t.Fatalf("dropped the wrong proposal: %q", got[0].Content)
 	}
 }
 

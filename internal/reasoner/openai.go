@@ -1347,12 +1347,16 @@ func proposalParse(raw string) ([]jsonProposedHypothesis, error) {
 // the rest. A proposal without a verification plan is a guess with a title, and
 // a near-restatement of something already on record is worse than nothing: it
 // looks like new doubt while being the same doubt again.
-func validateProposedHypotheses(raw []jsonProposedHypothesis, existing []string, max int) []*ProposedHypothesis {
+func validateProposedHypotheses(raw []jsonProposedHypothesis, existing []string, facts []models.Fact, max int) []*ProposedHypothesis {
 	if max <= 0 {
 		return nil
 	}
 	seen := make([]string, 0, len(existing)+len(raw))
 	seen = append(seen, existing...)
+	factTexts := make([]string, 0, len(facts))
+	for _, f := range facts {
+		factTexts = append(factTexts, f.Content)
+	}
 
 	var out []*ProposedHypothesis
 	for _, r := range raw {
@@ -1365,6 +1369,12 @@ func validateProposedHypotheses(raw []jsonProposedHypothesis, existing []string,
 			continue
 		}
 		if similarText(content, seen) {
+			continue
+		}
+		// A hypothesis built from facts will share their vocabulary, so only a
+		// near-verbatim copy is a restatement here. "X happened" repeated as
+		// "X happened" teaches nothing; "X will keep happening because Y" does.
+		if similarTextAt(content, factTexts, factRestatementThreshold) {
 			continue
 		}
 		conf := r.Confidence
@@ -1390,6 +1400,21 @@ func validateProposedHypotheses(raw []jsonProposedHypothesis, existing []string,
 // sets rather than exact strings, because "de API is traag door X" and "de API
 // is traag vanwege X" are the same belief written twice.
 func similarText(s string, prior []string) bool {
+	return similarTextAt(s, prior, restatementThreshold)
+}
+
+const (
+	// restatementThreshold is for another hypothesis: the same belief written
+	// twice, possibly with a different connective.
+	restatementThreshold = 0.65
+	// factRestatementThreshold is stricter, because a proposal always borrows
+	// the words of the facts it was built from.
+	factRestatementThreshold = 0.8
+)
+
+// similarTextAt is similarText with an explicit bar, so a comparison against
+// facts can be stricter than one against other hypotheses.
+func similarTextAt(s string, prior []string, threshold float64) bool {
 	target := words(s)
 	if len(target) == 0 {
 		return true
@@ -1409,10 +1434,7 @@ func similarText(s string, prior []string) bool {
 			}
 		}
 		union := len(target) + len(other) - shared
-		// 0.65 rather than 0.75: a rewording usually swaps one connective for
-		// another ("door" vs "vanwege"), and at 0.75 that single swap was enough
-		// to let the same belief in twice.
-		if union > 0 && float64(shared)/float64(union) >= 0.65 {
+		if union > 0 && float64(shared)/float64(union) >= threshold {
 			return true
 		}
 	}
@@ -1458,7 +1480,7 @@ func (o *OpenAI) ProposeHypotheses(ctx context.Context, facts []models.Fact, exi
 			continue
 		}
 
-		result = validateProposedHypotheses(parsed, existing, max)
+		result = validateProposedHypotheses(parsed, existing, facts, max)
 		valErr = nil
 		break
 	}

@@ -23,6 +23,11 @@ const (
 	// maxKnownHypotheses bounds the dedup list. Old rejected beliefs still count
 	// — re-proposing them is how a log fills with the same doubt twice.
 	maxKnownHypotheses = 40
+	// maxOpenInferred caps how many machine guesses may sit open per namespace.
+	// Without it every run adds two more, and a busy namespace turns into an
+	// inbox nobody reads. Rejecting one frees a slot, which is the point: the
+	// cap measures attention, not history.
+	maxOpenInferred = 5
 )
 
 // consolidateHypothesisProposals is the stage that lets memory notice what it
@@ -72,6 +77,22 @@ func (b *Brain) consolidateHypothesisProposals(ctx context.Context, nsID int64, 
 		return
 	}
 
+	// Stop before spending a call when the namespace already carries as many
+	// open guesses as anyone will read. The cursor still moves, so these facts
+	// are not reconsidered once a slot frees up — they are old news by then.
+	open, err := b.openInferredCount(ctx, nsID)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("count open inferred hypotheses: %v", err))
+		return
+	}
+	if open >= maxOpenInferred {
+		cp.LastHypothesisProposalFactID = facts[len(facts)-1].ID
+		return
+	}
+	if remaining := maxOpenInferred - open; max > remaining {
+		max = remaining
+	}
+
 	known, err := b.knownHypothesisContents(ctx, nsID)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("fetch known hypotheses: %v", err))
@@ -115,6 +136,22 @@ func (b *Brain) consolidateHypothesisProposals(ctx context.Context, nsID int64, 
 		log.Printf("hypothesis proposals: namespace %d, %d proposed from %d facts", nsID, proposed, len(facts))
 	}
 	return
+}
+
+// openInferredCount counts the machine guesses still waiting for a human.
+// Rejected and confirmed ones do not count: they are settled, not pending.
+func (b *Brain) openInferredCount(ctx context.Context, nsID int64) (int, error) {
+	var n int
+	err := b.pool.QueryRow(ctx,
+		`SELECT count(*) FROM hypotheses
+		 WHERE namespace_id = $1 AND method = $2
+		   AND status IN ('proposed', 'testing') AND deleted_at IS NULL`,
+		nsID, MethodInferred,
+	).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // knownHypothesisContents returns what must not be proposed again: every
