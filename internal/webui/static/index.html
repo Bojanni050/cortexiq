@@ -2908,10 +2908,7 @@ const PURPOSES = [
   ['embedding', 'Embedding', 'Turns text into the vectors recall searches. Cannot change under a running instance.'],
   ['reranker', 'Reranker', 'Cross-encoder that re-orders fused candidates. Takes effect after a restart.'],
 ];
-const PROVIDER_PRESETS = [
-  ['deepinfra', 'DeepInfra', 'https://api.deepinfra.com/v1/openai'],
-  ['mistral', 'Mistral', 'https://api.mistral.ai/v1'],
-];
+const PROVIDER_BASE_HINT = 'OpenAI-compatible, usually ending in /v1 — for example https://api.hopscotchlabs.ai/v1';
 function money(v) { return typeof v === 'number' && v > 0 ? '$' + v.toFixed(2) : 'price unknown'; }
 function modelLabel(m) {
   const bits = [];
@@ -2951,10 +2948,7 @@ async function renderModelsCard() {
       <td class="mono wrap">${esc(p.base_url)}</td>
       <td>${p.key_hint ? `<span class="badge active">key ${esc(p.key_hint)}</span>` : '<span class="badge abandoned">no key</span>'}</td>
       <td class="row-actions"><button onclick="providerTest('${p.slug}')">test</button><button onclick="providerForm('${p.slug}')">edit</button></td></tr>`).join('');
-  const presetButtons = PROVIDER_PRESETS.map(([slug, name, url]) => {
-    const exists = providers.some(p => p.slug === slug);
-    return `<button onclick="providerPreset('${slug}','${name}','${url}')">${exists ? 'edit' : 'add'} ${esc(name)}</button>`;
-  }).join(' ');
+  const addButton = '<button class="primary" onclick="providerAdd()">Add provider</button>';
   el.innerHTML = `<div class="card">
       <h3>Models</h3>
       <p class="muted">What each part of consolidation calls. The environment stays the default; a choice made here overrides it and is shown next to it, never instead of it.</p>
@@ -2964,24 +2958,39 @@ async function renderModelsCard() {
       <h3>Providers</h3>
       <p class="muted">OpenAI-compatible endpoints. The key is write-only: it is stored and never shown again, only its last four characters.</p>
       ${table(['Provider', 'Base URL', 'Key', ''], [provRows])}
-      <div class="actions" style="margin-top:14px">${presetButtons}</div>
+      <div class="actions" style="margin-top:14px">${addButton}</div>
     </div>`;
 }
-function providerPreset(slug, name, url) { providerForm(slug, name, url); }
+function providerAdd() { providerForm('', '', ''); }
 async function providerForm(slug, name, url) {
   let p = { slug: slug || '', name: name || '', base_url: url || '', key_hint: '' };
-  if (!name) {
+  if (!name && slug) {
     try { const list = await api('/providers'); const found = list.find(x => x.slug === slug); if (found) p = found; } catch (e) {}
   }
+  const editing = !!slug;
   const d = document.getElementById('dlg');
-  d.innerHTML = `<h3>Provider</h3>
-    <div class="label">Slug</div><input id="pv-slug" value="${esc(p.slug)}" ${slug ? 'readonly' : ''} style="width:100%">
-    <div class="label">Name</div><input id="pv-name" value="${esc(p.name)}" style="width:100%">
-    <div class="label">Base URL</div><input id="pv-url" value="${esc(p.base_url)}" style="width:100%">
+  d.innerHTML = `<h3>${editing ? 'Provider' : 'Add provider'}</h3>
+    <div class="label">Name</div><input id="pv-name" value="${esc(p.name)}" placeholder="Hopscotch" oninput="pvSlugFromName()" style="width:100%">
+    <div class="label">Slug</div><input id="pv-slug" value="${esc(p.slug)}" placeholder="hopscotch" ${editing ? 'readonly' : ''} style="width:100%">
+    <div class="muted" style="margin-top:4px">${editing ? 'The slug is the identifier model bindings point at, so it cannot change.' : 'Short identifier for model bindings. Filled from the name; it cannot change later.'}</div>
+    <div class="label">Base URL</div><input id="pv-url" value="${esc(p.base_url)}" placeholder="https://api.hopscotchlabs.ai/v1" style="width:100%">
+    <div class="muted" style="margin-top:4px">${PROVIDER_BASE_HINT}</div>
     <div class="label">API key ${p.key_hint ? `<span class="muted">(stored: ${esc(p.key_hint)} — leave empty to keep it)</span>` : ''}</div>
     <input id="pv-key" type="password" autocomplete="off" style="width:100%">
     <div class="actions"><button onclick="dlgClose()">Cancel</button><button class="primary" onclick="providerSave()">Save</button></div>`;
   d.showModal();
+}
+// The slug is the only thing the user should not have to think about, so it
+// follows the name until it is edited by hand.
+function pvSlugFromName() {
+  const name = document.getElementById('pv-name');
+  const slug = document.getElementById('pv-slug');
+  if (!name || !slug || slug.readOnly) return;
+  const derived = name.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (slug.value === '' || slug.value === slug.dataset.derived) {
+    slug.value = derived;
+    slug.dataset.derived = derived;
+  }
 }
 async function providerSave() {
   const body = {
@@ -2990,6 +2999,8 @@ async function providerSave() {
     base_url: document.getElementById('pv-url').value.trim(),
     api_key: document.getElementById('pv-key').value,
   };
+  if (!body.slug) { toast('Give the provider a name first', true); return; }
+  if (!body.base_url) { toast('Base URL is required', true); return; }
   try {
     await api('/providers', { method: 'POST', body: JSON.stringify(body) });
     dlgClose(); renderModelsCard(); toast('Provider saved');
