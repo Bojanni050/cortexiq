@@ -16,28 +16,23 @@ func counterValue(t *testing.T, c prometheus.Counter) float64 {
 	return m.GetCounter().GetValue()
 }
 
-func TestParsePrices(t *testing.T) {
-	prices, err := ParsePrices("edenai/qwen3-30b-a3b-instruct-2507=0.20:0.60, text-embedding-3-small=0.02:0")
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	if len(prices) != 2 {
-		t.Fatalf("want 2 entries, got %d", len(prices))
-	}
-	got := prices["edenai/qwen3-30b-a3b-instruct-2507"]
-	if got.InputPerM != 0.20 || got.OutputPerM != 0.60 {
-		t.Fatalf("unexpected price for reasoner model: %+v", got)
-	}
-	if prices["text-embedding-3-small"].OutputPerM != 0 {
-		t.Fatalf("expected zero output price")
-	}
-}
+func TestSetModelPricesMatchesRegardlessOfCase(t *testing.T) {
+	// Providers disagree about the case of an id, and a mismatch must not turn
+	// a call into an unpriced one.
+	SetModelPrices(map[string]ModelPrice{"akash/GLM-5.3": {InputPerM: 1, OutputPerM: 2}})
+	defer SetModelPrices(nil)
 
-func TestParsePricesInvalid(t *testing.T) {
-	for _, in := range []string{"no-equals", "model=1", "model=a:b", "model=1:-2", "=1:2"} {
-		if _, err := ParsePrices(in); err == nil {
-			t.Errorf("expected error for %q", in)
+	for _, model := range []string{"akash/GLM-5.3", "akash/glm-5.3", "AKASH/GLM-5.3"} {
+		price, ok := priceFor(model)
+		if !ok {
+			t.Fatalf("%q is unpriced", model)
 		}
+		if price.InputPerM != 1 || price.OutputPerM != 2 {
+			t.Fatalf("%q price = %+v", model, price)
+		}
+	}
+	if _, ok := priceFor("other/model"); ok {
+		t.Fatal("a model outside the table is priced")
 	}
 }
 

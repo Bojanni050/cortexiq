@@ -39,9 +39,8 @@ type Config struct {
 	ReasonerMaxTokens int  `env:"CORTEXIQ_REASONER_MAX_TOKENS" envDefault:"1024"`
 	ReasonerJSONMode  bool `env:"CORTEXIQ_REASONER_JSON_MODE" envDefault:"false"`
 
-	// ModelPrices feeds the cost estimate: "model=input:output,..." per million
-	// tokens. Empty disables cost accounting; token metrics still work.
-	ModelPrices string `env:"CORTEXIQ_MODEL_PRICES" envDefault:""`
+	// The cost estimate reads its prices from the provider catalogue, so there
+	// is no price table to configure here any more.
 
 	// Optional overrides so embeddings can use a different endpoint (e.g. a local
 	// Ollama) than the reasoner. Fall back to the OpenAI settings above when empty.

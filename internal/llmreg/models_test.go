@@ -117,6 +117,35 @@ func TestParseCatalogueRejectsGarbage(t *testing.T) {
 	}
 }
 
+func TestParseHopscotchCatalogueReadsTheUniblockRates(t *testing.T) {
+	// The real shape: rates in thousandths of a dollar per million tokens, in
+	// a block beside the OpenAI model object.
+	body := `{"data":[{"id":"deepinfra/gemma-4-31B-it-turbo","object":"model",
+	"uniblock":{"input_rate_thousandths":90,"output_rate_thousandths":340,"currency_code":"USD"}},
+	{"id":"other/free","uniblock":{"input_rate_thousandths":0,"output_rate_thousandths":0,"currency_code":"USD"}},
+	{"id":"other/eur","uniblock":{"input_rate_thousandths":500,"output_rate_thousandths":900,"currency_code":"EUR"}}]}`
+	models, err := parseCatalogue([]byte(body), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]Model{}
+	for _, m := range models {
+		byID[m.ID] = m
+	}
+	priced := byID["deepinfra/gemma-4-31B-it-turbo"]
+	if priced.InputPerMTok != 0.09 || priced.OutputPerMTok != 0.34 {
+		t.Fatalf("price = %v/%v, want 0.09/0.34", priced.InputPerMTok, priced.OutputPerMTok)
+	}
+	// No published rate and a foreign currency both stay unknown rather than
+	// becoming a zero or a dollar figure that is wrong.
+	if free := byID["other/free"]; free.InputPerMTok != 0 || free.OutputPerMTok != 0 {
+		t.Fatalf("free model got a price: %+v", free)
+	}
+	if eur := byID["other/eur"]; eur.InputPerMTok != 0 || eur.OutputPerMTok != 0 {
+		t.Fatalf("EUR model got a dollar price: %+v", eur)
+	}
+}
+
 func TestListModelsSendsTheKeyAndReadsBothShapes(t *testing.T) {
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

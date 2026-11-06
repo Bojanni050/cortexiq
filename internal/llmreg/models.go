@@ -192,6 +192,9 @@ func parseCatalogue(body []byte, deepInfra bool) ([]Model, error) {
 			Type          string          `json:"type"`
 			OwnedBy       string          `json:"owned_by"`
 			ContextLength int             `json:"context_length"`
+			// Uniblock is the block Hopscotch adds beside the OpenAI model
+			// object; it is the only place its catalogue states a price.
+			Uniblock *uniblockBlock `json:"uniblock"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
@@ -211,6 +214,8 @@ func parseCatalogue(body []byte, deepInfra bool) ([]Model, error) {
 		}
 		m.Capabilities = capabilities(r.Capabilities)
 		if p := modelPricing(r.Pricing); p != nil {
+			m.InputPerMTok, m.OutputPerMTok = p[0], p[1]
+		} else if p := uniblockPricing(r.Uniblock); p != nil {
 			m.InputPerMTok, m.OutputPerMTok = p[0], p[1]
 		}
 		out = append(out, m)
@@ -265,6 +270,30 @@ func modelPricing(raw json.RawMessage) *[2]float64 {
 		return nil
 	}
 	return &[2]float64{in, out}
+}
+
+// uniblockBlock is the block Hopscotch adds beside the OpenAI model object.
+// Rates are thousandths of a dollar per million tokens, so 900 is $0.90.
+type uniblockBlock struct {
+	InputRate  float64 `json:"input_rate_thousandths"`
+	OutputRate float64 `json:"output_rate_thousandths"`
+	Currency   string  `json:"currency_code"`
+}
+
+// uniblockPricing converts that block. A price in another currency is dropped
+// rather than mixed into a table that is otherwise dollars: a wrong number in
+// the cost estimate is worse than an honest "unknown".
+func uniblockPricing(b *uniblockBlock) *[2]float64 {
+	if b == nil {
+		return nil
+	}
+	if c := strings.TrimSpace(b.Currency); c != "" && !strings.EqualFold(c, "USD") {
+		return nil
+	}
+	if b.InputRate == 0 && b.OutputRate == 0 {
+		return nil
+	}
+	return &[2]float64{b.InputRate / 1000, b.OutputRate / 1000}
 }
 
 func centsPerMTok(cents float64) float64 {

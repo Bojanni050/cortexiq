@@ -16,8 +16,8 @@ import (
 	"github.com/Bojanni050/cortexiq/internal/db"
 	"github.com/Bojanni050/cortexiq/internal/embedder"
 	"github.com/Bojanni050/cortexiq/internal/llmreg"
+	"github.com/Bojanni050/cortexiq/internal/modelprice"
 	"github.com/Bojanni050/cortexiq/internal/oauth"
-	"github.com/Bojanni050/cortexiq/internal/observability"
 	"github.com/Bojanni050/cortexiq/internal/queries"
 	"github.com/Bojanni050/cortexiq/internal/reasoner"
 	"github.com/Bojanni050/cortexiq/internal/reranker"
@@ -90,14 +90,28 @@ func New(ctx context.Context) (*Context, error) {
 		return nil, fmt.Errorf("build reasoner: %w", err)
 	}
 
-	if cfg.ModelPrices != "" {
-		modelPrices, err := observability.ParsePrices(cfg.ModelPrices)
-		if err != nil {
-			pool.Close()
-			return nil, fmt.Errorf("model prices: %w", err)
+	// Prices come from the providers' own catalogues. The old
+	// CORTEXIQ_MODEL_PRICES table had drifted away from the models actually in
+	// use, so the cost estimate was silently counting nothing.
+	priceSources := []modelprice.Source{{
+		Name:    "configured provider",
+		BaseURL: cfg.OpenAIBaseURL,
+		APIKey:  cfg.OpenAIAPIKey,
+	}}
+	if providers, err := llmreg.NewStore(pool).Providers(ctx); err != nil {
+		logger.Warn("model prices: cannot list providers", "err", err)
+	} else {
+		for _, p := range providers {
+			priceSources = append(priceSources, modelprice.Source{
+				Name:    p.Name,
+				BaseURL: p.BaseURL,
+				APIKey:  p.APIKey,
+			})
 		}
-		observability.SetModelPrices(modelPrices)
 	}
+	// WithoutCancel: the refresher outlives a start-up context that the caller
+	// may cancel once it has what it needs, but still stops with the process.
+	modelprice.NewRefresher(logger, priceSources).Start(context.WithoutCancel(ctx))
 
 	q, err := queries.New()
 	if err != nil {
