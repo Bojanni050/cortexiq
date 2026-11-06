@@ -17,7 +17,7 @@ func (b *Brain) consolidateHypothesisEvidence(ctx context.Context, nsID int64, c
 	rows, err := b.pool.Query(ctx,
 		`SELECT id, namespace_id, content, confidence, status, verification_plan, method,
 		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
-		 created_at, updated_at, deleted_at
+		 created_at, updated_at, deleted_at, counter_of
 		 FROM hypotheses WHERE namespace_id = $1 AND status IN ('proposed', 'testing') AND deleted_at IS NULL`,
 		nsID,
 	)

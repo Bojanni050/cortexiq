@@ -45,21 +45,17 @@ func scanHypothesis(h *models.Hypothesis, row pgx.Row) error {
 	)
 }
 
+// scanHypothesisRows maps rows by column name, not by position. Positional
+// scanning broke twice on the same column: counter_of was added to the struct
+// and forgotten in two SELECTs, which showed up as an empty dashboard tab and,
+// worse, as a consolidator that silently skipped every open hypothesis. By
+// name, a forgotten column is a named error instead of a silent mismatch.
 func scanHypothesisRows(rows pgx.Rows) ([]models.Hypothesis, error) {
-	var result []models.Hypothesis
-	for rows.Next() {
-		var h models.Hypothesis
-		if err := rows.Scan(
-			&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
-			&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-			&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-			&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt, &h.CounterOf,
-		); err != nil {
-			return nil, fmt.Errorf("scan hypothesis: %w", err)
-		}
-		result = append(result, h)
+	result, err := pgx.CollectRows(rows, pgx.RowToStructByName[models.Hypothesis])
+	if err != nil {
+		return nil, fmt.Errorf("scan hypothesis: %w", err)
 	}
-	return result, rows.Err()
+	return result, nil
 }
 
 // hypothesisInput is everything an insert needs. Method is explicit rather than
@@ -173,7 +169,7 @@ func (b *Brain) ListHypotheses(ctx context.Context, namespaceSlugs []string, sta
 	where, args := hypothesisWhere(nsIDs, status)
 	query := `SELECT id, namespace_id, content, confidence, status, verification_plan, method,
 	          confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
-	          created_at, updated_at, deleted_at
+	          created_at, updated_at, deleted_at, counter_of
 	          FROM hypotheses WHERE ` + where +
 		fmt.Sprintf(" ORDER BY updated_at DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
 	args = append(args, page.Limit, page.Offset)
