@@ -115,6 +115,30 @@ func TestDiscoveryServedWithoutToken(t *testing.T) {
 	}
 }
 
+// The reasoner cost counters live in this process, so the listener has to
+// expose them. They stay behind the same Bearer check as the transports.
+func TestMetricsServedOnTheMCPListener(t *testing.T) {
+	h := testMCPHandler(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("metrics without a token: status = %d, want 401", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req.Header.Set("Authorization", "Bearer rw-secret")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("metrics with a token: status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "# HELP") {
+		t.Fatalf("metrics body does not look like a Prometheus exposition")
+	}
+}
+
 func TestSSETransportStillServed(t *testing.T) {
 	srv := httptest.NewServer(testMCPHandler(t))
 	defer srv.Close()

@@ -26,6 +26,7 @@ import (
 	"github.com/Bojanni050/cortexiq/internal/scope"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/urfave/cli/v3"
 )
 
@@ -1414,6 +1415,11 @@ func mcpHandler(sse *server.SSEServer, streamable *server.StreamableHTTPServer, 
 	mux.Handle("/sse", sse)
 	mux.Handle("/message", sse)
 	mux.Handle("/mcp", streamable)
+	// The reasoner cost counters belong to the process that answers the tool
+	// calls, and that is this one, not the dashboard. Without /metrics here the
+	// cost of connector traffic is unreadable. It is behind the same Bearer
+	// check as the transports and nginx does not proxy it.
+	mux.Handle("/metrics", promhttp.Handler())
 	if oauthSrv != nil {
 		oauthSrv.Register(mux)
 	}

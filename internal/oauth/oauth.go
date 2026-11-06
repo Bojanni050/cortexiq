@@ -163,7 +163,8 @@ func (s *Server) InsufficientScopeChallenge() string {
 
 // RequireMCP authenticates the MCP transports only. Everything else on the same
 // listener (metadata, /oauth/*) is public by design: those endpoints are how a
-// client gets a token in the first place.
+// client gets a token in the first place. /metrics is the exception on the other
+// side: it carries the same data as the dashboard, so it is checked too.
 //
 // The path check is a switch, not a prefix match, so a crafted path cannot be
 // public here and something else after ServeMux cleans it.
@@ -180,7 +181,11 @@ func (s *Server) RequireMCP(static *auth.Set, next http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/mcp", "/sse", "/message":
+		// /metrics sits on the same listener as the transports and exposes the
+		// same data as the dashboard, so it gets the same check. A scraper uses
+		// a static token; an OAuth access token works too but nobody automates
+		// a consent page.
+		case "/mcp", "/sse", "/message", "/metrics":
 		default:
 			next.ServeHTTP(w, r)
 			return
