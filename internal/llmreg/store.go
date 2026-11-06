@@ -12,13 +12,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Purposes are the four places a model can be configured. They match the
+// Purposes are the places a model can be configured. They match the
 // llm_bindings CHECK constraint.
 const (
 	PurposeReasoner  = "reasoner"
 	PurposeTriage    = "triage"
 	PurposeEmbedding = "embedding"
 	PurposeReranker  = "reranker"
+	// PurposeCritic argues the other side of a hypothesis. It exists as its own
+	// purpose so it can be a different model than the reasoner: a model asked to
+	// attack a claim it just produced usually defends it.
+	PurposeCritic = "critic"
 )
 
 var (
@@ -42,7 +46,7 @@ func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 
 func validPurpose(purpose string) bool {
 	switch purpose {
-	case PurposeReasoner, PurposeTriage, PurposeEmbedding, PurposeReranker:
+	case PurposeReasoner, PurposeTriage, PurposeEmbedding, PurposeReranker, PurposeCritic:
 		return true
 	}
 	return false

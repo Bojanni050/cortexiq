@@ -630,6 +630,14 @@ CortexIQ is a cognitive layer between your AI agent and the world. Episodes beco
 
 A 9-stage consolidation pipeline turns raw observations into structured knowledge — facts, relationships, causal links, patterns, contradictions, goal tracking, failure patterns, and hypothesis verification. Each stage only processes new data since the last run.
 
+### Counter-hypotheses
+
+A hypothesis is only worth keeping if something could contradict it. So every new hypothesis is also handed to a second model — the **critic** — which has to argue the other side: the belief that would be true *instead*, plus a test whose outcome differs depending on which of the two holds. The result is stored as a linked hypothesis (`counter_of`), not as a note, so both sides are tested against the same evidence by the same pipeline.
+
+Point the critic at a different model than the reasoner (`CORTEXIQ_CRITIC_MODEL`, or the Critic row under Settings → Models). A model asked to attack a claim it just produced usually defends it, so with no critic configured the reasoner is reused and the hypothesis log records `independent=false` — the argument still happens, it just is not a check. When both sides of a pair would be auto-confirmed on the same batch of evidence, the second one is held back for a human instead: memory should not file a belief and its negation as two facts.
+
+Everything either side does lands in the hypothesis log (`Hypothesis log` in the dashboard, `list_hypothesis_events` over MCP), with the actor, the state change and the reasoning.
+
 ## Upstream cloud (Stash, Beta — Free)
 
 The upstream project this fork is based on hosts a multi-tenant version at **[usestash.io](https://usestash.io/)**, free while in beta. It is not part of CortexIQ.

@@ -212,8 +212,8 @@ func (h *Handler) modelItem(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// applyModel rebuilds the reasoner for the two purposes that can be swapped
-// without a restart. Both go through the same client type; the triage model keeps
+// applyModel rebuilds the reasoner for the purposes that can be swapped without
+// a restart. All of them go through the same client type; the triage model keeps
 // its small token budget.
 func (h *Handler) applyModel(r *http.Request, purpose, providerSlug, model string) (bool, error) {
 	if purpose == llmreg.PurposeEmbedding || purpose == llmreg.PurposeReranker {
@@ -231,9 +231,12 @@ func (h *Handler) applyModel(r *http.Request, purpose, providerSlug, model strin
 	if err != nil {
 		return false, err
 	}
-	if purpose == llmreg.PurposeTriage {
+	switch purpose {
+	case llmreg.PurposeTriage:
 		h.Brain.SetTriage(client)
-	} else {
+	case llmreg.PurposeCritic:
+		h.Brain.SetCritic(client, model)
+	default:
 		h.Brain.SetReasoner(client)
 	}
 	return true, nil

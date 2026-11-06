@@ -205,9 +205,15 @@ type Brain struct {
 	pool     *pgxpool.Pool
 	embedder embedder.Embedder
 	reasoner reasoner.Reasoner
-	triage   TriageReasoner
-	queries  *queries.Queries
-	config   Config
+	// critic argues the other side of a hypothesis. It is a separate slot
+	// because a model that grades its own homework is not a check: independence
+	// is the feature, not the model. Unset means the reasoner is reused, and
+	// the log says so.
+	critic      reasoner.Reasoner
+	criticModel string
+	triage      TriageReasoner
+	queries     *queries.Queries
+	config      Config
 
 	// The consolidator runs in another goroutine in the same process (or in a
 	// sibling process for the stdio server). These channels let it react to new
@@ -241,6 +247,15 @@ func (b *Brain) SetTriage(t TriageReasoner) { b.triage = t }
 // budget wrapper is applied again, so a runtime swap cannot escape the
 // per-run call limit.
 func (b *Brain) SetReasoner(r reasoner.Reasoner) { b.reasoner = budgetReasoner{inner: r} }
+
+// SetCritic installs the model that formulates counter-hypotheses. model is
+// recorded in the log so an argument can be traced back to the model that made
+// it; an empty model means the reasoner is being reused, which is not
+// independent and is reported as such.
+func (b *Brain) SetCritic(r reasoner.Reasoner, model string) {
+	b.critic = budgetReasoner{inner: r}
+	b.criticModel = model
+}
 
 func New(pool *pgxpool.Pool, e embedder.Embedder, r reasoner.Reasoner, q *queries.Queries, cfg Config) (*Brain, error) {
 	if pool == nil {

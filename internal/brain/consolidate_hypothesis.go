@@ -4,6 +4,7 @@ package brain
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/Bojanni050/cortexiq/internal/models"
 )
@@ -91,6 +92,17 @@ func (b *Brain) consolidateHypothesisEvidence(ctx context.Context, nsID int64, c
 				}
 				updated++
 			case "testing":
+				// A belief and the case against it must never both become facts on
+				// the same batch of evidence: that is not a conclusion, it is a
+				// contradiction the memory would store twice. When the counterpart
+				// is already confirmed, this one waits for a human.
+				if counterpartConfirmed, pairErr := b.counterpartIsConfirmed(ctx, hyp); pairErr != nil {
+					errs = append(errs, fmt.Sprintf("check counterpart of hypothesis %d: %v", r.HypothesisID, pairErr))
+					continue
+				} else if counterpartConfirmed {
+					log.Printf("hypothesis %d: not auto-confirming, its counterpart is already a fact", r.HypothesisID)
+					continue
+				}
 				_, _, confirmErr := b.ConfirmHypothesis(ctx, r.HypothesisID)
 				if confirmErr != nil {
 					errs = append(errs, fmt.Sprintf("auto-confirm hypothesis %d: %v", r.HypothesisID, confirmErr))

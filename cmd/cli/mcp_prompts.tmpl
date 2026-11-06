@@ -1043,6 +1043,7 @@ CALL THIS WHEN:
 
 READING IT:
 - "proposed" → an agent or a human asserted the belief
+- "counter" → an independent model was asked for the case against it; counter_id points at the resulting hypothesis
 - "testing" → it moved into investigation, usually by the consolidator
 - "evidence" → confidence shifted after a batch of facts was weighed (detail has the verdict and the LLM confidence)
 - "confirmed" → it became a fact; fact_id points at the row in facts
@@ -1081,6 +1082,13 @@ BEFORE CALLING:
 1. Check list_hypotheses — don't create a duplicate of an existing hypothesis
 2. Formulate a clear, specific hypothesis statement
 3. Write a verification plan: what evidence would confirm or deny this?
+
+WHAT YOU GET BACK:
+The response contains both the hypothesis and a counter_hypothesis: a second model
+was asked to argue the opposite case and to describe a test that separates the two.
+Read it. If the counter is plausible, the belief is not settled — test both, and
+expect the log to show which one survived. The counter is a separate hypothesis
+with counter_of set; it is never auto-confirmed on the strength of the same facts.
 
 WHAT GOOD INPUT LOOKS LIKE:
 - content: "The team has adopted TypeScript as their primary language"

@@ -1150,6 +1150,129 @@ Rules:
 	return result, nil
 }
 
+// --- ProposeCounterHypothesis ---
+
+// jsonCounterHypothesis is the shape the critic model is asked to return.
+type jsonCounterHypothesis struct {
+	Content          string  `json:"content"`
+	VerificationPlan string  `json:"verification_plan"`
+	Confidence       float32 `json:"confidence"`
+	Reasoning        string  `json:"reasoning"`
+}
+
+// counterPrompt is the adversarial brief. It is written so that agreement is not
+// an acceptable answer: a counter that restates the original with "however" in
+// front tells the reader nothing, and the point of the exercise is to make the
+// belief testable rather than merely held.
+func counterPrompt(h models.Hypothesis, evidence []models.Fact) string {
+	var evidenceLines []string
+	for _, f := range evidence {
+		evidenceLines = append(evidenceLines, "- "+f.Content)
+	}
+	evidenceBlock := "No stored facts were given."
+	if len(evidenceLines) > 0 {
+		evidenceBlock = strings.Join(evidenceLines, "\n")
+	}
+
+	plan := h.VerificationPlan
+	if plan == "" {
+		plan = "(none was given)"
+	}
+
+	return fmt.Sprintf(`A hypothesis is held as a belief. Your job is to argue the opposite case as strongly as the evidence allows.
+
+Hypothesis: %s
+How it was meant to be verified: %s
+
+Facts it was derived from:
+%s
+
+Write the strongest competing hypothesis: the belief that would be true INSTEAD of the one above if the original turns out to be wrong. It must be a genuine alternative, not the same claim restated with "however" in front of it, and not a vague "the opposite might be true".
+
+Then give a verification plan that could DISTINGUISH the two: an observation, measurement or test whose outcome differs depending on which of the two beliefs holds. A plan that would also confirm the original is useless here.
+
+Output ONLY a JSON object:
+{"content": "the competing hypothesis, one or two sentences", "verification_plan": "what to check that would separate the two", "confidence": 0.4, "reasoning": "why this is the strongest opposing case"}
+
+Rules:
+- content must be falsifiable and specific. Name the thing, the condition, or the mechanism.
+- verification_plan must produce a different outcome for the original than for the counter.
+- confidence is your confidence in the COUNTER, between 0.05 and 0.95. Do not default to 0.5.
+- reasoning is one or two sentences and is for the human reading the log, not for the model.
+- If the hypothesis is already so well established that no honest counter exists, still produce the best one and say so in reasoning.`, h.Content, plan, evidenceBlock)
+}
+
+// validateCounterHypothesis rejects the two ways a critic can waste the call:
+// an empty answer and a restatement of the original. A restatement is stored as
+// a fake counter otherwise, which is worse than no counter at all because it
+// looks like the belief survived a challenge it never faced.
+func validateCounterHypothesis(jc jsonCounterHypothesis, original string) (*CounterHypothesis, error) {
+	content := strings.TrimSpace(jc.Content)
+	if content == "" {
+		return nil, errors.New("content must not be empty")
+	}
+	if strings.EqualFold(content, strings.TrimSpace(original)) {
+		return nil, errors.New("the counter must differ from the hypothesis; restating it is not an answer")
+	}
+
+	conf := jc.Confidence
+	if conf < 0.05 {
+		conf = 0.05
+	}
+	if conf > 0.95 {
+		conf = 0.95
+	}
+
+	return &CounterHypothesis{
+		Content:          content,
+		VerificationPlan: strings.TrimSpace(jc.VerificationPlan),
+		Confidence:       conf,
+		Reasoning:        strings.TrimSpace(jc.Reasoning),
+	}, nil
+}
+
+// ProposeCounterHypothesis asks a model to argue the other side.
+func (o *OpenAI) ProposeCounterHypothesis(ctx context.Context, h models.Hypothesis, evidence []models.Fact) (*CounterHypothesis, error) {
+	msgs := []openai.ChatCompletionMessageParamUnion{
+		openai.SystemMessage(systemPrompt),
+		openai.UserMessage(counterPrompt(h, evidence)),
+	}
+
+	var result *CounterHypothesis
+	var valErr error
+
+	for attempt := 0; attempt < 2; attempt++ {
+		output, err := o.chat(ctx, "counter_hypothesis", msgs)
+		if err != nil {
+			return nil, err
+		}
+		raw := extractJSON(output)
+
+		var jc jsonCounterHypothesis
+		if err := json.Unmarshal([]byte(raw), &jc); err != nil {
+			valErr = fmt.Errorf("parse json: %w", err)
+			msgs = append(msgs, openai.SystemMessage(retryWarning))
+			continue
+		}
+
+		validated, err := validateCounterHypothesis(jc, h.Content)
+		if err != nil {
+			valErr = err
+			msgs = append(msgs, openai.SystemMessage(retryWarning+" "+err.Error()))
+			continue
+		}
+
+		result = validated
+		valErr = nil
+		break
+	}
+
+	if valErr != nil {
+		return nil, valErr
+	}
+	return result, nil
+}
+
 // --- Helpers ---
 
 func extractJSON(s string) string {

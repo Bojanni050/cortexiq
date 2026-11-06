@@ -150,22 +150,25 @@ type CausalLink struct {
 
 // Hypothesis is a belief held with uncertainty plus a plan to verify it.
 type Hypothesis struct {
-	ID               int64      `db:"id" json:"id"`
-	NamespaceID      int64      `db:"namespace_id" json:"namespace_id"`
-	Content          string     `db:"content" json:"content"`
-	Confidence       float32    `db:"confidence" json:"confidence"`
-	Status           string     `db:"status" json:"status"`
-	VerificationPlan string     `db:"verification_plan" json:"verification_plan"`
-	Method           string     `db:"method" json:"method"`
-	ConfirmedFactID  *int64     `db:"confirmed_fact_id" json:"confirmed_fact_id"`
-	RejectionReason  *string    `db:"rejection_reason" json:"rejection_reason"`
-	SourceFactIDs    []int64    `db:"source_fact_ids" json:"source_fact_ids"`
-	TestedAt         *time.Time `db:"tested_at" json:"tested_at"`
-	ConfirmedAt      *time.Time `db:"confirmed_at" json:"confirmed_at"`
-	RejectedAt       *time.Time `db:"rejected_at" json:"rejected_at"`
-	CreatedAt        time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt        time.Time  `db:"updated_at" json:"updated_at"`
-	DeletedAt        *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
+	ID               int64   `db:"id" json:"id"`
+	NamespaceID      int64   `db:"namespace_id" json:"namespace_id"`
+	Content          string  `db:"content" json:"content"`
+	Confidence       float32 `db:"confidence" json:"confidence"`
+	Status           string  `db:"status" json:"status"`
+	VerificationPlan string  `db:"verification_plan" json:"verification_plan"`
+	Method           string  `db:"method" json:"method"`
+	ConfirmedFactID  *int64  `db:"confirmed_fact_id" json:"confirmed_fact_id"`
+	RejectionReason  *string `db:"rejection_reason" json:"rejection_reason"`
+	SourceFactIDs    []int64 `db:"source_fact_ids" json:"source_fact_ids"`
+	// CounterOf points at the hypothesis this one argues against. It is set on
+	// the counter, not on the original, so the original stays a plain belief.
+	CounterOf   *int64     `db:"counter_of" json:"counter_of"`
+	TestedAt    *time.Time `db:"tested_at" json:"tested_at"`
+	ConfirmedAt *time.Time `db:"confirmed_at" json:"confirmed_at"`
+	RejectedAt  *time.Time `db:"rejected_at" json:"rejected_at"`
+	CreatedAt   time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt   time.Time  `db:"updated_at" json:"updated_at"`
+	DeletedAt   *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
 }
 
 // HypothesisEvent is one entry in a hypothesis' history. It answers who moved

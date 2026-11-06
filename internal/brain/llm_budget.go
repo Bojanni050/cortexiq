@@ -121,3 +121,10 @@ func (r budgetReasoner) ReasonHypothesisEvidence(ctx context.Context, hypotheses
 	}
 	return r.inner.ReasonHypothesisEvidence(ctx, hypotheses, facts)
 }
+
+func (r budgetReasoner) ProposeCounterHypothesis(ctx context.Context, h models.Hypothesis, evidence []models.Fact) (*reasoner.CounterHypothesis, error) {
+	if err := consumeLLMCall(ctx); err != nil {
+		return nil, err
+	}
+	return r.inner.ProposeCounterHypothesis(ctx, h, evidence)
+}

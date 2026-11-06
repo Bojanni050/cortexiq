@@ -208,6 +208,29 @@ func New(ctx context.Context) (*Context, error) {
 		br.SetTriage(triage)
 	}
 
+	// The critic argues the other side of a hypothesis. It is built from its own
+	// model (and optionally its own endpoint) so it can be a genuinely different
+	// model; with no CriticModel it stays unset and the brain reuses the
+	// reasoner, which the log reports as not independent.
+	if cfg.CriticModel != "" {
+		baseURL, apiKey := cfg.CriticBaseURL, cfg.CriticAPIKey
+		if baseURL == "" {
+			baseURL = cfg.OpenAIBaseURL
+		}
+		if apiKey == "" {
+			apiKey = cfg.OpenAIAPIKey
+		}
+		critic, err := reasoner.NewOpenAI(baseURL, apiKey, cfg.CriticModel, cfg.ReasonerMaxTokens, cfg.ReasonerJSONMode)
+		if err != nil {
+			pool.Close()
+			return nil, fmt.Errorf("build critic reasoner: %w", err)
+		}
+		br.SetCritic(critic, cfg.CriticModel)
+		logger.Info("counter-hypotheses use an independent critic model", "model", cfg.CriticModel)
+	} else {
+		logger.Warn("no critic model configured: counter-hypotheses are written by the reasoner itself, which is not independent")
+	}
+
 	// A model chosen in the dashboard is a row, and a row has to be read again
 	// after a restart or it lasts only as long as the process that accepted it.
 	// The database therefore wins over the environment at startup, exactly as it
@@ -359,7 +382,7 @@ func applyModelBindings(ctx context.Context, pool *pgxpool.Pool, br *brain.Brain
 		bySlug[p.Slug] = p
 	}
 	for purpose, b := range bindings {
-		if purpose != llmreg.PurposeReasoner && purpose != llmreg.PurposeTriage {
+		if purpose != llmreg.PurposeReasoner && purpose != llmreg.PurposeTriage && purpose != llmreg.PurposeCritic {
 			continue
 		}
 		p, ok := bySlug[b.Provider]
@@ -374,11 +397,14 @@ func applyModelBindings(ctx context.Context, pool *pgxpool.Pool, br *brain.Brain
 		if err != nil {
 			return fmt.Errorf("build %s model %q: %w", purpose, b.Model, err)
 		}
-		if purpose == llmreg.PurposeTriage {
+		switch purpose {
+		case llmreg.PurposeTriage:
 			br.SetTriage(client)
-			continue
+		case llmreg.PurposeCritic:
+			br.SetCritic(client, b.Model)
+		default:
+			br.SetReasoner(client)
 		}
-		br.SetReasoner(client)
 	}
 	return nil
 }

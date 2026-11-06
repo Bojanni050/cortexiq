@@ -84,6 +84,17 @@ type HypothesisEvidenceResult struct {
 	NewConfidence float32
 }
 
+// CounterHypothesis is the opposing belief a critic model formulates for an
+// existing hypothesis: what would be true instead, and how to tell the two
+// apart. The plan matters more than the claim — a counter you cannot
+// distinguish from the original is not a test, it is a second opinion.
+type CounterHypothesis struct {
+	Content          string
+	VerificationPlan string
+	Confidence       float32
+	Reasoning        string
+}
+
 // ChatMessage is one message in a chat conversation.
 type ChatMessage struct {
 	Role    string // "system", "user", or "assistant"
@@ -133,4 +144,9 @@ type Reasoner interface {
 
 	// ReasonHypothesisEvidence assesses whether new evidence supports, weakens, or contradicts open hypotheses.
 	ReasonHypothesisEvidence(ctx context.Context, hypotheses []models.Hypothesis, facts []models.Fact) ([]*HypothesisEvidenceResult, error)
+
+	// ProposeCounterHypothesis formulates the strongest belief that would be
+	// true instead of the given one, together with a test that separates them.
+	// It is deliberately adversarial: agreeing with the input is a failure.
+	ProposeCounterHypothesis(ctx context.Context, h models.Hypothesis, evidence []models.Fact) (*CounterHypothesis, error)
 }

@@ -18,6 +18,7 @@ const (
 	HypothesisEventTesting   = "testing"
 	HypothesisEventRefined   = "refined"
 	HypothesisEventEvidence  = "evidence"
+	HypothesisEventCounter   = "counter"
 	HypothesisEventConfirmed = "confirmed"
 	HypothesisEventRejected  = "rejected"
 	HypothesisEventDeleted   = "deleted"

@@ -135,6 +135,12 @@ func (r *fakeReasoner) ReasonHypothesisEvidence(context.Context, []models.Hypoth
 	return nil, nil
 }
 
+// The fake refuses to produce a counter: these tests are about storage and
+// consolidation, and a counter would add a second hypothesis to every fixture.
+func (r *fakeReasoner) ProposeCounterHypothesis(context.Context, models.Hypothesis, []models.Fact) (*reasoner.CounterHypothesis, error) {
+	return nil, nil
+}
+
 type testEnv struct {
 	b    *Brain
 	r    *fakeReasoner

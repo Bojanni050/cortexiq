@@ -1107,7 +1107,13 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		if err != nil {
 			return nil, err
 		}
-		b, _ := json.Marshal(h)
+		// The counter is part of the answer: a belief handed back without the
+		// case against it invites the caller to stop reading at "proposed".
+		out := map[string]any{"hypothesis": h}
+		if counter, err := bc.Brain.CounterHypothesisFor(ctx, h.ID); err == nil && counter != nil {
+			out["counter_hypothesis"] = counter
+		}
+		b, _ := json.Marshal(out)
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 

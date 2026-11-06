@@ -32,6 +32,15 @@ type Config struct {
 	// episode goes to the extractor, as before.
 	TriageModel string `env:"CORTEXIQ_TRIAGE_MODEL" envDefault:""`
 
+	// CriticModel formulates the counter-hypothesis for a belief. It should be a
+	// different model than the reasoner: a model asked to argue against a claim
+	// it just produced tends to agree with itself. Empty falls back to the
+	// reasoner, and the hypothesis log then records independent=false so the
+	// argument is never mistaken for an outside check.
+	CriticModel   string `env:"CORTEXIQ_CRITIC_MODEL" envDefault:""`
+	CriticBaseURL string `env:"CORTEXIQ_CRITIC_BASE_URL" envDefault:""`
+	CriticAPIKey  string `env:"CORTEXIQ_CRITIC_API_KEY" envDefault:""`
+
 	// Reasoner request tuning. MaxTokens caps output tokens per call (0 =
 	// unlimited); it guards against verbose/reasoning models burning output
 	// tokens during JSON extraction. JSONMode requests a native JSON response
