@@ -2653,9 +2653,20 @@ async function renderHypothesisLog() {
 async function renderRuns() {
   const dur = ms => ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : (ms || 0) + 'ms';
   const n = v => v ? String(v) : '<span class="muted">—</span>';
+  // Compact on purpose: four hypothesis counters in one cell, because a run row
+  // is already 13 columns wide and only the non-zero ones matter.
+  const hyp = r => {
+    const bits = [];
+    if (r.hypotheses_proposed) bits.push('+' + r.hypotheses_proposed);
+    if (r.hypotheses_auto_confirmed) bits.push('✓' + r.hypotheses_auto_confirmed);
+    if (r.hypotheses_auto_rejected) bits.push('✗' + r.hypotheses_auto_rejected);
+    if (r.hypotheses_updated) bits.push('~' + r.hypotheses_updated);
+    if (!bits.length) return '<span class="muted">—</span>';
+    return `<span class="mono" title="proposed / auto-confirmed / auto-rejected / confidence updated">${bits.join(' ')}</span>`;
+  };
   await listTab('runs', {
     path: o => '/runs' + qs(o),
-    headers: ['Started', 'Namespace', 'Duration', 'Episodes', 'Skipped', 'Facts', 'Dedup', 'Near-miss', 'Rels', 'Patterns', 'Contra', 'LLM calls', 'Errors'],
+    headers: ['Started', 'Namespace', 'Duration', 'Episodes', 'Skipped', 'Facts', 'Dedup', 'Near-miss', 'Rels', 'Patterns', 'Contra', 'Hyp', 'LLM calls', 'Errors'],
     fields: ['id', 'namespace_slug', 'error_sample'],
     row: r => `<tr>
       <td class="muted">${ts(r.started_at)}</td>
@@ -2669,6 +2680,7 @@ async function renderRuns() {
       <td>${n(r.relationships_found)}</td>
       <td>${n(r.patterns_found)}</td>
       <td>${n(r.contradictions_found)}</td>
+      <td>${hyp(r)}</td>
       <td>${n(r.llm_calls)}${r.llm_calls_limited ? ' <span class="badge pending">limited</span>' : ''}</td>
       <td>${r.errors ? `<span class="badge abandoned">${r.errors}</span>${r.error_sample ? `<div class="muted">${esc(r.error_sample)}</div>` : ''}` : '<span class="muted">—</span>'}</td>
     </tr>`,

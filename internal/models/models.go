@@ -291,6 +291,7 @@ type ConsolidationRun struct {
 	HypothesesAutoConfirmed int       `db:"hypotheses_auto_confirmed" json:"hypotheses_auto_confirmed"`
 	HypothesesAutoRejected  int       `db:"hypotheses_auto_rejected" json:"hypotheses_auto_rejected"`
 	HypothesesUpdated       int       `db:"hypotheses_updated" json:"hypotheses_updated"`
+	HypothesesProposed      int       `db:"hypotheses_proposed" json:"hypotheses_proposed"`
 	FactsDecayed            int       `db:"facts_decayed" json:"facts_decayed"`
 	FactsExpired            int       `db:"facts_expired" json:"facts_expired"`
 	DedupNearMisses         int       `db:"dedup_near_misses" json:"dedup_near_misses"`
