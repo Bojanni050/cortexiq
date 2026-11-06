@@ -40,8 +40,8 @@ func scanHypothesis(h *models.Hypothesis, row pgx.Row) error {
 	return row.Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.CounterOf, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
+		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
+		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt, &h.CounterOf,
 	)
 }
 
@@ -52,8 +52,8 @@ func scanHypothesisRows(rows pgx.Rows) ([]models.Hypothesis, error) {
 		if err := rows.Scan(
 			&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 			&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-			&h.SourceFactIDs, &h.CounterOf, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-			&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
+			&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
+			&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt, &h.CounterOf,
 		); err != nil {
 			return nil, fmt.Errorf("scan hypothesis: %w", err)
 		}
@@ -80,8 +80,8 @@ func (b *Brain) CreateHypothesis(ctx context.Context, nsID int64, content, verif
 	).Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.CounterOf, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
+		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
+		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt, &h.CounterOf,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create hypothesis: %w", err)
@@ -163,8 +163,8 @@ func (b *Brain) GetHypothesis(ctx context.Context, id int64) (*models.Hypothesis
 	).Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.CounterOf, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
+		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
+		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt, &h.CounterOf,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -218,8 +218,8 @@ func (b *Brain) UpdateHypothesisStatus(ctx context.Context, id int64, status str
 	).Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.CounterOf, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
+		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
+		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt, &h.CounterOf,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("update hypothesis status: %w", err)
@@ -315,8 +315,8 @@ func (b *Brain) ConfirmHypothesis(ctx context.Context, id int64) (*models.Hypoth
 	).Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.CounterOf, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
+		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
+		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt, &h.CounterOf,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("update hypothesis confirmed: %w", err)
@@ -388,8 +388,8 @@ func (b *Brain) RejectHypothesis(ctx context.Context, id int64, reason string) (
 	).Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.CounterOf, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
+		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
+		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt, &h.CounterOf,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("reject hypothesis: %w", err)
@@ -442,8 +442,8 @@ func (b *Brain) RefineHypothesis(ctx context.Context, id int64, content, verific
 	).Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.CounterOf, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
-		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
+		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
+		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt, &h.CounterOf,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("refine hypothesis: %w", err)
