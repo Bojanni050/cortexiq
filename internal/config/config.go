@@ -197,6 +197,11 @@ type Config struct {
 	TriageLog                      bool    `env:"CORTEXIQ_TRIAGE_LOG" envDefault:"false"`
 	HypothesisAutoConfirmThreshold float32 `env:"CORTEXIQ_HYPOTHESIS_AUTO_CONFIRM_THRESHOLD" envDefault:"0.9"`
 	HypothesisAutoRejectThreshold  float32 `env:"CORTEXIQ_HYPOTHESIS_AUTO_REJECT_THRESHOLD" envDefault:"0.9"`
+	// HypothesisAutoPropose lets the consolidator propose its own hypotheses from
+	// new facts (method "inferred", never auto-confirmed). Off by default because
+	// it costs one reasoner call plus one critic call per proposal.
+	HypothesisAutoPropose  bool `env:"CORTEXIQ_HYPOTHESIS_AUTO_PROPOSE" envDefault:"false"`
+	HypothesisMaxProposals int  `env:"CORTEXIQ_HYPOTHESIS_MAX_PROPOSALS" envDefault:"2"`
 }
 
 // NewFromFile loads filename into the process environment (if it exists) and

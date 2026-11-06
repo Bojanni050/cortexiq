@@ -95,6 +95,17 @@ type CounterHypothesis struct {
 	Reasoning        string
 }
 
+// ProposedHypothesis is a belief the consolidator thinks the stored facts imply
+// but do not state. It is a proposal, not a conclusion: nothing about it is
+// trusted until the critic has argued against it and evidence has been weighed.
+type ProposedHypothesis struct {
+	Content          string
+	VerificationPlan string
+	Confidence       float32
+	Reasoning        string
+	SourceFactIDs    []int64
+}
+
 // ChatMessage is one message in a chat conversation.
 type ChatMessage struct {
 	Role    string // "system", "user", or "assistant"
@@ -149,4 +160,11 @@ type Reasoner interface {
 	// true instead of the given one, together with a test that separates them.
 	// It is deliberately adversarial: agreeing with the input is a failure.
 	ProposeCounterHypothesis(ctx context.Context, h models.Hypothesis, evidence []models.Fact) (*CounterHypothesis, error)
+
+	// ProposeHypotheses looks for a testable belief implied by the facts that
+	// none of the existing hypotheses already covers. It is allowed to return
+	// nothing: most batches of facts contain no real uncertainty, and a made-up
+	// belief is worse than an empty answer because it will be tested as if a
+	// human had asserted it.
+	ProposeHypotheses(ctx context.Context, facts []models.Fact, existing []string, max int) ([]*ProposedHypothesis, error)
 }

@@ -62,21 +62,39 @@ func scanHypothesisRows(rows pgx.Rows) ([]models.Hypothesis, error) {
 	return result, rows.Err()
 }
 
-// CreateHypothesis creates a new hypothesis in proposed status.
-func (b *Brain) CreateHypothesis(ctx context.Context, nsID int64, content, verificationPlan string, confidence float32, sourceFactIDs []int64) (*models.Hypothesis, error) {
-	if content == "" {
+// hypothesisInput is everything an insert needs. Method is explicit rather than
+// left to the column default because a belief the consolidator inferred itself
+// must stay distinguishable from one an agent asserted — the dashboard and the
+// auto-confirm guard both depend on that difference.
+type hypothesisInput struct {
+	NamespaceID      int64
+	Content          string
+	VerificationPlan string
+	Confidence       float32
+	SourceFactIDs    []int64
+	Method           string
+	// Detail is merged into the `proposed` log entry (reasoning, provenance).
+	Detail map[string]any
+}
+
+func (b *Brain) insertHypothesis(ctx context.Context, in hypothesisInput) (*models.Hypothesis, error) {
+	if in.Content == "" {
 		return nil, ErrEmptyContent
 	}
-	sourceFactIDs = nonNilIDs(sourceFactIDs)
+	sourceFactIDs := nonNilIDs(in.SourceFactIDs)
+	method := in.Method
+	if method == "" {
+		method = "asserted"
+	}
 
 	var h models.Hypothesis
 	err := b.pool.QueryRow(ctx,
-		`INSERT INTO hypotheses (namespace_id, content, confidence, verification_plan, source_fact_ids)
-		 VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO hypotheses (namespace_id, content, confidence, verification_plan, source_fact_ids, method)
+		 VALUES ($1, $2, $3, $4, $5, $6)
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
 		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
 		 created_at, updated_at, deleted_at, counter_of`,
-		nsID, content, confidence, verificationPlan, sourceFactIDs,
+		in.NamespaceID, in.Content, in.Confidence, in.VerificationPlan, sourceFactIDs, method,
 	).Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
@@ -86,13 +104,18 @@ func (b *Brain) CreateHypothesis(ctx context.Context, nsID int64, content, verif
 	if err != nil {
 		return nil, fmt.Errorf("create hypothesis: %w", err)
 	}
+
+	detail := map[string]any{"method": h.Method, "source_fact_ids": sourceFactIDs}
+	for k, v := range in.Detail {
+		detail[k] = v
+	}
 	if err := recordHypothesisEvent(ctx, b.pool, hypothesisEvent{
 		HypothesisID: h.ID,
-		NamespaceID:  nsID,
+		NamespaceID:  in.NamespaceID,
 		Event:        HypothesisEventProposed,
 		StatusTo:     h.Status,
 		ConfidenceTo: &h.Confidence,
-		Detail:       map[string]any{"method": h.Method, "source_fact_ids": sourceFactIDs},
+		Detail:       detail,
 	}); err != nil {
 		return nil, err
 	}
@@ -102,6 +125,18 @@ func (b *Brain) CreateHypothesis(ctx context.Context, nsID int64, content, verif
 	b.proposeCounterHypothesis(ctx, &h)
 
 	return &h, nil
+}
+
+// CreateHypothesis creates a new hypothesis in proposed status.
+func (b *Brain) CreateHypothesis(ctx context.Context, nsID int64, content, verificationPlan string, confidence float32, sourceFactIDs []int64) (*models.Hypothesis, error) {
+	return b.insertHypothesis(ctx, hypothesisInput{
+		NamespaceID:      nsID,
+		Content:          content,
+		VerificationPlan: verificationPlan,
+		Confidence:       confidence,
+		SourceFactIDs:    sourceFactIDs,
+		Method:           "asserted",
+	})
 }
 
 // hypothesisWhere builds the filter ListHypotheses and CountHypotheses share.

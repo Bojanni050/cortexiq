@@ -141,6 +141,12 @@ func (r *fakeReasoner) ProposeCounterHypothesis(context.Context, models.Hypothes
 	return nil, nil
 }
 
+// ProposeHypotheses returns nothing: a proposal would add a hypothesis to every
+// fixture that runs the consolidation pipeline, and these tests are about facts.
+func (r *fakeReasoner) ProposeHypotheses(context.Context, []models.Fact, []string, int) ([]*reasoner.ProposedHypothesis, error) {
+	return nil, nil
+}
+
 type testEnv struct {
 	b    *Brain
 	r    *fakeReasoner

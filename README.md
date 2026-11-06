@@ -638,6 +638,12 @@ Point the critic at a different model than the reasoner (`CORTEXIQ_CRITIC_MODEL`
 
 Everything either side does lands in the hypothesis log (`Hypothesis log` in the dashboard, `list_hypothesis_events` over MCP), with the actor, the state change and the reasoning.
 
+### Inferred hypotheses
+
+Left alone, the hypothesis table stays empty: nothing in the pipeline invents beliefs, and a client that never calls `create_hypothesis` never fills it. With `CORTEXIQ_HYPOTHESIS_AUTO_PROPOSE=true` the consolidator takes the facts it just wrote and asks the reasoner whether any of them imply something testable — "this keeps happening", "A is causing B", "this will break again" — and stores at most `CORTEXIQ_HYPOTHESIS_MAX_PROPOSALS` (default 2) of them per namespace per run as a hypothesis with `method='inferred'`.
+
+Two things keep that from becoming a machine that talks itself into things. An inferred hypothesis is **never auto-confirmed**: it can be tested, refined and auto-rejected, but only a human confirms it, because the evidence that produced the guess is not evidence for it. And each one is handed to the critic like any other hypothesis, so memory's own guess immediately gets an opposing case. The log shows every step with actor `consolidator`, so an inferred belief is always distinguishable from one an agent asserted.
+
 ## Upstream cloud (Stash, Beta — Free)
 
 The upstream project this fork is based on hosts a multi-tenant version at **[usestash.io](https://usestash.io/)**, free while in beta. It is not part of CortexIQ.

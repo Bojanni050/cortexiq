@@ -1021,6 +1021,11 @@ WHAT TO DO WITH RESULTS:
 - confirmed → the fact is already in the knowledge base, no action needed
 - rejected → note the rejection reason, do not re-propose the same hypothesis
 
+WHERE THEY COME FROM:
+- method "asserted": a client or a human proposed it
+- method "counter": the critic model argued the other side of another hypothesis (counter_of points at it)
+- method "inferred": the consolidator proposed it on its own from the facts it had just written. These are never auto-confirmed — only a human confirms them — so treat an inferred hypothesis as a question the memory raised, not as something it believes.
+
 COST OF NOT CALLING: Uncertainties persist indefinitely. You operate on assumptions without verification. Confirmed hypotheses don't become facts. Rejected hypotheses get re-proposed.
 {{end}}
 

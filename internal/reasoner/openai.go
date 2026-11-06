@@ -1273,6 +1273,202 @@ func (o *OpenAI) ProposeCounterHypothesis(ctx context.Context, h models.Hypothes
 	return result, nil
 }
 
+// --- ProposeHypotheses ---
+
+// jsonProposedHypothesis is one entry the model may return when looking for a
+// belief implied by the facts.
+type jsonProposedHypothesis struct {
+	Content          string  `json:"content"`
+	VerificationPlan string  `json:"verification_plan"`
+	Confidence       float32 `json:"confidence"`
+	Reasoning        string  `json:"reasoning"`
+	SourceFactIDs    []int64 `json:"source_fact_ids"`
+}
+
+// proposalPrompt asks for the one thing a consolidator can honestly produce: a
+// belief the facts point at but do not state. The failure modes are named
+// explicitly because both are tempting: dressing up a fact as a hypothesis, and
+// inventing a belief to have something to show.
+func proposalPrompt(facts []models.Fact, existing []string, max int) string {
+	var factLines []string
+	for _, f := range facts {
+		factLines = append(factLines, fmt.Sprintf("#%d: %s", f.ID, f.Content))
+	}
+	factBlock := strings.Join(factLines, "\n")
+
+	existingBlock := "None."
+	if len(existing) > 0 {
+		var lines []string
+		for _, e := range existing {
+			lines = append(lines, "- "+e)
+		}
+		existingBlock = strings.Join(lines, "\n")
+	}
+
+	return fmt.Sprintf(`You are looking for a belief that the stored facts imply but do not state.
+
+Facts recorded recently:
+%s
+
+Hypotheses already on record (do not restate any of these, not even in different words):
+%s
+
+A fact says what happened. A hypothesis predicts, explains or generalises: "this will happen again", "this happens because of X", "this holds outside the case we saw". If a candidate only restates a fact, it is not a hypothesis.
+
+Propose at most %d hypotheses, each one falsifiable and specific enough that a future observation could prove it wrong. For each, give a verification plan: the observation, measurement or test that would settle it. A plan that cannot fail is not a plan.
+
+Rules:
+- Use only the facts above. Do not introduce entities or events they do not mention.
+- confidence is your honest confidence, at most 0.5. These are machine guesses awaiting evidence, not established beliefs.
+- source_fact_ids lists the fact numbers the hypothesis rests on, and only those.
+- If the facts hold no genuine uncertainty, return an empty list. An empty answer is a correct answer; inventing a belief costs a critic call and pollutes the log.
+
+Output ONLY a JSON object:
+{"hypotheses": [{"content": "the belief, one or two sentences", "verification_plan": "what to check that would settle it", "confidence": 0.4, "reasoning": "why the facts point here", "source_fact_ids": [12, 15]}]}`, factBlock, existingBlock, max)
+}
+
+// proposalParse accepts both shapes models actually return: the documented
+// object and a bare array.
+func proposalParse(raw string) ([]jsonProposedHypothesis, error) {
+	var wrapped struct {
+		Hypotheses []jsonProposedHypothesis `json:"hypotheses"`
+	}
+	if err := json.Unmarshal([]byte(raw), &wrapped); err == nil && wrapped.Hypotheses != nil {
+		return wrapped.Hypotheses, nil
+	}
+	var list []jsonProposedHypothesis
+	if err := json.Unmarshal([]byte(raw), &list); err == nil {
+		return list, nil
+	}
+	return nil, fmt.Errorf("expected an object with a hypotheses array or a bare array")
+}
+
+// validateProposedHypotheses keeps the proposals that can be tested and drops
+// the rest. A proposal without a verification plan is a guess with a title, and
+// a near-restatement of something already on record is worse than nothing: it
+// looks like new doubt while being the same doubt again.
+func validateProposedHypotheses(raw []jsonProposedHypothesis, existing []string, max int) []*ProposedHypothesis {
+	if max <= 0 {
+		return nil
+	}
+	seen := make([]string, 0, len(existing)+len(raw))
+	seen = append(seen, existing...)
+
+	var out []*ProposedHypothesis
+	for _, r := range raw {
+		if len(out) >= max {
+			break
+		}
+		content := strings.TrimSpace(r.Content)
+		plan := strings.TrimSpace(r.VerificationPlan)
+		if content == "" || plan == "" {
+			continue
+		}
+		if similarText(content, seen) {
+			continue
+		}
+		conf := r.Confidence
+		if conf <= 0 {
+			conf = 0.3
+		}
+		if conf > 0.5 {
+			conf = 0.5
+		}
+		out = append(out, &ProposedHypothesis{
+			Content:          content,
+			VerificationPlan: plan,
+			Confidence:       conf,
+			Reasoning:        strings.TrimSpace(r.Reasoning),
+			SourceFactIDs:    r.SourceFactIDs,
+		})
+		seen = append(seen, content)
+	}
+	return out
+}
+
+// similarText reports whether s repeats anything in prior. It compares word
+// sets rather than exact strings, because "de API is traag door X" and "de API
+// is traag vanwege X" are the same belief written twice.
+func similarText(s string, prior []string) bool {
+	target := words(s)
+	if len(target) == 0 {
+		return true
+	}
+	for _, p := range prior {
+		if strings.EqualFold(strings.TrimSpace(p), strings.TrimSpace(s)) {
+			return true
+		}
+		other := words(p)
+		if len(other) == 0 {
+			continue
+		}
+		shared := 0
+		for w := range target {
+			if _, ok := other[w]; ok {
+				shared++
+			}
+		}
+		union := len(target) + len(other) - shared
+		// 0.65 rather than 0.75: a rewording usually swaps one connective for
+		// another ("door" vs "vanwege"), and at 0.75 that single swap was enough
+		// to let the same belief in twice.
+		if union > 0 && float64(shared)/float64(union) >= 0.65 {
+			return true
+		}
+	}
+	return false
+}
+
+// words lowercases s and keeps the words that carry meaning. Short words are
+// dropped so that "the", "and" and "van" cannot make two unrelated beliefs look
+// alike.
+func words(s string) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, w := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		if len([]rune(w)) >= 4 {
+			out[w] = struct{}{}
+		}
+	}
+	return out
+}
+
+// ProposeHypotheses asks a model what the facts imply but do not say.
+func (o *OpenAI) ProposeHypotheses(ctx context.Context, facts []models.Fact, existing []string, max int) ([]*ProposedHypothesis, error) {
+	msgs := []openai.ChatCompletionMessageParamUnion{
+		openai.SystemMessage(systemPrompt),
+		openai.UserMessage(proposalPrompt(facts, existing, max)),
+	}
+
+	var result []*ProposedHypothesis
+	var valErr error
+
+	for attempt := 0; attempt < 2; attempt++ {
+		output, err := o.chat(ctx, "hypothesis_proposal", msgs)
+		if err != nil {
+			return nil, err
+		}
+		raw := extractJSON(output)
+
+		parsed, err := proposalParse(raw)
+		if err != nil {
+			valErr = fmt.Errorf("parse json: %w", err)
+			msgs = append(msgs, openai.SystemMessage(retryWarning))
+			continue
+		}
+
+		result = validateProposedHypotheses(parsed, existing, max)
+		valErr = nil
+		break
+	}
+
+	if valErr != nil {
+		return nil, valErr
+	}
+	return result, nil
+}
+
 // --- Helpers ---
 
 func extractJSON(s string) string {

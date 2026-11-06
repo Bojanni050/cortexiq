@@ -92,6 +92,14 @@ func (b *Brain) consolidateHypothesisEvidence(ctx context.Context, nsID int64, c
 				}
 				updated++
 			case "testing":
+				// A belief the consolidator inferred from facts must never be
+				// confirmed by the consolidator: that is memory voting for its own
+				// guess with the evidence that produced it. It waits for a human or
+				// an agent to confirm it explicitly.
+				if hyp.Method == MethodInferred {
+					log.Printf("hypothesis %d: not auto-confirming an inferred hypothesis", r.HypothesisID)
+					continue
+				}
 				// A belief and the case against it must never both become facts on
 				// the same batch of evidence: that is not a conclusion, it is a
 				// contradiction the memory would store twice. When the counterpart

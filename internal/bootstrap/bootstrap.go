@@ -160,6 +160,8 @@ func New(ctx context.Context) (*Context, error) {
 		ExpiryThreshold:                cfg.ExpiryThreshold,
 		HypothesisAutoConfirmThreshold: cfg.HypothesisAutoConfirmThreshold,
 		HypothesisAutoRejectThreshold:  cfg.HypothesisAutoRejectThreshold,
+		HypothesisAutoPropose:          cfg.HypothesisAutoPropose,
+		HypothesisMaxProposals:         cfg.HypothesisMaxProposals,
 		RelationshipBatchSize:          cfg.RelationshipBatchSize,
 		MaxLLMCallsPerRun:              cfg.MaxLLMCallsPerRun,
 		HybridRecall:                   cfg.HybridRecall,

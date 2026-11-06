@@ -2069,7 +2069,7 @@ async function renderHypotheses() {
       counters = new Map(pageItems.filter(h => h.counter_of).map(h => [h.counter_of, h]));
     },
     row: h => `<tr class="rowlink" onclick="pickRow('hypotheses', ${h.id}, this)">
-      <td class="wrap"><span class="mono">#${h.id}</span> ${esc(h.content)}${h.counter_of ? ` <span class="muted">(counter of #${h.counter_of})</span>` : counterTag(h)}</td>
+      <td class="wrap"><span class="mono">#${h.id}</span> ${esc(h.content)}${h.method === 'inferred' ? ' <span class="badge pending" title="Proposed by the consolidator itself; only a human confirms it.">inferred</span>' : ''}${h.counter_of ? ` <span class="muted">(counter of #${h.counter_of})</span>` : counterTag(h)}</td>
       <td class="row-actions">
         ${h.status === 'confirmed' || h.status === 'rejected' ? '' : `<button onclick="event.stopPropagation();hypoConfirm(${h.id})">confirm</button>
         <button onclick="event.stopPropagation();hypoReject(${h.id})">reject</button>`}
@@ -2617,6 +2617,7 @@ async function renderHypothesisLog() {
     if (d.counter_of) bits.push('counter of #' + d.counter_of);
     if (d.counter_id) bits.push('counter #' + d.counter_id);
     if (d.independent === false) bits.push('not independent');
+    if (d.method) bits.push(d.method);
     if (d.critic_model) bits.push(d.critic_model);
     if (d.reasoning) bits.push(d.reasoning);
     if (ev.fact_id) bits.push('fact #' + ev.fact_id);

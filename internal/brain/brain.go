@@ -109,6 +109,13 @@ type Config struct {
 	DecaySplit                     bool
 	HypothesisAutoConfirmThreshold float32
 	HypothesisAutoRejectThreshold  float32
+	// HypothesisAutoPropose lets the consolidator propose testable beliefs from
+	// the facts it just extracted, with method "inferred". Off by default: it
+	// spends a reasoner call plus a critic call per proposal, and a deployment
+	// that wants memory to have opinions should say so.
+	HypothesisAutoPropose bool
+	// HypothesisMaxProposals caps proposals per namespace per run. Zero means two.
+	HypothesisMaxProposals int
 	// RelationshipBatchSize is how many facts go into one relationship-extraction call.
 	RelationshipBatchSize int
 	// MaxLLMCallsPerRun hard-limits reasoner calls during one consolidation run.
@@ -193,6 +200,7 @@ func DefaultConfig() Config {
 		ExpiryThreshold:                0.1,
 		HypothesisAutoConfirmThreshold: 0.9,
 		HypothesisAutoRejectThreshold:  0.9,
+		HypothesisMaxProposals:         2,
 		RelationshipBatchSize:          defaultRelationshipBatchSize,
 		MinEpisodeLength:               defaultMinEpisodeLength,
 		SocialFilter:                   true,

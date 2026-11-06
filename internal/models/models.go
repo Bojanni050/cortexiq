@@ -224,20 +224,21 @@ type Failure struct {
 
 // ConsolidationProgress tracks per-stage checkpoint per namespace.
 type ConsolidationProgress struct {
-	NamespaceID            int64      `db:"namespace_id"`
-	LastEpisodeID          int64      `db:"last_episode_id"`
-	LastFactID             int64      `db:"last_fact_id"`
-	LastRelationshipID     int64      `db:"last_relationship_id"`
-	LastPatternFactID      int64      `db:"last_pattern_fact_id"`
-	LastPatternRelID       int64      `db:"last_pattern_rel_id"`
-	LastGoalProgressFactID int64      `db:"last_goal_progress_fact_id"`
-	LastFailureID          int64      `db:"last_failure_id"`
-	LastFailureEpisodeID   int64      `db:"last_failure_episode_id"`
-	LastHypothesisFactID   int64      `db:"last_hypothesis_fact_id"`
-	LastCausalFactID       int64      `db:"last_causal_fact_id"`
-	LastDecayRun           *time.Time `db:"last_decay_run"`
-	LastRun                *time.Time `db:"last_run"`
-	UpdatedAt              time.Time  `db:"updated_at"`
+	NamespaceID                  int64      `db:"namespace_id"`
+	LastEpisodeID                int64      `db:"last_episode_id"`
+	LastFactID                   int64      `db:"last_fact_id"`
+	LastRelationshipID           int64      `db:"last_relationship_id"`
+	LastPatternFactID            int64      `db:"last_pattern_fact_id"`
+	LastPatternRelID             int64      `db:"last_pattern_rel_id"`
+	LastGoalProgressFactID       int64      `db:"last_goal_progress_fact_id"`
+	LastFailureID                int64      `db:"last_failure_id"`
+	LastFailureEpisodeID         int64      `db:"last_failure_episode_id"`
+	LastHypothesisFactID         int64      `db:"last_hypothesis_fact_id"`
+	LastHypothesisProposalFactID int64      `db:"last_hypothesis_proposal_fact_id"`
+	LastCausalFactID             int64      `db:"last_causal_fact_id"`
+	LastDecayRun                 *time.Time `db:"last_decay_run"`
+	LastRun                      *time.Time `db:"last_run"`
+	UpdatedAt                    time.Time  `db:"updated_at"`
 }
 
 // Setting is a key-value store for operational state.

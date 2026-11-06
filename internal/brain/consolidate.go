@@ -46,6 +46,7 @@ type ConsolidationResult struct {
 	HypothesesAutoConfirmed    int      `json:"hypotheses_auto_confirmed"`
 	HypothesesAutoRejected     int      `json:"hypotheses_auto_rejected"`
 	HypothesesUpdated          int      `json:"hypotheses_updated"`
+	HypothesesProposed         int      `json:"hypotheses_proposed"`
 	FactsDecayed               int      `json:"facts_decayed"`
 	FactsExpired               int      `json:"facts_expired"`
 	MentalModelsRefreshed      int      `json:"mental_models_refreshed"`
@@ -101,7 +102,8 @@ func (b *Brain) ConsolidateByIDWithTags(ctx context.Context, nsID int64, tags []
 // 5. Failure Pattern Detection            (recurring failures across episodes)
 // 6. Facts + Relationships -> Patterns    (extract abstractions)
 // 7. Hypothesis Evidence Scanning         (auto-confirm/reject pending hypotheses)
-// 8. Confidence Decay                     (pure-SQL, no LLM)
+// 8. Hypothesis Proposals                 (propose inferred beliefs from new facts)
+// 9. Confidence Decay                     (pure-SQL, no LLM)
 func (b *Brain) ConsolidateByID(ctx context.Context, nsID int64) (ConsolidationResult, error) {
 	return b.consolidateByIDWithTags(ctx, nsID, nil)
 }
@@ -232,6 +234,15 @@ func (b *Brain) consolidateNamespace(ctx context.Context, nsID int64) (Consolida
 		result.HypothesesAutoConfirmed = autoConfirmed
 		result.HypothesesAutoRejected = autoRejected
 		result.HypothesesUpdated = updated
+		result.LLMCalls += llmCalls
+		result.Errors = append(result.Errors, errs...)
+	}
+
+	// Stage 8b: Hypothesis Proposals. Runs after evidence scanning so a proposal
+	// is not immediately judged against the same facts that suggested it.
+	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
+		proposed, llmCalls, errs := b.consolidateHypothesisProposals(ctx, nsID, cp)
+		result.HypothesesProposed = proposed
 		result.LLMCalls += llmCalls
 		result.Errors = append(result.Errors, errs...)
 	}
