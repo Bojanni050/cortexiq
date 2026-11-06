@@ -4,6 +4,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/pgvector/pgvector-go"
@@ -165,6 +166,29 @@ type Hypothesis struct {
 	CreatedAt        time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt        time.Time  `db:"updated_at" json:"updated_at"`
 	DeletedAt        *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
+}
+
+// HypothesisEvent is one entry in a hypothesis' history. It answers who moved
+// the belief, from which state to which, and on what evidence — the hypothesis
+// row itself only holds the latest state.
+type HypothesisEvent struct {
+	ID             int64           `db:"id" json:"id"`
+	HypothesisID   int64           `db:"hypothesis_id" json:"hypothesis_id"`
+	NamespaceID    int64           `db:"namespace_id" json:"namespace_id"`
+	Event          string          `db:"event" json:"event"`
+	Actor          string          `db:"actor" json:"actor"`
+	StatusFrom     *string         `db:"status_from" json:"status_from"`
+	StatusTo       string          `db:"status_to" json:"status_to"`
+	ConfidenceFrom *float32        `db:"confidence_from" json:"confidence_from"`
+	ConfidenceTo   *float32        `db:"confidence_to" json:"confidence_to"`
+	Reason         *string         `db:"reason" json:"reason"`
+	FactID         *int64          `db:"fact_id" json:"fact_id"`
+	Detail         json.RawMessage `db:"detail" json:"detail,omitempty"`
+	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
+
+	// HypothesisContent is joined in for display: a deleted hypothesis must
+	// still be readable in the log, and the log is what explains the delete.
+	HypothesisContent string `db:"hypothesis_content" json:"hypothesis_content"`
 }
 
 // Goal is an intended outcome that persists across sessions.

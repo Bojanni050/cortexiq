@@ -1030,6 +1030,37 @@ Filter by status: "proposed", "testing", "confirmed", or "rejected". Empty retur
 {{end}}
 
 
+{{define "list_hypothesis_events_description"}}
+Lists the hypothesis log — an append-only history of every hypothesis, including the ones that were rejected or deleted and therefore no longer appear in list_hypotheses.
+
+Each entry answers: what happened (proposed, testing, evidence, refined, confirmed, rejected, deleted), who did it (the token, "consolidator" for the background sweep, or "system"), which state it came from and went to, how confidence moved, and why — the rejection reason or the reasoning behind an auto-decision.
+
+CALL THIS WHEN:
+- The user asks what happened to a hypothesis, or why one was rejected
+- A hypothesis looks different from what you remember and you want to know why
+- You need to check whether anything was ever proposed at all: an empty list here means nothing has been created yet, which is different from "nothing is open"
+- You are auditing an auto-confirm or auto-reject and need the evidence behind it
+
+READING IT:
+- "proposed" → an agent or a human asserted the belief
+- "testing" → it moved into investigation, usually by the consolidator
+- "evidence" → confidence shifted after a batch of facts was weighed (detail has the verdict and the LLM confidence)
+- "confirmed" → it became a fact; fact_id points at the row in facts
+- "rejected" → reason says why
+- "refined" → content, plan or confidence was rewritten and it went back to proposed
+- "deleted" → soft-deleted; the history stays
+
+DO NOT CALL THIS WHEN:
+- You want the current state of open hypotheses — use list_hypotheses
+- You want established facts — use query_facts
+{{end}}
+
+
+{{define "list_hypothesis_events_id"}}
+Only return events for this hypothesis ID. Omit for the whole log.
+{{end}}
+
+
 {{define "create_hypothesis_description"}}
 Creates a hypothesis — a belief held with uncertainty plus a plan for how to verify it.
 

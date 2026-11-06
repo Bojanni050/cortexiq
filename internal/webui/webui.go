@@ -67,6 +67,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/goals/", h.goalItem)
 	api.HandleFunc("/api/v1/hypotheses", h.hypotheses)
 	api.HandleFunc("/api/v1/hypotheses/", h.hypothesisItem)
+	api.HandleFunc("/api/v1/hypothesis-events", h.hypothesisEvents)
 	api.HandleFunc("/api/v1/contradictions", h.contradictions)
 	api.HandleFunc("/api/v1/contradictions/", h.contradictionItem)
 	api.HandleFunc("/api/v1/failures", h.failures)
@@ -1291,6 +1292,36 @@ func (h *Handler) hypotheses(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
 	}
+}
+
+// hypothesisEvents serves the append-only log of what happened to hypotheses:
+// who moved one, from which state to which, on what evidence. The hypothesis
+// row only keeps the latest state, so this is the only way to see a rejection
+// that was later reopened, or a confidence that drifted call by call.
+func (h *Handler) hypothesisEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	var hypothesisID int64
+	if raw := r.URL.Query().Get("hypothesis_id"); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, errors.New("hypothesis_id must be a number"))
+			return
+		}
+		hypothesisID = id
+	}
+	items, err := h.Brain.ListHypothesisEvents(r.Context(), namespacesParam(r), hypothesisID, pagination(r))
+	if !hdl(w, err) {
+		return
+	}
+	n, err := h.Brain.CountHypothesisEvents(r.Context(), namespacesParam(r), hypothesisID)
+	if !hdl(w, err) {
+		return
+	}
+	total(w, n)
+	writeJSON(w, http.StatusOK, nonNil(items))
 }
 
 func (h *Handler) hypothesisItem(w http.ResponseWriter, r *http.Request) {

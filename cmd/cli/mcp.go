@@ -1145,6 +1145,34 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
+	mcpServer.AddTool(mcp.NewTool("list_hypothesis_events",
+		mcp.WithDescription(render("list_hypothesis_events_description")),
+		mcp.WithString("namespaces", mcp.Description(render("namespaces_param"))),
+		mcp.WithNumber("hypothesis_id", mcp.Description(render("list_hypothesis_events_id"))),
+		mcp.WithNumber("limit", mcp.Description(render("pagination_limit")), mcp.DefaultNumber(100)),
+		mcp.WithNumber("offset", mcp.Description(render("pagination_offset")), mcp.DefaultNumber(0)),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		nsRaw := request.GetString("namespaces", "/")
+		var namespaces []string
+		for _, ns := range strings.Split(nsRaw, ",") {
+			if ns = strings.TrimSpace(ns); ns != "" {
+				namespaces = append(namespaces, ns)
+			}
+		}
+
+		page := brain.Pagination{
+			Limit:  request.GetInt("limit", 100),
+			Offset: request.GetInt("offset", 0),
+		}
+
+		events, err := bc.Brain.ListHypothesisEvents(ctx, namespaces, int64(request.GetInt("hypothesis_id", 0)), page)
+		if err != nil {
+			return nil, err
+		}
+		b, _ := json.Marshal(events)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
 	mcpServer.AddTool(mcp.NewTool("list_goals",
 		mcp.WithDescription(render("list_goals_description")),
 		mcp.WithString("namespaces", mcp.Description(render("namespaces_param"))),
@@ -1339,20 +1367,21 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 // of the memory it is allowed to read. Its absence was reported as a 403 on a
 // read tool, which is exactly the confusion this list exists to avoid.
 var readOnlyTools = map[string]bool{
-	"recall":              true,
-	"reflect":             true,
-	"query_facts":         true,
-	"query_relationships": true,
-	"list_namespaces":     true,
-	"list_tags":           true,
-	"list_goals":          true,
-	"list_hypotheses":     true,
-	"list_contradictions": true,
-	"list_failures":       true,
-	"list_causal_links":   true,
-	"get_context":         true,
-	"trace_causal_chain":  true,
-	"memory_stats":        true,
+	"recall":                 true,
+	"reflect":                true,
+	"query_facts":            true,
+	"query_relationships":    true,
+	"list_namespaces":        true,
+	"list_tags":              true,
+	"list_goals":             true,
+	"list_hypotheses":        true,
+	"list_hypothesis_events": true,
+	"list_contradictions":    true,
+	"list_failures":          true,
+	"list_causal_links":      true,
+	"get_context":            true,
+	"trace_causal_chain":     true,
+	"memory_stats":           true,
 }
 
 // readOnlyMCP rejects tools/call requests for mutating tools when the token is
@@ -1383,6 +1412,13 @@ func readOnlyMCP(challenge string, next http.Handler) http.Handler {
 		}
 		_ = json.Unmarshal(body, &msg)
 		if msg.Method == "tools/call" && !readOnlyTools[msg.Params.Name] {
+			// A refused write used to be completely silent: the client saw a 403
+			// and the server said nothing, so "my tool does nothing" had no trail.
+			principal := "unknown"
+			if p, ok := scope.From(r.Context()); ok {
+				principal = p.Name
+			}
+			log.Printf("read-only token %q tried to call %q; refused", principal, msg.Params.Name)
 			w.Header().Set("Content-Type", "application/json")
 			if challenge != "" {
 				w.Header().Set("WWW-Authenticate", challenge)

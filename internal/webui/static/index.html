@@ -645,6 +645,7 @@ const tabs = [
   ['goals', 'Goals', 'What the agent is working towards'],
   ['mental', 'Mental Models', 'Curated summaries searched first in reflect'],
   ['hypotheses', 'Hypotheses', 'Unverified beliefs waiting for evidence'],
+  ['hypolog', 'Hypothesis log', 'Every hypothesis ever, including rejected and deleted ones, with who moved it and why'],
   ['contradictions', 'Contradictions', 'Facts that disagree with each other'],
   ['failures', 'Failures', 'What went wrong, and what was learned'],
   ['links', 'Causal Links', 'Cause and effect between facts'],
@@ -661,7 +662,7 @@ const tabs = [
 // healthy") keeps every tab reachable without a second click.
 const NAV_GROUPS = [
   ['Memory', ['overview', 'episodes', 'facts', 'recall']],
-  ['Knowledge', ['graph', 'mental', 'goals', 'hypotheses', 'contradictions', 'failures', 'links']],
+  ['Knowledge', ['graph', 'mental', 'goals', 'hypotheses', 'hypolog', 'contradictions', 'failures', 'links']],
   ['System', ['status', 'namespaces', 'runs', 'lifecycle', 'settings', 'metrics', 'stats']],
 ];
 const nav = document.getElementById('nav');
@@ -1120,6 +1121,7 @@ const CTX_TIPS = {
   goals: ['Pick a goal', 'Its status, priority, related work and namespace show up here, with any notes.'],
   mental: ['Pick a mental model', 'Its source query, tags, freshness and the full text show up here.'],
   hypotheses: ['Pick a hypothesis', 'What it rests on, how to verify it and how it ended show up here.'],
+  hypolog: ['No row detail', 'An audit log: every row already shows what happened, to which belief, and why.'],
   contradictions: ['Pick a contradiction', 'Both sides, the facts behind them and the resolution show up here.'],
   failures: ['Pick a failure', 'Why it failed, the lesson and the goal it belonged to show up here.'],
   links: ['Pick a link', 'Both facts, the confidence and how the link was found show up here.'],
@@ -2580,6 +2582,60 @@ async function renderLifecycle() {
     '</div>';
 }
 
+// The hypothesis row only holds the latest state, so this is where a rejection
+// that was later reopened, or a confidence that drifted call by call, is still
+// visible. Deleted hypotheses stay readable here on purpose: the log is the
+// only place that says what they were.
+async function renderHypothesisLog() {
+  const events = await apiList('/hypothesis-events' + nsQS('&limit=200'));
+  const tone = { proposed: 'proposed', testing: 'testing', evidence: 'pending', refined: 'pending',
+    confirmed: 'confirmed', rejected: 'rejected', deleted: 'abandoned' };
+  const num = v => Number(v).toFixed(2);
+  const conf = ev => {
+    if (ev.confidence_from == null && ev.confidence_to == null) return '<span class="muted">—</span>';
+    if (ev.confidence_from == null || ev.confidence_to == null || ev.confidence_from === ev.confidence_to) {
+      return `<span class="mono">${num(ev.confidence_to == null ? ev.confidence_from : ev.confidence_to)}</span>`;
+    }
+    return `<span class="mono">${num(ev.confidence_from)} → ${num(ev.confidence_to)}</span>`;
+  };
+  // An evidence row's reason is the model's own wording; the detail carries the
+  // verdict and how much it weighed, which is what explains a confidence jump.
+  const why = ev => {
+    const d = ev.detail || {};
+    const bits = [];
+    if (d.verdict) bits.push(d.verdict);
+    if (d.llm_confidence != null) bits.push('llm ' + num(d.llm_confidence));
+    if (d.facts_considered) bits.push(d.facts_considered + ' facts');
+    if (d.source_fact_ids && d.source_fact_ids.length) bits.push(d.source_fact_ids.length + ' source facts');
+    if (ev.fact_id) bits.push('fact #' + ev.fact_id);
+    const head = ev.reason ? `<span class="wrap">${esc(ev.reason)}</span>` : '';
+    const tail = bits.length ? `<div class="muted">${esc(bits.join(' · '))}</div>` : '';
+    return head + tail || '<span class="muted">—</span>';
+  };
+  document.getElementById('content').innerHTML =
+    `<div class="card"><h3>Hypothesis log</h3>
+      <p class="muted" style="margin:0 0 12px">
+        Newest first, up to 200. Every belief that was ever proposed lands here, including the ones
+        that were rejected or deleted and therefore no longer appear under Hypotheses. The actor is
+        the token that made the change, <b>consolidator</b> for the background sweep, or <b>system</b>.
+      </p>` +
+      (events.length ? table(['When', 'Event', 'Hypothesis', 'State', 'Confidence', 'Why', 'By'],
+        events.map(ev => `<tr>
+          <td class="muted">${ts(ev.created_at)}</td>
+          <td><span class="badge ${tone[ev.event] || 'pending'}">${esc(ev.event)}</span></td>
+          <td><span class="mono">#${ev.hypothesis_id}</span> <span class="wrap">${esc(ev.hypothesis_content)}</span></td>
+          <td class="mono">${esc((ev.status_from || '—') + ' → ' + ev.status_to)}</td>
+          <td>${conf(ev)}</td>
+          <td>${why(ev)}</td>
+          <td class="mono">${esc(ev.actor)}</td>
+        </tr>`))
+        : `<p class="muted">Nothing has ever been proposed. That is different from "nothing is open":
+           the consolidator only tests hypotheses it finds, it never invents one. A client with a
+           read-only token cannot create one either — that call is refused with 403 and now shows up
+           in the server log.</p>`) +
+    '</div>';
+}
+
 async function renderRuns() {
   const dur = ms => ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : (ms || 0) + 'ms';
   const n = v => v ? String(v) : '<span class="muted">—</span>';
@@ -3089,7 +3145,7 @@ async function saveSchedule() {
 }
 
 const renderers = { overview: renderOverview, graph: renderGraph, episodes: renderEpisodes, recall: renderRecall, reflect: renderReflect, facts: renderFacts,
-  goals: renderGoals, mental: renderMentalModels, hypotheses: renderHypotheses, contradictions: renderContradictions,
+  goals: renderGoals, mental: renderMentalModels, hypotheses: renderHypotheses, hypolog: renderHypothesisLog, contradictions: renderContradictions,
   failures: renderFailures, links: renderLinks, namespaces: renderNamespaces, runs: renderRuns, lifecycle: renderLifecycle,
   status: renderStatus, settings: renderSettings, metrics: renderMetrics, stats: renderStats };
 

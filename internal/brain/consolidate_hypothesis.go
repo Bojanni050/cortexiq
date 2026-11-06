@@ -9,6 +9,10 @@ import (
 )
 
 func (b *Brain) consolidateHypothesisEvidence(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (autoConfirmed, autoRejected, updated, llmCalls int, errs []string) {
+	// Everything below is the sweep's own doing, so the log names it as such
+	// instead of falling back to whatever principal the scheduler ran under.
+	ctx = WithActor(ctx, ActorConsolidator)
+
 	rows, err := b.pool.Query(ctx,
 		`SELECT id, namespace_id, content, confidence, status, verification_plan, method,
 		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
@@ -114,6 +118,23 @@ func (b *Brain) consolidateHypothesisEvidence(ctx context.Context, nsID int64, c
 			)
 			if err != nil {
 				errs = append(errs, fmt.Sprintf("update hypothesis %d confidence: %v", r.HypothesisID, err))
+				continue
+			}
+			// A confidence that drifts without a trace is indistinguishable from
+			// one that was edited by hand, so every shift lands in the log.
+			reason := r.Reasoning
+			if err := recordHypothesisEvent(ctx, b.pool, hypothesisEvent{
+				HypothesisID:   r.HypothesisID,
+				NamespaceID:    hyp.NamespaceID,
+				Event:          HypothesisEventEvidence,
+				StatusFrom:     strPtr(hyp.Status),
+				StatusTo:       hyp.Status,
+				ConfidenceFrom: &hyp.Confidence,
+				ConfidenceTo:   &r.NewConfidence,
+				Reason:         strPtr(reason),
+				Detail:         map[string]any{"verdict": r.Verdict, "llm_confidence": r.Confidence, "facts_considered": len(facts)},
+			}); err != nil {
+				errs = append(errs, fmt.Sprintf("record evidence for hypothesis %d: %v", r.HypothesisID, err))
 				continue
 			}
 			updated++

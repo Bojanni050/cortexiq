@@ -86,6 +86,16 @@ func (b *Brain) CreateHypothesis(ctx context.Context, nsID int64, content, verif
 	if err != nil {
 		return nil, fmt.Errorf("create hypothesis: %w", err)
 	}
+	if err := recordHypothesisEvent(ctx, b.pool, hypothesisEvent{
+		HypothesisID: h.ID,
+		NamespaceID:  nsID,
+		Event:        HypothesisEventProposed,
+		StatusTo:     h.Status,
+		ConfidenceTo: &h.Confidence,
+		Detail:       map[string]any{"method": h.Method, "source_fact_ids": sourceFactIDs},
+	}); err != nil {
+		return nil, err
+	}
 	return &h, nil
 }
 
@@ -209,6 +219,15 @@ func (b *Brain) UpdateHypothesisStatus(ctx context.Context, id int64, status str
 	if err != nil {
 		return nil, fmt.Errorf("update hypothesis status: %w", err)
 	}
+	if err := recordHypothesisEvent(ctx, b.pool, hypothesisEvent{
+		HypothesisID: id,
+		NamespaceID:  h.NamespaceID,
+		Event:        status,
+		StatusFrom:   strPtr(current.Status),
+		StatusTo:     status,
+	}); err != nil {
+		return nil, err
+	}
 	return &h, nil
 }
 
@@ -298,6 +317,22 @@ func (b *Brain) ConfirmHypothesis(ctx context.Context, id int64) (*models.Hypoth
 		return nil, nil, fmt.Errorf("update hypothesis confirmed: %w", err)
 	}
 
+	// Inside the transaction: a confirmed hypothesis without the log entry that
+	// says why would be the exact gap this table exists to close.
+	if err := recordHypothesisEvent(ctx, tx, hypothesisEvent{
+		HypothesisID:   id,
+		NamespaceID:    h.NamespaceID,
+		Event:          HypothesisEventConfirmed,
+		StatusFrom:     strPtr(current.Status),
+		StatusTo:       "confirmed",
+		ConfidenceFrom: &current.Confidence,
+		ConfidenceTo:   &h.Confidence,
+		FactID:         &factID,
+		Detail:         map[string]any{"source_episode_ids": sourceEpisodes, "source_fact_ids": current.SourceFactIDs},
+	}); err != nil {
+		return nil, nil, err
+	}
+
 	var f models.Fact
 	err = tx.QueryRow(ctx,
 		`SELECT id, namespace_id, content, embedding, embedding_model, confidence,
@@ -354,6 +389,16 @@ func (b *Brain) RejectHypothesis(ctx context.Context, id int64, reason string) (
 	if err != nil {
 		return nil, fmt.Errorf("reject hypothesis: %w", err)
 	}
+	if err := recordHypothesisEvent(ctx, b.pool, hypothesisEvent{
+		HypothesisID: id,
+		NamespaceID:  h.NamespaceID,
+		Event:        HypothesisEventRejected,
+		StatusFrom:   strPtr(current.Status),
+		StatusTo:     "rejected",
+		Reason:       reasonPtr,
+	}); err != nil {
+		return nil, err
+	}
 	return &h, nil
 }
 
@@ -398,20 +443,44 @@ func (b *Brain) RefineHypothesis(ctx context.Context, id int64, content, verific
 	if err != nil {
 		return nil, fmt.Errorf("refine hypothesis: %w", err)
 	}
+	if err := recordHypothesisEvent(ctx, b.pool, hypothesisEvent{
+		HypothesisID:   id,
+		NamespaceID:    h.NamespaceID,
+		Event:          HypothesisEventRefined,
+		StatusFrom:     strPtr(current.Status),
+		StatusTo:       "proposed",
+		ConfidenceFrom: &current.Confidence,
+		ConfidenceTo:   &confidence,
+		Detail:         map[string]any{"content": content, "verification_plan": verificationPlan},
+	}); err != nil {
+		return nil, err
+	}
 	return &h, nil
 }
 
-// DeleteHypothesis soft-deletes a hypothesis by ID.
+// DeleteHypothesis soft-deletes a hypothesis by ID. The row stays (with its
+// log) so the history of what was believed is not rewritten by a delete.
 func (b *Brain) DeleteHypothesis(ctx context.Context, id int64) error {
-	tag, err := b.pool.Exec(ctx,
-		"UPDATE hypotheses SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
+	var nsID int64
+	var status string
+	err := b.pool.QueryRow(ctx,
+		"UPDATE hypotheses SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING namespace_id, status",
 		id,
-	)
+	).Scan(&nsID, &status)
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			return ErrHypothesisNotFound
+		}
 		return fmt.Errorf("delete hypothesis: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
-		return ErrHypothesisNotFound
+	if err := recordHypothesisEvent(ctx, b.pool, hypothesisEvent{
+		HypothesisID: id,
+		NamespaceID:  nsID,
+		Event:        HypothesisEventDeleted,
+		StatusFrom:   strPtr(status),
+		StatusTo:     status,
+	}); err != nil {
+		return err
 	}
 	return nil
 }
