@@ -36,7 +36,7 @@ func TestReadOnlyTokenMayReflectButNotWrite(t *testing.T) {
 		t.Run(tc.tool, func(t *testing.T) {
 			reached := false
 			next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true })
-			handler := readOnlyMCP(next)
+			handler := readOnlyMCP("", next)
 
 			body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` + tc.tool + `"}}`
 			r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
@@ -76,7 +76,7 @@ func TestReadOnlyTokenMayReflectButNotWrite(t *testing.T) {
 func TestReadOnlyTokenMayListTools(t *testing.T) {
 	reached := false
 	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true })
-	handler := readOnlyMCP(next)
+	handler := readOnlyMCP("", next)
 
 	for _, body := range []string{`{"method":"tools/list"}`, `{"method":"initialize"}`, `{"method":"ping"}`} {
 		r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))

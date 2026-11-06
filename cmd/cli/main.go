@@ -812,6 +812,67 @@ func main() {
 				},
 			},
 			{
+				Name:  "oauth",
+				Usage: "OAuth authorization server administration",
+				Commands: []*cli.Command{
+					{
+						Name:  "clients",
+						Usage: "OAuth clients that may obtain tokens",
+						Commands: []*cli.Command{
+							{
+								Name:   "list",
+								Usage:  "List registered clients",
+								Action: oauthClientsListCmd,
+							},
+							{
+								Name:   "add",
+								Usage:  "Pre-register a client that cannot register itself",
+								Action: oauthClientsAddCmd,
+								Flags: []cli.Flag{
+									&cli.StringFlag{Name: "name", Aliases: []string{"n"}, Usage: "Display name (required)"},
+									&cli.StringSliceFlag{Name: "redirect", Usage: "Registered callback URI (repeatable, required)"},
+									&cli.StringFlag{Name: "auth", Value: "secret", Usage: "secret (confidential) or none (public client with PKCE)"},
+								},
+							},
+							{
+								Name:      "disable",
+								Usage:     "Disable a client and reject its tokens",
+								ArgsUsage: "client_id",
+								Action:    oauthClientsDisableCmd,
+							},
+							{
+								Name:      "enable",
+								Usage:     "Re-enable a disabled client",
+								ArgsUsage: "client_id",
+								Action:    oauthClientsEnableCmd,
+							},
+						},
+					},
+					{
+						Name:  "tokens",
+						Usage: "OAuth tokens issued by this server",
+						Commands: []*cli.Command{
+							{
+								Name:   "list",
+								Usage:  "List issued tokens (metadata only; secrets are stored as digests)",
+								Action: oauthTokensListCmd,
+								Flags: []cli.Flag{
+									&cli.IntFlag{Name: "limit", Value: 50, Usage: "Maximum rows"},
+								},
+							},
+							{
+								Name:   "revoke",
+								Usage:  "Revoke every token of one client",
+								Action: oauthTokensRevokeCmd,
+								Flags: []cli.Flag{
+									&cli.StringFlag{Name: "client", Aliases: []string{"c"}, Usage: "client_id (required)"},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
 				Name:  "mcp",
 				Usage: "MCP server for agent integration",
 				Commands: []*cli.Command{

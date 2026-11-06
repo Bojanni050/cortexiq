@@ -10,6 +10,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/Bojanni050/cortexiq/internal/auth"
+	"github.com/Bojanni050/cortexiq/internal/oauth"
 )
 
 const testTokenSet = `[
@@ -17,8 +18,9 @@ const testTokenSet = `[
 	{"name": "ro", "token": "ro-secret", "scope": "ro"}
 ]`
 
-// testMCPHandler wires the same stack mcpServeCmd serves: auth, the read-only
-// gate, and both transports.
+// testMCPHandler wires the same stack mcpServeCmd serves: the OAuth-or-static
+// check, the read-only gate, and both transports. The OAuth server has no
+// database here: the static-token path never touches it.
 func testMCPHandler(t *testing.T) http.Handler {
 	t.Helper()
 	mcpServer := server.NewMCPServer("cortexiq-test", "0.0.0", server.WithToolCapabilities(false))
@@ -26,9 +28,15 @@ func testMCPHandler(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatalf("ParseSet: %v", err)
 	}
+	oauthSrv := oauth.NewServer(oauth.Config{
+		Issuer:        "https://cortexiq.test",
+		Resource:      "https://cortexiq.test/mcp",
+		AdminPassword: "test-password",
+	}, nil)
 	sseServer := server.NewSSEServer(mcpServer)
 	streamableServer := server.NewStreamableHTTPServer(mcpServer)
-	return auth.Require(set, readOnlyMCP(mcpHandler(sseServer, streamableServer)))
+	gate := readOnlyMCP(oauthSrv.InsufficientScopeChallenge(), mcpHandler(sseServer, streamableServer, oauthSrv))
+	return oauthSrv.RequireMCP(set, gate)
 }
 
 func initializeBody() string {
@@ -73,14 +81,37 @@ func TestStreamableHTTPRequiresToken(t *testing.T) {
 
 func TestStreamableHTTPReadOnlyGate(t *testing.T) {
 	h := testMCPHandler(t)
-	// A mutating tool is rejected before it reaches the server.
-	if rec := postJSON(t, h, "/mcp", "ro-secret", toolCallBody("remember")); rec.Code != http.StatusForbidden {
+	// A mutating tool is rejected before it reaches the server, with the MCP
+	// challenge that tells an OAuth client it needs memory:write.
+	rec := postJSON(t, h, "/mcp", "ro-secret", toolCallBody("remember"))
+	if rec.Code != http.StatusForbidden {
 		t.Fatalf("remember with ro token: status = %d, want 403", rec.Code)
+	}
+	if got := rec.Header().Get("WWW-Authenticate"); !strings.Contains(got, `error="insufficient_scope"`) {
+		t.Fatalf("WWW-Authenticate = %q, want insufficient_scope", got)
 	}
 	// A read-only tool passes the gate and fails later only because the test
 	// server registers no tools.
 	if rec := postJSON(t, h, "/mcp", "ro-secret", toolCallBody("recall")); rec.Code == http.StatusForbidden {
 		t.Fatalf("recall with ro token was blocked by the read-only gate")
+	}
+}
+
+// A client that gets a 401 must be able to read the discovery documents on the
+// same origin without a token; that is the whole entry point of the OAuth flow.
+func TestDiscoveryServedWithoutToken(t *testing.T) {
+	h := testMCPHandler(t)
+	for _, path := range []string{
+		"/.well-known/oauth-protected-resource",
+		"/.well-known/oauth-protected-resource/mcp",
+		"/.well-known/oauth-authorization-server",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", path, rec.Code)
+		}
 	}
 }
 

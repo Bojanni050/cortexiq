@@ -61,9 +61,23 @@ type Config struct {
 	// APITokens is a JSON array of {name, token, scope} that is added to
 	// APIToken: "rw" (default) or "ro" per caller.
 	APITokens string `env:"CORTEXIQ_API_TOKENS" envDefault:""`
-	HTTPAddr  string `env:"CORTEXIQ_HTTP_ADDR,required"`
-	LogLevel  string `env:"CORTEXIQ_LOG_LEVEL,required"`
-	LogFormat string `env:"CORTEXIQ_LOG_FORMAT,required"`
+	// OAuth 2.1 authorization server for the MCP endpoint. It is disabled unless
+	// both the issuer and the admin password are set: a half-configured
+	// authorization server is worse than none, so the MCP endpoint then keeps
+	// accepting only the static tokens above.
+	//
+	// Issuer is the public origin (https://cortexiq.example.com, no trailing
+	// slash). Resource is the audience tokens are bound to and defaults to
+	// Issuer + "/mcp".
+	OAuthIssuer        string `env:"CORTEXIQ_OAUTH_ISSUER" envDefault:""`
+	OAuthResource      string `env:"CORTEXIQ_OAUTH_RESOURCE" envDefault:""`
+	OAuthAdminPassword string `env:"CORTEXIQ_OAUTH_ADMIN_PASSWORD" envDefault:""`
+	// OAuthSessionSecret signs the consent-page cookie. Empty derives a key from
+	// the admin password, which survives restarts without extra configuration.
+	OAuthSessionSecret string `env:"CORTEXIQ_OAUTH_SESSION_SECRET" envDefault:""`
+	HTTPAddr           string `env:"CORTEXIQ_HTTP_ADDR,required"`
+	LogLevel           string `env:"CORTEXIQ_LOG_LEVEL,required"`
+	LogFormat          string `env:"CORTEXIQ_LOG_FORMAT,required"`
 
 	// Consolidation
 	ConsolidationBatchSize           int     `env:"CORTEXIQ_CONSOLIDATION_BATCH_SIZE" envDefault:"100"`

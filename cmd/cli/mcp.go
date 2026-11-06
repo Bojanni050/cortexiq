@@ -20,9 +20,9 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/Bojanni050/cortexiq/internal/auth"
 	"github.com/Bojanni050/cortexiq/internal/bootstrap"
 	"github.com/Bojanni050/cortexiq/internal/brain"
+	"github.com/Bojanni050/cortexiq/internal/oauth"
 	"github.com/Bojanni050/cortexiq/internal/scope"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -1357,7 +1357,12 @@ var readOnlyTools = map[string]bool{
 // readOnlyMCP rejects tools/call requests for mutating tools when the token is
 // read-only. The MCP transport is POST-based, so the tool name is read from the
 // JSON-RPC body; other methods (initialize, tools/list, ping) are read-only.
-func readOnlyMCP(next http.Handler) http.Handler {
+//
+// challenge is the WWW-Authenticate value for the 403. The MCP spec asks for
+// error="insufficient_scope" plus the metadata URL, which is how an OAuth client
+// learns that it must request memory:write instead of treating this as a hard
+// failure.
+func readOnlyMCP(challenge string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !scope.ReadOnly(r.Context()) || r.Method != http.MethodPost {
 			next.ServeHTTP(w, r)
@@ -1378,6 +1383,9 @@ func readOnlyMCP(next http.Handler) http.Handler {
 		_ = json.Unmarshal(body, &msg)
 		if msg.Method == "tools/call" && !readOnlyTools[msg.Params.Name] {
 			w.Header().Set("Content-Type", "application/json")
+			if challenge != "" {
+				w.Header().Set("WWW-Authenticate", challenge)
+			}
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = w.Write([]byte(`{"error":"read-only token: tool not allowed"}` + "\n"))
 			return
@@ -1396,11 +1404,19 @@ const mcpKeepAliveInterval = 15 * time.Second
 // (with its POST channel /message) for clients that still speak it, and
 // Streamable HTTP under /mcp for the rest. Hosted clients (Mistral Le Chat and
 // Vibe, monday, Gemini Enterprise) only support Streamable HTTP.
-func mcpHandler(sse *server.SSEServer, streamable *server.StreamableHTTPServer) http.Handler {
+//
+// The OAuth discovery documents and endpoints live on the same mux, so a client
+// that gets a 401 on /mcp can resolve them from the same origin. They must stay
+// outside the Bearer check: discovery is how an unauthenticated client finds out
+// where to authenticate.
+func mcpHandler(sse *server.SSEServer, streamable *server.StreamableHTTPServer, oauthSrv *oauth.Server) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/sse", sse)
 	mux.Handle("/message", sse)
 	mux.Handle("/mcp", streamable)
+	if oauthSrv != nil {
+		oauthSrv.Register(mux)
+	}
 	return mux
 }
 
@@ -1414,8 +1430,9 @@ func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 	port := cmd.String("port")
 	addr := host + ":" + port
 
-	// The SSE server is mounted behind the same Bearer-token check as the
-	// dashboard API. An empty token set leaves MCP open (as before).
+	// The MCP transports are mounted behind the Bearer check: a static token from
+	// CORTEXIQ_API_TOKENS or an OAuth access token issued by the built-in
+	// authorization server. With neither configured, MCP stays open (as before).
 	httpSrv := &http.Server{Addr: addr}
 	// The SSE stream carries no traffic while the agent is thinking, and clients
 	// sit behind proxies (tailscale serve/funnel) that drop idle connections.
@@ -1430,13 +1447,27 @@ func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 	streamableServer := server.NewStreamableHTTPServer(mcpServer,
 		server.WithHeartbeatInterval(mcpKeepAliveInterval),
 	)
-	httpSrv.Handler = auth.Require(bc.Auth, readOnlyMCP(mcpHandler(sseServer, streamableServer)))
-	if !bc.Auth.Enabled() {
-		log.Println("WARNING: no API token configured; the MCP server is unauthenticated")
+	// Static tokens and OAuth access tokens are both accepted on the MCP
+	// transports; discovery and the OAuth endpoints themselves stay open so an
+	// unauthenticated client can find its way to the consent page.
+	insufficient := ""
+	if bc.OAuth.Enabled() {
+		insufficient = bc.OAuth.InsufficientScopeChallenge()
+	}
+	httpSrv.Handler = bc.OAuth.RequireMCP(bc.Auth, readOnlyMCP(insufficient, mcpHandler(sseServer, streamableServer, bc.OAuth)))
+	if !bc.Auth.Enabled() && !bc.OAuth.Enabled() {
+		log.Println("WARNING: no API token and no OAuth issuer configured; the MCP server is unauthenticated")
+	}
+	if bc.OAuth.Enabled() {
+		fmt.Printf("OAuth authorization server enabled for %s (resource %s)\n", bc.OAuth.Issuer(), bc.OAuth.Resource())
 	}
 
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	if bc.OAuth.Enabled() {
+		bc.OAuth.StartCleanup(ctx)
+	}
 
 	var wg sync.WaitGroup
 

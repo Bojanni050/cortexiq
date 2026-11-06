@@ -423,6 +423,66 @@ listing others.
   scaffold — a read-only token that reports 403 there is working as intended.
 - `name`: only used in logs and error messages.
 
+### OAuth for hosted clients
+
+Static tokens are fine for a client whose configuration you can edit. They are
+awkward for hosted clients — Claude web, ChatGPT, Le Chat, Vibe, monday, Gemini
+Enterprise — where the service owns the configuration and expects a standard MCP
+authorization flow. For those, CortexIQ can be its own OAuth 2.1 authorization
+server:
+
+```bash
+CORTEXIQ_OAUTH_ISSUER=https://cortexiq.example.com
+CORTEXIQ_OAUTH_RESOURCE=https://cortexiq.example.com/mcp
+CORTEXIQ_OAUTH_ADMIN_PASSWORD=<a long random password>
+```
+
+Both `ISSUER` and `ADMIN_PASSWORD` are required; with either missing, OAuth is
+off and the static tokens remain the only way in. `RESOURCE` defaults to
+`ISSUER + "/mcp"`. Nothing else changes: static tokens keep working, so existing
+clients need no migration.
+
+The flow is the one the MCP spec describes. A client calls `/mcp` without a
+token, gets `401` with `WWW-Authenticate: Bearer resource_metadata="…"`, reads
+the metadata, registers itself (dynamic client registration, or a Client ID
+Metadata Document when it supports CIMD), opens `/oauth/authorize` in a browser,
+and you approve it there. You type the admin password once; an 8-hour signed
+cookie makes later approvals one click.
+
+| Endpoint | Purpose |
+|---|---|
+| `/.well-known/oauth-protected-resource` (`/mcp`) | resource, authorization server, scopes |
+| `/.well-known/oauth-authorization-server` | endpoints, PKCE `S256`, CIMD support |
+| `POST /oauth/register` | dynamic client registration |
+| `GET/POST /oauth/authorize` | login, consent, authorization code |
+| `POST /oauth/token` | code and refresh exchange |
+| `POST /oauth/revoke` | RFC 7009 revocation |
+
+Scopes are `memory:read` and `memory:write`. The consent page always offers read
+and lets you drop write; a read-only grant behaves exactly like an `ro` static
+token. Access tokens live one hour, refresh tokens thirty days and rotate on
+every use — replaying an old refresh token revokes the whole family. Only SHA-256
+digests are stored, so a database dump cannot be replayed.
+
+Manage clients and tokens from the server:
+
+```bash
+cortexiq oauth clients list
+cortexiq oauth clients add --name "Claude" --redirect https://claude.ai/api/mcp/auth_callback
+cortexiq oauth clients disable <client_id>
+cortexiq oauth tokens list
+cortexiq oauth tokens revoke --client <client_id>
+```
+
+Disabling a client keeps its row and history but rejects its tokens immediately.
+`clients add` is only needed for a service that cannot register itself; it prints
+the client secret once.
+
+Two limits are deliberate. There is one resource owner (you) and one admin
+password, so this is not multi-user: every approved client acts as you. And a
+token is not scoped to a namespace — it reaches every project, as static tokens
+already did.
+
 Point any MCP-compatible client at that URL. Example configs:
 
 With `CORTEXIQ_API_TOKEN` set, add the header to the client config, e.g. for Cursor:
@@ -533,10 +593,12 @@ plesk ext sslit --certificate -issue -domain cortexiq.example.com -secure-domain
 Plesk includes `/var/www/vhosts/system/<domain>/conf/vhost_nginx.conf` inside the
 generated vhost when that file exists, so put the proxy there rather than editing
 `nginx.conf` (which is regenerated). Only the MCP paths are proxied; the vhost's
-own `location /` cannot be overridden, and a regex location outranks it:
+own `location /` cannot be overridden, and a regex location outranks it. The
+OAuth discovery and authorization paths belong in the same location: without
+them a client gets a 401, cannot find the metadata, and the flow stops there.
 
 ```nginx
-location ~ ^/(mcp|sse|message)$ {
+location ~ ^/(mcp|sse|message|oauth/|\.well-known/) {
     proxy_pass http://127.0.0.1:18100;
     proxy_http_version 1.1;
     proxy_set_header Host              $host;
@@ -551,8 +613,10 @@ location ~ ^/(mcp|sse|message)$ {
 }
 ```
 
-`proxy_buffering off` and the long read timeout are not optional: without them
-nginx holds the event stream until the buffer fills or the timeout fires.
+`X-Forwarded-For` also feeds the OAuth login and registration rate limits, which
+is why the proxy is trusted only from loopback. `proxy_buffering off` and the long
+read timeout are not optional: without them nginx holds the event stream until
+the buffer fills or the timeout fires.
 Apply with `plesk sbin httpdmng --reconfigure-domain <domain> && nginx -t &&
 systemctl reload nginx`, then check from outside the network — an unauthenticated
 `POST /mcp` must return `401`, not a timeout. Keep the reverse proxy on the same

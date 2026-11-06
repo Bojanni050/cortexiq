@@ -143,12 +143,28 @@ func RequireToken(token string, next http.Handler) http.Handler {
 	return Require(set, next)
 }
 
-func unauthorized(w http.ResponseWriter) {
-	w.Header().Set("WWW-Authenticate", `Bearer realm="cortexiq"`)
+// Authenticate reports whether secret belongs to a configured token. It is the
+// same check Require performs, exposed so the MCP listener can try a static token
+// first and an OAuth access token second, on one request.
+func (s *Set) Authenticate(secret string) (Token, bool) { return s.authenticate(secret) }
+
+// Unauthorized writes the 401 with the caller's WWW-Authenticate challenge. The
+// MCP endpoint passes a challenge that points at the protected-resource metadata;
+// the dashboard keeps the plain realm.
+func Unauthorized(w http.ResponseWriter, challenge string) {
+	w.Header().Set("WWW-Authenticate", challenge)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	_, _ = w.Write([]byte(`{"error":"unauthorized: missing or invalid API token"}` + "\n"))
 }
+
+func unauthorized(w http.ResponseWriter) {
+	Unauthorized(w, `Bearer realm="cortexiq"`)
+}
+
+// BearerToken extracts a "Bearer" credential from the request. Exported for the
+// MCP listener, which shares the header between static and OAuth tokens.
+func BearerToken(r *http.Request) (string, bool) { return bearerToken(r) }
 
 func bearerToken(r *http.Request) (string, bool) {
 	h := r.Header.Get("Authorization")

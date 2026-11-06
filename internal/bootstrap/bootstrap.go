@@ -16,6 +16,7 @@ import (
 	"github.com/Bojanni050/cortexiq/internal/db"
 	"github.com/Bojanni050/cortexiq/internal/embedder"
 	"github.com/Bojanni050/cortexiq/internal/llmreg"
+	"github.com/Bojanni050/cortexiq/internal/oauth"
 	"github.com/Bojanni050/cortexiq/internal/observability"
 	"github.com/Bojanni050/cortexiq/internal/queries"
 	"github.com/Bojanni050/cortexiq/internal/reasoner"
@@ -30,6 +31,10 @@ type Context struct {
 	Pool   *pgxpool.Pool
 	Logger *slog.Logger
 	Auth   *auth.Set
+	// OAuth is the MCP authorization server. It reports Enabled() false when the
+	// deployment did not configure it, in which case the MCP listener keeps
+	// using the static tokens only.
+	OAuth *oauth.Server
 
 	// embedder is the raw (uncached) embedder, kept for the start-up warm-up.
 	embedder embedder.Embedder
@@ -199,11 +204,18 @@ func New(ctx context.Context) (*Context, error) {
 	}
 
 	return &Context{
-		Config:   cfg,
-		Brain:    br,
-		Pool:     pool,
-		Logger:   logger,
-		Auth:     tokenSet,
+		Config: cfg,
+		Brain:  br,
+		Pool:   pool,
+		Logger: logger,
+		Auth:   tokenSet,
+		OAuth: oauth.NewServer(oauth.Config{
+			Issuer:        cfg.OAuthIssuer,
+			Resource:      cfg.OAuthResource,
+			AdminPassword: cfg.OAuthAdminPassword,
+			SessionSecret: cfg.OAuthSessionSecret,
+			Logger:        logger,
+		}, pool),
 		embedder: emb,
 	}, nil
 }
