@@ -144,6 +144,9 @@ func (r *CortexIQRunner) answerQuestion(ctx context.Context, namespace string, q
 		Namespaces: []string{namespace},
 		Limit:      limit,
 		AsOf:       asOf,
+		// A benchmark measures whether the stored knowledge answers the
+		// question; open beliefs would score the system on its own guesses.
+		SkipHypotheses: true,
 	})
 	if err != nil {
 		result.Error = err.Error()

@@ -644,6 +644,16 @@ Left alone, the hypothesis table stays empty: nothing in the pipeline invents be
 
 Two things keep that from becoming a machine that talks itself into things. An inferred hypothesis is **never auto-confirmed**: it can be tested, refined and auto-rejected, but only a human confirms it, because the evidence that produced the guess is not evidence for it. And each one is handed to the critic like any other hypothesis, so memory's own guess immediately gets an opposing case. The log shows every step with actor `consolidator`, so an inferred belief is always distinguishable from one an agent asserted.
 
+### Open hypotheses in reflect
+
+Hypotheses used to be write-only: they were created, tested and rejected, but `recall` and `reflect` never looked at them, so an answer could lean on an assumption the system already knew was unverified — or had already formally rejected — without saying so.
+
+`reflect` now matches open hypotheses against the question and against the facts it just recalled: two beliefs about the same fact are related even when they share no words, and a shared distinctive term catches the rest. Matched beliefs are handed to the reasoner in their own section, never mixed with the memories, under three rules: never present one as an established fact, say what would settle it, and treat a belief backed by a single conversation as only as strong as that conversation. The response returns them separately in `hypotheses` and `hypothesis_count` — they are not sources, because they are not evidence — and the dashboard shows them in their own card under the answer.
+
+Mental-model synthesis and the benchmark runner skip this deliberately (`SkipHypotheses`): a curated summary is supposed to hold settled knowledge, and a benchmark measures what is stored, not what the system guesses.
+
+The matching is lexical plus fact overlap rather than vector similarity. An embedding per hypothesis would need a second index kept in step with every model change, and the payoff is small: recall has already done the semantic work, and the reasoner reading the prompt is the final judge.
+
 ## Upstream cloud (Stash, Beta — Free)
 
 The upstream project this fork is based on hosts a multi-tenant version at **[usestash.io](https://usestash.io/)**, free while in beta. It is not part of CortexIQ.

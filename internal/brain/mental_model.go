@@ -233,7 +233,10 @@ func (b *Brain) CreateMentalModel(ctx context.Context, opts CreateMentalModelOpt
 		// A mental model is synthesized from raw memories. Its siblings would
 		// make it a copy of what other models already believe.
 		SkipMentalModels: true,
-		Instructions:     mentalModelInstructions,
+		// A curated summary holds settled knowledge; an open belief is exactly
+		// what it must not contain, or it would launder a guess into a fact.
+		SkipHypotheses: true,
+		Instructions:   mentalModelInstructions,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("generate mental model content: %w", err)
@@ -523,6 +526,7 @@ func (b *Brain) RefreshMentalModel(ctx context.Context, id int64) (*models.Menta
 		Limit:            20,
 		MaxTokens:        m.MaxTokens,
 		SkipMentalModels: true,
+		SkipHypotheses:   true,
 		Instructions:     mentalModelInstructions,
 	})
 	if err != nil {

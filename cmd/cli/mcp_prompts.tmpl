@@ -450,6 +450,11 @@ PREFER recall WHEN:
 
 The answer is grounded in recalled memories. When nothing relevant is found, the answer says so. The result includes the sources used, so you can cite specific memories.
 To ground only on a kind of memory (decisions, bugfixes, a client), pass tags instead of widening the namespace list.
+
+OPEN HYPOTHESES:
+The answer also considers open hypotheses — beliefs the system holds but has not verified — whose subject overlaps with the question or with the recalled memories. Those are not evidence. When the answer leans on one it says so explicitly; when the matter is contested it names the counter-hypothesis; and it names what would settle it. The response carries them separately in `hypotheses` (with `status`, `confidence`, `support_facts` and `support_episodes`) and in `hypothesis_count`, so you can see which assumption the answer was hedging about. A belief whose `support_episodes` is 1 rests on a single conversation: treat that as a hunch, not knowledge.
+
+CALL recall INSTEAD when the user wants to see the raw beliefs behind an answer — hypotheses are listed by list_hypotheses, and their history by list_hypothesis_events.
 {{end}}
 
 {{define "reflect_query"}}

@@ -1599,6 +1599,7 @@ async function doReflect() {
     const res = await api('/reflect', { method: 'POST', body: JSON.stringify(body) });
     const sources = res.sources || [];
     const mmCount = res.mental_model_count || 0;
+    const hyps = res.hypotheses || [];
     const srcRows = sources.map((s, i) => `<tr>
       <td class="muted">${i + 1}</td>
       <td>${sourceTypeBadge(s.type)}</td>
@@ -1606,15 +1607,29 @@ async function doReflect() {
       <td class="wrap" style="min-width:280px">${esc(s.content)}</td>
       <td>${pct(s.score)}</td>
     </tr>`).join('');
+    // The answer may rest on a belief the system has not verified. Showing it
+    // here, with how thin the evidence is, is the difference between an answer
+    // and a guess dressed the same way.
+    const hypRows = hyps.map(h => `<tr>
+      <td class="mono">#${h.id}</td>
+      <td><span class="badge ${h.status === 'testing' ? 'pending' : 'pending'}">${esc(h.status)}</span></td>
+      <td class="wrap" style="min-width:280px">${esc(h.content)}</td>
+      <td>${pct(h.confidence)}</td>
+      <td class="muted">${h.support_facts} fact${h.support_facts === 1 ? '' : 's'}${h.support_episodes <= 1 ? ' · <b>single source</b>' : ' · ' + h.support_episodes + ' conversations'}</td>
+    </tr>`).join('');
     out.innerHTML = `<div class="card"><h3>Answer</h3>
       <div style="padding:16px 20px;line-height:1.6">${md(res.answer)}</div>
       <div class="muted" style="padding:0 20px 16px;border-top:1px solid var(--border);margin-top:8px;padding-top:12px">
         ${res.recall_count} memories recalled · ${mmCount} mental model${mmCount === 1 ? '' : 's'} used · ${res.duration_ms} ms
       </div>
     </div>` +
+    (hyps.length ? `<div class="card"><h3>Unverified beliefs the answer considered (${hyps.length})</h3>
+      <p class="muted" style="margin:0 0 12px">These are open hypotheses, not facts. If the answer leans on one, it says so.</p>
+      ${table(['#', 'Status', 'Belief', 'Confidence', 'Evidence'], hypRows)}</div>` : '') +
     (sources.length ? `<div class="card"><h3>Sources (${sources.length})</h3>${table(
       ['#', 'Type', 'ID', 'Content', 'Score'], srcRows
     )}</div>` : '');
+    if (hyps.length) toast(`${hyps.length} unverified belief${hyps.length === 1 ? '' : 's'} weighed in the answer`);
   } catch (e) {
     out.innerHTML = `<div class="empty error">${esc(e.message)}</div>`;
     toast(e.message, true);

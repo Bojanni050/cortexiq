@@ -4,9 +4,11 @@ package brain
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
+	"github.com/Bojanni050/cortexiq/internal/models"
 	"github.com/Bojanni050/cortexiq/internal/reasoner"
 )
 
@@ -17,7 +19,12 @@ type ReflectResult struct {
 	Sources          []ReflectSource `json:"sources"`
 	RecallCount      int             `json:"recall_count"`
 	MentalModelCount int             `json:"mental_model_count"`
-	DurationMs       int64           `json:"duration_ms"`
+	// Hypotheses are the open beliefs the answer was warned about. They are
+	// reported separately from Sources because they are not evidence: they are
+	// the reason an answer may carry a caveat.
+	Hypotheses      []ReflectHypothesis `json:"hypotheses,omitempty"`
+	HypothesisCount int                 `json:"hypothesis_count"`
+	DurationMs      int64               `json:"duration_ms"`
 }
 
 // ReflectSource is one memory that contributed to the answer.
@@ -66,6 +73,10 @@ type ReflectOptions struct {
 	// Instructions are appended to the system prompt. The default prompt is
 	// written for answering a question; a mental model needs document rules.
 	Instructions string
+	// SkipHypotheses keeps open hypotheses out of the synthesis. Curated
+	// summaries and benchmark runs want settled knowledge only: a hypothesis is
+	// by definition not something to write down as truth.
+	SkipHypotheses bool
 }
 
 // reflectSystemPrompt is the system prompt for the reflect synthesis. It tells
@@ -76,6 +87,11 @@ const reflectSystemPrompt = `You are a reflection agent that answers questions b
 You may receive two kinds of input:
 - MENTAL MODELS: curated, high-quality summaries about specific topics. These are the most reliable knowledge — prefer them over raw memories when they cover the question.
 - MEMORIES: raw facts and episodes. Use these to fill gaps the mental models leave.
+
+You may also receive OPEN HYPOTHESES: beliefs the system holds but has not verified. They are included only when they bear on the question.
+- Never present a hypothesis as an established fact. If your answer rests on one, say so plainly and name what would settle it.
+- A hypothesis with a counter-hypothesis means the system holds the opposing belief too. If both are listed, say the matter is contested instead of picking a side.
+- A belief backed by facts from a single conversation is only as strong as that conversation; say so when it matters.
 
 Rules:
 - Answer ONLY from the input provided below. Never use outside knowledge.
@@ -157,10 +173,32 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 	memoriesText := formatMemoriesForReflect(results)
 	mmText := formatMentalModelsForReflect(mentalModels)
 
+	// Open beliefs are matched against the same question, but after recall, so
+	// they can be found by the facts they rest on as well as by their wording.
+	// A failure here must not cost the answer: reflect still works without them.
+	var hyps []models.Hypothesis
+	if !opts.SkipHypotheses {
+		nsIDs, err := b.resolveNamespaceIDs(ctx, namespaces)
+		if err == nil {
+			hyp, err := b.matchHypotheses(ctx, nsIDs, query, recalledFactIDs(results), 0)
+			if err != nil {
+				log.Printf("reflect: matching hypotheses failed, answering without them: %v", err)
+			} else {
+				hyps = hyp
+			}
+		}
+	}
+	hypText := formatHypothesesForReflect(hyps)
+
 	var sb strings.Builder
 	if mmText != "" {
 		sb.WriteString("## Mental Models (curated summaries)\n\n")
 		sb.WriteString(mmText)
+		sb.WriteString("\n")
+	}
+	if hypText != "" {
+		sb.WriteString("## Open Hypotheses (unverified)\n\n")
+		sb.WriteString(hypText)
 		sb.WriteString("\n")
 	}
 	sb.WriteString("## Memories\n\n")
@@ -196,8 +234,71 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 		Sources:          sources,
 		RecallCount:      len(results),
 		MentalModelCount: len(mentalModels),
+		Hypotheses:       toReflectHypotheses(hyps),
+		HypothesisCount:  len(hyps),
 		DurationMs:       time.Since(start).Milliseconds(),
 	}, nil
+}
+
+// recalledFactIDs is the fact half of the recall results: the signal that a
+// question is about the same thing a belief stands on.
+func recalledFactIDs(results []RecallResult) []int64 {
+	var ids []int64
+	for _, r := range results {
+		if r.Type == "fact" {
+			ids = append(ids, r.ID)
+		}
+	}
+	return ids
+}
+
+func toReflectHypotheses(hyps []models.Hypothesis) []ReflectHypothesis {
+	if len(hyps) == 0 {
+		return nil
+	}
+	out := make([]ReflectHypothesis, 0, len(hyps))
+	for _, h := range hyps {
+		out = append(out, ReflectHypothesis{
+			ID:              h.ID,
+			NamespaceID:     h.NamespaceID,
+			Content:         h.Content,
+			Status:          h.Status,
+			Confidence:      h.Confidence,
+			SupportFacts:    h.SupportFacts,
+			SupportEpisodes: h.SupportEpisodes,
+			CounterOf:       h.CounterOf,
+		})
+	}
+	return out
+}
+
+// formatHypothesesForReflect renders open beliefs for the synthesis prompt, with
+// the two things that decide their worth: how well they are backed, and whether
+// the system already holds the opposite.
+func formatHypothesesForReflect(hyps []models.Hypothesis) string {
+	if len(hyps) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	for i, h := range hyps {
+		meta := fmt.Sprintf("%s, confidence %.2f", h.Status, h.Confidence)
+		switch {
+		case h.SupportFacts == 0:
+			meta += ", no supporting facts yet"
+		case h.SupportEpisodes <= 1:
+			meta += fmt.Sprintf(", %d fact(s) from a single conversation", h.SupportFacts)
+		default:
+			meta += fmt.Sprintf(", %d facts from %d conversations", h.SupportFacts, h.SupportEpisodes)
+		}
+		if h.CounterOf != nil {
+			meta += fmt.Sprintf(", counter to hypothesis #%d", *h.CounterOf)
+		}
+		fmt.Fprintf(&sb, "%d. [%s] %s\n", i+1, meta, h.Content)
+		if h.VerificationPlan != "" {
+			fmt.Fprintf(&sb, "   would be settled by: %s\n", h.VerificationPlan)
+		}
+	}
+	return sb.String()
 }
 
 // instructionsSuffix renders caller instructions as an extra system-prompt
