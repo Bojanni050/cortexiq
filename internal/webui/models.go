@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Bojanni050/cortexiq/internal/llmreg"
+	"github.com/Bojanni050/cortexiq/internal/observability"
 	"github.com/Bojanni050/cortexiq/internal/reasoner"
 )
 
@@ -31,6 +32,10 @@ type modelPurpose struct {
 	Source          string `json:"source"`
 	Provider        string `json:"provider,omitempty"`
 	Model           string `json:"model,omitempty"`
+	// Pointers so "not in any catalogue" stays distinguishable from "free": an
+	// unpriced model is costed separately, and 0.00 there would read as a bargain.
+	InputPerMTok  *float64 `json:"input_per_mtok,omitempty"`
+	OutputPerMTok *float64 `json:"output_per_mtok,omitempty"`
 }
 
 // providers handles GET (list, masked) and POST (upsert).
@@ -171,6 +176,18 @@ func (h *Handler) modelPurposes(r *http.Request) ([]modelPurpose, error) {
 		}
 		env[i].Source = "env"
 		env[i].Model = env[i].Env
+	}
+	// The rate comes from the refreshed catalogue the cost counters use, not
+	// from a second table kept here — otherwise Settings and the cost tile can
+	// disagree about the same model.
+	for i := range env {
+		if env[i].Model == "" {
+			continue
+		}
+		if price, ok := observability.LookupPrice(env[i].Model); ok {
+			in, out := price.InputPerM, price.OutputPerM
+			env[i].InputPerMTok, env[i].OutputPerMTok = &in, &out
+		}
 	}
 	return env, nil
 }

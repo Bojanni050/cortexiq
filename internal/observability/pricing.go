@@ -63,6 +63,13 @@ func SetModelPrices(p map[string]ModelPrice) {
 	reasonerPricedModels.Set(float64(len(p)))
 }
 
+// LookupPrice is the read side of the price table for the dashboard. It uses
+// the same index as the cost counters, so what Settings shows is exactly the
+// rate a call is charged at — not a second, drifting copy.
+func LookupPrice(model string) (ModelPrice, bool) {
+	return priceFor(model)
+}
+
 func priceFor(model string) (ModelPrice, bool) {
 	pricesMu.RLock()
 	defer pricesMu.RUnlock()

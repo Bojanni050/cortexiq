@@ -3044,13 +3044,21 @@ async function renderModelsCard() {
     const model = p.model ? `<span class="mono">${esc(p.model)}</span>` : '<span class="muted">not configured</span>';
     const env = p.source === 'dashboard' && p.env ? `<div class="muted">env: <span class="mono">${esc(p.env)}</span></div>` : '';
     const note = p.restart_required ? '<div class="muted">a change here needs a restart</div>' : '';
+    // Prices come from the provider catalogues, refreshed every six hours. A
+    // model the catalogue does not know is not free — its calls are counted as
+    // unpriced — so say that instead of printing 0.00.
+    const money = v => '$' + (v < 0.01 ? v.toFixed(4) : v.toFixed(2));
+    const price = p.input_per_mtok != null
+      ? `<span class="mono">${money(p.input_per_mtok)}</span> <span class="muted">in</span><br>
+         <span class="mono">${money(p.output_per_mtok)}</span> <span class="muted">out</span>`
+      : (p.model ? '<span class="muted" title="No provider catalogue lists this model, so its calls are counted as unpriced.">not priced</span>' : '');
     // The embedding model is read-only here on purpose: stored vectors carry its
     // dimensions, so changing it is a re-embed job, not a dropdown.
     const btn = p.purpose === 'embedding'
       ? '<span class="muted">read-only</span>'
       : `<button onclick="modelDialog('${p.purpose}')">change</button>`;
     return `<tr><td><b>${esc(spec[1])}</b><div class="muted">${esc(spec[2])}</div></td>
-      <td>${source}${env}</td><td>${model}${note}</td><td class="row-actions">${btn}</td></tr>`;
+      <td>${source}${env}</td><td>${model}${note}</td><td>${price}</td><td class="row-actions">${btn}</td></tr>`;
   }).join('');
   const provRows = providers.map(p => `<tr><td><b>${esc(p.name)}</b><div class="muted mono">${esc(p.slug)}</div></td>
       <td class="mono wrap">${esc(p.base_url)}</td>
@@ -3060,7 +3068,7 @@ async function renderModelsCard() {
   el.innerHTML = `<div class="card">
       <h3>Models</h3>
       <p class="muted">What each part of consolidation calls. The environment stays the default; a choice made here overrides it and is shown next to it, never instead of it.</p>
-      ${table(['Purpose', 'Source', 'Model', ''], [rows])}
+      ${table(['Purpose', 'Source', 'Model', 'Price / Mtok', ''], [rows])}
     </div>
     <div class="card">
       <h3>Providers</h3>
