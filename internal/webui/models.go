@@ -17,6 +17,7 @@ type ModelEnv struct {
 	Triage    string
 	Embedding string
 	Reranker  string
+	Critic    string
 	MaxTokens int
 }
 
@@ -141,6 +142,11 @@ func (h *Handler) modelPurposes(r *http.Request) ([]modelPurpose, error) {
 	env := []modelPurpose{
 		{Purpose: llmreg.PurposeReasoner, Env: h.Models.Reasoner, Live: true},
 		{Purpose: llmreg.PurposeTriage, Env: h.Models.Triage, Live: true},
+		// The critic argues the other side of a hypothesis. It is listed here
+		// even when unset, because "unset" is a choice too: the reasoner is
+		// reused and the check stops being independent, and that should be
+		// visible rather than silent.
+		{Purpose: llmreg.PurposeCritic, Env: h.Models.Critic, Live: true},
 		// Embedding and reranker cannot change under a running process: stored
 		// vectors carry the embedding model's dimensions, and the reranker has
 		// its own provider shape. Saying so here is better than a dropdown that

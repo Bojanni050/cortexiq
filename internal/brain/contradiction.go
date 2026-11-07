@@ -196,7 +196,57 @@ func (b *Brain) ListContradictions(ctx context.Context, namespaceSlugs []string,
 		}
 		result = append(result, c)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := b.attachContradictionFacts(ctx, result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// attachContradictionFacts fills in the text of both sides. The dashboard used
+// to resolve these from a paged fact list, which silently broke the moment a
+// namespace passed that page size: a live fact then read as "not available".
+func (b *Brain) attachContradictionFacts(ctx context.Context, items []models.Contradiction) error {
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(items)*2)
+	for _, c := range items {
+		if c.OldFactID > 0 {
+			ids = append(ids, c.OldFactID)
+		}
+		if c.NewFactID > 0 {
+			ids = append(ids, c.NewFactID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := b.pool.Query(ctx, `SELECT id, content FROM facts WHERE id = ANY($1)`, ids)
+	if err != nil {
+		return fmt.Errorf("attach contradiction facts: %w", err)
+	}
+	byID := make(map[int64]string, len(ids))
+	for rows.Next() {
+		var id int64
+		var content string
+		if err := rows.Scan(&id, &content); err != nil {
+			rows.Close()
+			return fmt.Errorf("attach contradiction facts: %w", err)
+		}
+		byID[id] = content
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("attach contradiction facts: %w", err)
+	}
+	for i := range items {
+		items[i].OldFactContent = byID[items[i].OldFactID]
+		items[i].NewFactContent = byID[items[i].NewFactID]
+	}
+	return nil
 }
 
 // ErrResolutionRequired rejects a resolve without a note: a resolution that
@@ -262,5 +312,10 @@ func (b *Brain) GetContradiction(ctx context.Context, id int64) (*models.Contrad
 		}
 		return nil, fmt.Errorf("get contradiction: %w", err)
 	}
+	single := []models.Contradiction{c}
+	if err := b.attachContradictionFacts(ctx, single); err != nil {
+		return nil, err
+	}
+	c = single[0]
 	return &c, nil
 }

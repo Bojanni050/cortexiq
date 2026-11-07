@@ -52,6 +52,7 @@ func serveHTTP(ctx context.Context, cmd *cli.Command) error {
 			Triage:    bc.Config.TriageModel,
 			Embedding: bc.Config.EmbeddingModel,
 			Reranker:  bc.Config.RerankerModel,
+			Critic:    bc.Config.CriticModel,
 			MaxTokens: bc.Config.ReasonerMaxTokens,
 		},
 	}

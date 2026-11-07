@@ -89,6 +89,12 @@ type Contradiction struct {
 	Resolution  *string    `db:"resolution" json:"resolution"`
 	ResolvedAt  *time.Time `db:"resolved_at" json:"resolved_at"`
 	CreatedAt   time.Time  `db:"created_at" json:"created_at"`
+
+	// The facts behind each side, resolved on read so the dashboard never has
+	// to guess from a paged fact list. Empty means the fact is gone for good;
+	// the id and the extracted value still stand.
+	OldFactContent string `db:"-" json:"old_fact_content,omitempty"`
+	NewFactContent string `db:"-" json:"new_fact_content,omitempty"`
 }
 
 // FactSource links a fact to the episodes that support it.

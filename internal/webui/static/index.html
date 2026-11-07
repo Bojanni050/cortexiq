@@ -2126,10 +2126,11 @@ async function hypoReject(id) {
 }
 
 async function renderContradictions() {
-  const byId = new Map();
-  // The value, plus the fact it came from so you can see where the conflict originates.
-  const side = (value, id) => `<div><b>${esc(value)}</b></div>` + (id
-    ? `<div class="muted"><span class="mono">#${id}</span> ${byId.has(id) ? esc(byId.get(id)) : '(fact not available)'}</div>` : '');
+  // The text of both sides now arrives with the row, resolved server-side. It
+  // used to be looked up in a paged fact list, which quietly labelled any fact
+  // past that page as missing.
+  const side = (value, id, text) => `<div><b>${esc(value)}</b></div>` + (id
+    ? `<div class="muted"><span class="mono">#${id}</span> ${text ? esc(text) : '(fact no longer in memory)'}</div>` : '');
   const state_ = c => c.resolved
     ? `<span class="badge completed">resolved</span>${c.resolution ? `<div>${esc(c.resolution)}</div>` : ''}${c.resolved_at ? `<div class="muted">${ts(c.resolved_at)}</div>` : ''}`
     : '<span class="badge pending">open</span>';
@@ -2138,8 +2139,6 @@ async function renderContradictions() {
     headers: ['Contradiction', ''],
     fields: ['id', 'entity', 'property', 'old_value', 'new_value', 'resolution'],
     enrich: async (pageItems) => {
-      const facts = await apiList('/facts' + nsQS('&limit=1000'));
-      for (const f of facts) byId.set(f.id, f.content);
       counters = new Map(pageItems.filter(h => h.counter_of).map(h => [h.counter_of, h]));
     },
     row: c => `<tr class="rowlink" onclick="pickRow('contradictions', ${c.id}, this)">
@@ -2152,8 +2151,8 @@ async function renderContradictions() {
       <div class="ctx-section">
         <div class="ctx-section-head"><h3>${esc(c.entity)}</h3><span class="count">#${c.id}</span></div>
         <div class="ctx-quote lead"><div class="muted" style="font-size:12.5px;margin-bottom:6px">${esc(c.property)}</div>
-          <div class="ctx-fact"><div class="meta" style="margin:0 0 6px"><span class="mono">old</span></div>${side(c.old_value, c.old_fact_id)}</div>
-          <div class="ctx-fact" style="margin-top:8px"><div class="meta" style="margin:0 0 6px"><span class="mono">new</span></div>${side(c.new_value, c.new_fact_id)}</div>
+          <div class="ctx-fact"><div class="meta" style="margin:0 0 6px"><span class="mono">old</span></div>${side(c.old_value, c.old_fact_id, c.old_fact_content)}</div>
+          <div class="ctx-fact" style="margin-top:8px"><div class="meta" style="margin:0 0 6px"><span class="mono">new</span></div>${side(c.new_value, c.new_fact_id, c.new_fact_content)}</div>
         </div>
       </div>
       ${ctxSection('Metadata', metaGrid([
