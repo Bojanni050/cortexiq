@@ -82,7 +82,7 @@ var consentTemplate = template.Must(template.New("consent").Parse(`<!doctype htm
     <input type="hidden" name="code_challenge" value="{{.Challenge}}">
     <input type="hidden" name="code_challenge_method" value="{{.Method}}">
     <input type="hidden" name="resource" value="{{.Resource}}">
-    <input type="hidden" name="requested_scope" value="{{.RequestedScope}}">
+    <input type="hidden" name="scope" value="{{.RequestedScope}}">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
 
     <fieldset>

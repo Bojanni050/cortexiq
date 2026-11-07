@@ -271,8 +271,8 @@ func TestRequireMCPStaticToken(t *testing.T) {
 
 // TestConsentFormCarriesTheWholeRequest guards the round trip from GET to POST:
 // the consent form is the only thing that hands the request back to us, so a
-// field missing here turns a correct authorization request into a redirect
-// error. response_type was exactly that bug in production.
+// field missing or renamed here turns a correct authorization request into a
+// redirect error. response_type was exactly that bug in production.
 func TestConsentFormCarriesTheWholeRequest(t *testing.T) {
 	rec := httptest.NewRecorder()
 	renderConsent(rec, http.StatusOK, consentData{
@@ -296,7 +296,7 @@ func TestConsentFormCarriesTheWholeRequest(t *testing.T) {
 		`name="state" value="xyz"`,
 		`name="code_challenge_method" value="S256"`,
 		`name="resource" value="https://cortexiq.example.com/mcp"`,
-		`name="requested_scope" value="memory:read memory:write"`,
+		`name="scope" value="memory:read memory:write"`,
 		`name="csrf" value="csrf-token"`,
 		`name="decision" value="approve"`,
 		`name="decision" value="deny"`,
