@@ -22,6 +22,7 @@ import (
 
 	"github.com/Bojanni050/cortexiq/internal/bootstrap"
 	"github.com/Bojanni050/cortexiq/internal/brain"
+	"github.com/Bojanni050/cortexiq/internal/observability"
 	"github.com/Bojanni050/cortexiq/internal/oauth"
 	"github.com/Bojanni050/cortexiq/internal/scope"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -1513,11 +1514,28 @@ func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	// This process is the one that records the consolidation and reasoner
+	// counters, so it owns their persistence. Without this a restart (or a
+	// deploy) starts every counter at zero and the dashboard reads as if usage
+	// stopped. Restore before serving, then keep saving while we run.
+	store := observability.PGStore{Pool: bc.Pool}
+	if err := observability.Restore(ctx, store); err != nil {
+		log.Printf("restore persisted counters: %v", err)
+	}
+
 	if bc.OAuth.Enabled() {
 		bc.OAuth.StartCleanup(ctx)
 	}
 
 	var wg sync.WaitGroup
+
+	// The persister is part of the wait group: the process must not exit before
+	// the final flush on shutdown has been written.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		observability.StartPersisting(ctx, store, observability.PersistInterval)
+	}()
 
 	if cmd.Bool("with-consolidation") {
 		wg.Add(1)
