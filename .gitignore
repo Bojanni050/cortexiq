@@ -31,3 +31,8 @@ Thumbs.db
 coverage.txt
 coverage.html
 *.cover
+nul
+opencode.jsonc
+opencode.jsonc.openchamber.backup
+opencode.jsonc
+opencode.jsonc

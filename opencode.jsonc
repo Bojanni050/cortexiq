@@ -1,14 +1,3 @@
 {
-  "mcp": {
-    "code-review-graph": {
-      "type": "local",
-      "command": [
-        "uvx",
-        "code-review-graph",
-        "serve",
-        "--repo",
-        "K:\\Projects\\cortexiq"
-      ]
-    }
-  }
+  
 }
