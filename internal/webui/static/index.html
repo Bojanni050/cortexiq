@@ -2350,6 +2350,9 @@ async function renderMetrics() {
     .map(([stage, v]) => `<tr><td class="mono">${esc(stage)}</td><td class="mono">${money(v)}</td></tr>`);
   const hint = unpriced > 0
     ? `<div class="muted">${unpriced.toLocaleString()} call(s) used a model without a configured price — set CORTEXIQ_MODEL_PRICES to price them.</div>` : '';
+  // The split deployment records these counters on the MCP process, not in the
+  // dashboard process that serves this page; say which one is shown.
+  const source = body && body.source === 'mcp' ? 'consolidation process' : 'dashboard process';
   document.getElementById('content').innerHTML =
     `<div class="stats">
       ${stat('metrics', 'var(--green)', money(cost), 'Estimated reasoner cost')}
@@ -2360,7 +2363,7 @@ async function renderMetrics() {
       ${stat('metrics', 'var(--red)', completion.toLocaleString(), 'Reasoner completion tokens')}
     </div>` +
     (costRows.length ? `<div class="card"><h3>Estimated cost by stage ${hint ? '' : ''}</h3>${hint}<div class="tablewrap"><table><thead><tr><th>Stage</th><th>Cost (configured unit)</th></tr></thead><tbody>${costRows.join('')}</tbody></table></div></div>` : '') +
-    `<div class="card"><h3>All metrics <span class="muted">${esc(ts(body.updated_at))}</span></h3>` +
+    `<div class="card"><h3>All metrics <span class="muted">${esc(ts(body.updated_at))} · ${esc(source)}</span></h3>` +
     table(['Metric', 'Type', 'Labels', 'Value'], items.map(m => `<tr>
       <td><b>${esc(m.name)}</b>${m.help ? `<div class="muted">${esc(m.help)}</div>` : ''}</td>
       <td class="muted">${esc(m.type)}</td>

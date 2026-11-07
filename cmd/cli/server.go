@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Bojanni050/cortexiq/internal/bootstrap"
 	"github.com/Bojanni050/cortexiq/internal/llmreg"
 	"github.com/Bojanni050/cortexiq/internal/webui"
 	"github.com/prometheus/client_golang/prometheus"
@@ -31,6 +32,19 @@ var (
 func init() {
 	prometheus.MustRegister(buildInfo)
 	buildInfo.WithLabelValues("0.3.0").Set(1)
+}
+
+// metricsToken hands the dashboard's own credential to the configured metrics
+// source. Both containers receive the same deployment tokens, so the dashboard
+// can scrape the MCP process without a separate secret.
+func metricsToken(bc *bootstrap.Context) string {
+	if bc.Config.APIToken != "" {
+		return bc.Config.APIToken
+	}
+	if secret, ok := bc.Auth.Secret(); ok {
+		return secret
+	}
+	return ""
 }
 
 func serveHTTP(ctx context.Context, cmd *cli.Command) error {
@@ -55,6 +69,8 @@ func serveHTTP(ctx context.Context, cmd *cli.Command) error {
 			Critic:    bc.Config.CriticModel,
 			MaxTokens: bc.Config.ReasonerMaxTokens,
 		},
+		MetricsSource: bc.Config.MetricsSource,
+		MetricsToken:  metricsToken(bc),
 	}
 	if !bc.Auth.Enabled() {
 		log.Println("WARNING: no API token configured; the dashboard API is unauthenticated")

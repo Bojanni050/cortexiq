@@ -97,7 +97,11 @@ services:
     command: ["http", "serve", "--host", "0.0.0.0", "--port", "9090"]
     ports:
       - "127.0.0.1:18101:9090"
-    environment: *cortexiq-env
+    environment:
+      <<: *cortexiq-env
+      # The dashboard is its own process, so its Prometheus registry never sees
+      # the consolidation and reasoner counters; read them from the MCP process.
+      CORTEXIQ_METRICS_SOURCE: http://cortexiq:8080/metrics
     depends_on:
       cortexiq:
         condition: service_started

@@ -69,6 +69,12 @@ type Config struct {
 	// APITokens is a JSON array of {name, token, scope} that is added to
 	// APIToken: "rw" (default) or "ro" per caller.
 	APITokens string `env:"CORTEXIQ_API_TOKENS" envDefault:""`
+	// MetricsSource is the /metrics URL of the process that runs consolidation
+	// and answers MCP traffic. The split production deployment serves the
+	// dashboard from its own process, whose Prometheus registry stays empty of
+	// those counters; setting this makes the metrics page read them where they
+	// are recorded. Empty keeps the dashboard's local registry.
+	MetricsSource string `env:"CORTEXIQ_METRICS_SOURCE" envDefault:""`
 	// OAuth 2.1 authorization server for the MCP endpoint. It is disabled unless
 	// both the issuer and the admin password are set: a half-configured
 	// authorization server is worse than none, so the MCP endpoint then keeps

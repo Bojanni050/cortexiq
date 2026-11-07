@@ -84,6 +84,17 @@ func ParseSet(spec, fallback string) (*Set, error) {
 // Enabled reports whether any token is configured.
 func (s *Set) Enabled() bool { return s != nil && len(s.tokens) > 0 }
 
+// Secret returns one configured token secret and true when a token is set. It
+// exists for in-process callers that must authenticate to another CortexIQ
+// process — the dashboard scraping the MCP process's /metrics — not for request
+// handling, which always goes through Require.
+func (s *Set) Secret() (string, bool) {
+	if s == nil || len(s.tokens) == 0 {
+		return "", false
+	}
+	return s.tokens[0].Secret, true
+}
+
 // LegacyNamespaces lists the tokens whose definition still carries the removed
 // "namespaces" allowlist. Callers log it, so a config that looks restricted but
 // is not gets noticed.

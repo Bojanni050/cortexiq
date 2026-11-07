@@ -40,6 +40,14 @@ type Handler struct {
 	// carries the token's read/write scope. The static dashboard shell itself
 	// holds no data and stays public.
 	Auth *auth.Set
+	// MetricsSource is the /metrics URL of the process that owns the
+	// consolidation and reasoner counters. The split deployment runs the
+	// dashboard as its own process, so its local registry never sees them. Empty
+	// keeps this process's registry.
+	MetricsSource string
+	// MetricsToken authenticates that scrape when the peer requires a Bearer
+	// token.
+	MetricsToken string
 }
 
 // Register mounts the UI and API routes on the given mux.
