@@ -12,6 +12,10 @@ x-cortexiq-env: &cortexiq-env
   CORTEXIQ_EMBEDDING_BASE_URL: ${CORTEXIQ_EMBEDDING_BASE_URL:-}
   CORTEXIQ_EMBEDDING_API_KEY: ${CORTEXIQ_EMBEDDING_API_KEY:-}
   CORTEXIQ_REASONER_MODEL: ${CORTEXIQ_REASONER_MODEL}
+  # The triage model falls back to the reasoner when unset. Passing it through
+  # explicitly is what makes the Settings row show the value you configured in
+  # .env instead of an empty fallback.
+  CORTEXIQ_TRIAGE_MODEL: ${CORTEXIQ_TRIAGE_MODEL:-}
   # The model that argues the other side of a hypothesis. Empty reuses the
   # reasoner, which the hypothesis log then records as not independent.
   CORTEXIQ_CRITIC_MODEL: ${CORTEXIQ_CRITIC_MODEL:-}
