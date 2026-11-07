@@ -40,7 +40,7 @@ func scanHypothesis(h *models.Hypothesis, row pgx.Row) error {
 	return row.Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
+		&h.SourceFactIDs, &h.SupportedBy, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
 		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt, &h.CounterOf,
 	)
 }
@@ -142,13 +142,13 @@ func (b *Brain) insertHypothesis(ctx context.Context, in hypothesisInput) (*mode
 		`INSERT INTO hypotheses (namespace_id, content, confidence, verification_plan, source_fact_ids, supported_by, method)
 		 VALUES ($1, $2, $3, $4, $5, $5, $6)
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
-		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
-		 created_at, updated_at, deleted_at, counter_of`,
+         confirmed_fact_id, rejection_reason, source_fact_ids, supported_by, tested_at, confirmed_at, rejected_at,
+             created_at, updated_at, deleted_at, counter_of`,
 		in.NamespaceID, in.Content, in.Confidence, in.VerificationPlan, sourceFactIDs, method,
 	).Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
+		&h.SourceFactIDs, &h.SupportedBy, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
 		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt, &h.CounterOf,
 	)
 	if err != nil {
@@ -358,14 +358,14 @@ func (b *Brain) GetHypothesis(ctx context.Context, id int64) (*models.Hypothesis
 	var h models.Hypothesis
 	err := b.pool.QueryRow(ctx,
 		`SELECT id, namespace_id, content, confidence, status, verification_plan, method,
-		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
-		 created_at, updated_at, deleted_at, counter_of
+			 confirmed_fact_id, rejection_reason, source_fact_ids, supported_by, tested_at, confirmed_at, rejected_at,
+			 created_at, updated_at, deleted_at, counter_of
 		 FROM hypotheses WHERE id = $1`,
 		id,
 	).Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
+		&h.SourceFactIDs, &h.SupportedBy, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
 		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt, &h.CounterOf,
 	)
 	if err != nil {
@@ -419,13 +419,13 @@ func (b *Brain) UpdateHypothesisStatus(ctx context.Context, id int64, status str
 		`UPDATE hypotheses SET status = $2, tested_at = $3, confirmed_at = $4, rejected_at = $5, updated_at = $6
 		 WHERE id = $1
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
-		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
-		 created_at, updated_at, deleted_at, counter_of`,
+         confirmed_fact_id, rejection_reason, source_fact_ids, supported_by, tested_at, confirmed_at, rejected_at,
+             created_at, updated_at, deleted_at, counter_of`,
 		id, status, testedAt, confirmedAt, rejectedAt, now,
 	).Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
+		&h.SourceFactIDs, &h.SupportedBy, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
 		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt, &h.CounterOf,
 	)
 	if err != nil {
@@ -516,13 +516,13 @@ func (b *Brain) ConfirmHypothesis(ctx context.Context, id int64) (*models.Hypoth
 		`UPDATE hypotheses SET status = 'confirmed', confirmed_at = $2, confirmed_fact_id = $3, updated_at = $2
 		 WHERE id = $1
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
-		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
-		 created_at, updated_at, deleted_at, counter_of`,
+         confirmed_fact_id, rejection_reason, source_fact_ids, supported_by, tested_at, confirmed_at, rejected_at,
+             created_at, updated_at, deleted_at, counter_of`,
 		id, now, factID,
 	).Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
+		&h.SourceFactIDs, &h.SupportedBy, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
 		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt, &h.CounterOf,
 	)
 	if err != nil {
@@ -589,13 +589,13 @@ func (b *Brain) RejectHypothesis(ctx context.Context, id int64, reason string) (
 		`UPDATE hypotheses SET status = 'rejected', rejected_at = $2, rejection_reason = $3, updated_at = $2
 		 WHERE id = $1
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
-		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
-		 created_at, updated_at, deleted_at, counter_of`,
+         confirmed_fact_id, rejection_reason, source_fact_ids, supported_by, tested_at, confirmed_at, rejected_at,
+             created_at, updated_at, deleted_at, counter_of`,
 		id, now, reasonPtr,
 	).Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
+		&h.SourceFactIDs, &h.SupportedBy, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
 		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt, &h.CounterOf,
 	)
 	if err != nil {
@@ -643,13 +643,13 @@ func (b *Brain) RefineHypothesis(ctx context.Context, id int64, content, verific
 		 status = 'proposed', tested_at = NULL, updated_at = $5
 		 WHERE id = $1
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
-		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
-		 created_at, updated_at, deleted_at, counter_of`,
+         confirmed_fact_id, rejection_reason, source_fact_ids, supported_by, tested_at, confirmed_at, rejected_at,
+             created_at, updated_at, deleted_at, counter_of`,
 		id, content, verificationPlan, confidence, now,
 	).Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
+		&h.SourceFactIDs, &h.SupportedBy, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
 		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt, &h.CounterOf,
 	)
 	if err != nil {

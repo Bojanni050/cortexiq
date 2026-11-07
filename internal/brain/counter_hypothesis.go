@@ -106,13 +106,13 @@ func (b *Brain) insertCounterHypothesis(ctx context.Context, h *models.Hypothesi
 		`INSERT INTO hypotheses (namespace_id, content, confidence, verification_plan, source_fact_ids, supported_by, method, counter_of)
 		 VALUES ($1, $2, $3, $4, $5, $5, 'counter', $6)
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
-		 confirmed_fact_id, rejection_reason, source_fact_ids, counter_of, tested_at, confirmed_at, rejected_at,
-		 created_at, updated_at, deleted_at`,
+			 confirmed_fact_id, rejection_reason, source_fact_ids, supported_by, counter_of, tested_at, confirmed_at, rejected_at,
+			 created_at, updated_at, deleted_at`,
 		h.NamespaceID, c.Content, c.Confidence, c.VerificationPlan, sourceIDs, h.ID,
 	).Scan(
 		&out.ID, &out.NamespaceID, &out.Content, &out.Confidence, &out.Status,
 		&out.VerificationPlan, &out.Method, &out.ConfirmedFactID, &out.RejectionReason,
-		&out.SourceFactIDs, &out.CounterOf, &out.TestedAt, &out.ConfirmedAt, &out.RejectedAt,
+		&out.SourceFactIDs, &out.SupportedBy, &out.CounterOf, &out.TestedAt, &out.ConfirmedAt, &out.RejectedAt,
 		&out.CreatedAt, &out.UpdatedAt, &out.DeletedAt,
 	)
 	if err != nil {
@@ -167,14 +167,14 @@ func (b *Brain) CounterHypothesisFor(ctx context.Context, hypothesisID int64) (*
 	var h models.Hypothesis
 	err := b.pool.QueryRow(ctx,
 		`SELECT id, namespace_id, content, confidence, status, verification_plan, method,
-		 confirmed_fact_id, rejection_reason, source_fact_ids, counter_of, tested_at, confirmed_at, rejected_at,
-		 created_at, updated_at, deleted_at
+			 confirmed_fact_id, rejection_reason, source_fact_ids, supported_by, counter_of, tested_at, confirmed_at, rejected_at,
+			 created_at, updated_at, deleted_at
 		 FROM hypotheses WHERE counter_of = $1 AND deleted_at IS NULL`,
 		hypothesisID,
 	).Scan(
 		&h.ID, &h.NamespaceID, &h.Content, &h.Confidence, &h.Status,
 		&h.VerificationPlan, &h.Method, &h.ConfirmedFactID, &h.RejectionReason,
-		&h.SourceFactIDs, &h.CounterOf, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
+		&h.SourceFactIDs, &h.SupportedBy, &h.CounterOf, &h.TestedAt, &h.ConfirmedAt, &h.RejectedAt,
 		&h.CreatedAt, &h.UpdatedAt, &h.DeletedAt,
 	)
 	if err != nil {
