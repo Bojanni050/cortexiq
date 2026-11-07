@@ -73,18 +73,66 @@ type hypothesisInput struct {
 	Detail map[string]any
 }
 
+// ErrUnknownSourceFacts means a caller cited evidence that is not in memory.
+// It is refused rather than quietly emptied: a belief that names its evidence
+// and then has none is worse than one that never named any.
+var ErrUnknownSourceFacts = fmt.Errorf("brain: hypothesis: source facts do not exist")
+
+// verifiedFactIDs keeps only the ids that actually exist, in the order given.
+// Every path that creates a hypothesis goes through here, because the ids can
+// come from a model, an agent or a human, and none of them is trusted.
+func (b *Brain) verifiedFactIDs(ctx context.Context, ids []int64) ([]int64, error) {
+	ids = nonNilIDs(ids)
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	rows, err := b.pool.Query(ctx, `SELECT id FROM facts WHERE id = ANY($1)`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("verify source facts: %w", err)
+	}
+	defer rows.Close()
+
+	known := make(map[int64]bool, len(ids))
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan source fact id: %w", err)
+		}
+		known[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(known) == 0 {
+		return nil, fmt.Errorf("%w: %v", ErrUnknownSourceFacts, ids)
+	}
+
+	kept := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if known[id] {
+			kept = append(kept, id)
+			delete(known, id)
+		}
+	}
+	return kept, nil
+}
+
 func (b *Brain) insertHypothesis(ctx context.Context, in hypothesisInput) (*models.Hypothesis, error) {
 	if in.Content == "" {
 		return nil, ErrEmptyContent
 	}
-	sourceFactIDs := nonNilIDs(in.SourceFactIDs)
+	sourceFactIDs, err := b.verifiedFactIDs(ctx, in.SourceFactIDs)
+	if err != nil {
+		return nil, err
+	}
 	method := in.Method
 	if method == "" {
 		method = "asserted"
 	}
 
 	var h models.Hypothesis
-	err := b.pool.QueryRow(ctx,
+	err = b.pool.QueryRow(ctx,
 		`INSERT INTO hypotheses (namespace_id, content, confidence, verification_plan, source_fact_ids, method)
 		 VALUES ($1, $2, $3, $4, $5, $6)
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,

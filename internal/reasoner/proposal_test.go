@@ -128,3 +128,33 @@ func TestProposalPromptNamesTheFactsAndTheTrap(t *testing.T) {
 		}
 	}
 }
+
+// The failure this guards against: the model cites a fact id it was never
+// shown, which the dashboard then renders as evidence that does not exist.
+func TestValidateProposedHypothesesDropsFabricatedEvidence(t *testing.T) {
+	facts := []models.Fact{
+		{ID: 12, Content: "De consolidator draait elke tien minuten."},
+		{ID: 15, Content: "Het dashboard toont de runhistorie."},
+	}
+	raw := []jsonProposedHypothesis{
+		// Names only ids it was shown: kept.
+		{Content: "De runhistorie wordt traag bij veel namespaces", VerificationPlan: "meet de responstijd", SourceFactIDs: []int64{12, 15}},
+		// One real, one invented: the real one survives, the citation does not.
+		{Content: "De tien-minutenronde mist runs bij een lange backlog", VerificationPlan: "vergelijk run-tijdstippen", SourceFactIDs: []int64{12, 999}},
+		// Nothing but invention: the belief never existed on evidence, so it is
+		// never created rather than created and later rejected.
+		{Content: "Het dashboard slaat runs over na een herstart", VerificationPlan: "herstart en tel", SourceFactIDs: []int64{998}},
+	}
+
+	got := validateProposedHypotheses(raw, nil, facts, 5)
+
+	if len(got) != 2 {
+		t.Fatalf("want 2 grounded proposals, got %d: %+v", len(got), got)
+	}
+	if ids := got[0].SourceFactIDs; len(ids) != 2 || ids[0] != 12 || ids[1] != 15 {
+		t.Fatalf("real evidence should be kept in order, got %v", ids)
+	}
+	if ids := got[1].SourceFactIDs; len(ids) != 1 || ids[0] != 12 {
+		t.Fatalf("fabricated id should be dropped and the real one kept, got %v", ids)
+	}
+}

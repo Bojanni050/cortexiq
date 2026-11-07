@@ -1354,8 +1354,10 @@ func validateProposedHypotheses(raw []jsonProposedHypothesis, existing []string,
 	seen := make([]string, 0, len(existing)+len(raw))
 	seen = append(seen, existing...)
 	factTexts := make([]string, 0, len(facts))
+	knownFacts := make(map[int64]bool, len(facts))
 	for _, f := range facts {
 		factTexts = append(factTexts, f.Content)
+		knownFacts[f.ID] = true
 	}
 
 	var out []*ProposedHypothesis
@@ -1384,12 +1386,30 @@ func validateProposedHypotheses(raw []jsonProposedHypothesis, existing []string,
 		if conf > 0.5 {
 			conf = 0.5
 		}
+		// A belief may only rest on evidence the model was actually shown. An id
+		// outside that set is fabricated, and a fabricated citation is not a
+		// weak belief but a broken one: keep the real ids, and when none are
+		// left do not create the hypothesis at all. Rejecting it instead would
+		// put a row in the log implying it was weighed on evidence it never had.
+		sources := r.SourceFactIDs
+		if len(sources) > 0 {
+			kept := make([]int64, 0, len(sources))
+			for _, id := range sources {
+				if knownFacts[id] {
+					kept = append(kept, id)
+				}
+			}
+			if len(kept) == 0 {
+				continue
+			}
+			sources = kept
+		}
 		out = append(out, &ProposedHypothesis{
 			Content:          content,
 			VerificationPlan: plan,
 			Confidence:       conf,
 			Reasoning:        strings.TrimSpace(r.Reasoning),
-			SourceFactIDs:    r.SourceFactIDs,
+			SourceFactIDs:    sources,
 		})
 		seen = append(seen, content)
 	}

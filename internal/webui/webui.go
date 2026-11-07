@@ -171,6 +171,7 @@ func errStatus(err error) int {
 	// server failure.
 	case errors.Is(err, brain.ErrEmptyContent),
 		errors.Is(err, brain.ErrContentTooLong),
+		errors.Is(err, brain.ErrUnknownSourceFacts),
 		errors.Is(err, brain.ErrInvalidPath),
 		errors.Is(err, brain.ErrNamespacesRequired),
 		errors.Is(err, brain.ErrNamespaceNotFound),
