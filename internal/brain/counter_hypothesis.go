@@ -103,8 +103,8 @@ func (b *Brain) insertCounterHypothesis(ctx context.Context, h *models.Hypothesi
 
 	var out models.Hypothesis
 	err := b.pool.QueryRow(ctx,
-		`INSERT INTO hypotheses (namespace_id, content, confidence, verification_plan, source_fact_ids, method, counter_of)
-		 VALUES ($1, $2, $3, $4, $5, 'counter', $6)
+		`INSERT INTO hypotheses (namespace_id, content, confidence, verification_plan, source_fact_ids, supported_by, method, counter_of)
+		 VALUES ($1, $2, $3, $4, $5, $5, 'counter', $6)
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
 		 confirmed_fact_id, rejection_reason, source_fact_ids, counter_of, tested_at, confirmed_at, rejected_at,
 		 created_at, updated_at, deleted_at`,
@@ -118,6 +118,9 @@ func (b *Brain) insertCounterHypothesis(ctx context.Context, h *models.Hypothesi
 	if err != nil {
 		return nil, fmt.Errorf("insert counter hypothesis: %w", err)
 	}
+	// The counter stands on the same evidence as the belief it opposes; it is
+	// a different reading of those facts, not a new claim about the world.
+	out.SupportedBy = sourceIDs
 
 	// The counter is written as the critic's proposal, not as the caller's: the
 	// human who created the original did not assert this.

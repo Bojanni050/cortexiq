@@ -1404,6 +1404,12 @@ func validateProposedHypotheses(raw []jsonProposedHypothesis, existing []string,
 			}
 			sources = kept
 		}
+		// A hypothesis without source facts is rejected the moment it is
+		// created, so one that cites nothing would only produce a rejected row.
+		// The model was shown facts; if it cannot point at one, it is guessing.
+		if len(facts) > 0 && len(sources) == 0 {
+			continue
+		}
 		out = append(out, &ProposedHypothesis{
 			Content:          content,
 			VerificationPlan: plan,

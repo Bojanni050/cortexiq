@@ -87,8 +87,8 @@ func TestValidateProposedHypothesesDropsRestatedFacts(t *testing.T) {
 		{ID: 1, Content: "Chat attachments larger than 25MB are not sent to the POST /ingest/attachment endpoint"},
 	}
 	raw := []jsonProposedHypothesis{
-		{Content: "Chat attachments larger than 25MB are not sent to the POST /ingest/attachment endpoint", VerificationPlan: "upload 30MB"},
-		{Content: "Attachments above 25MB will keep being dropped until the limit is raised", VerificationPlan: "raise the limit and retry the same file"},
+		{Content: "Chat attachments larger than 25MB are not sent to the POST /ingest/attachment endpoint", VerificationPlan: "upload 30MB", SourceFactIDs: []int64{1}},
+		{Content: "Attachments above 25MB will keep being dropped until the limit is raised", VerificationPlan: "raise the limit and retry the same file", SourceFactIDs: []int64{1}},
 	}
 
 	got := validateProposedHypotheses(raw, nil, facts, 5)
@@ -156,5 +156,34 @@ func TestValidateProposedHypothesesDropsFabricatedEvidence(t *testing.T) {
 	}
 	if ids := got[1].SourceFactIDs; len(ids) != 1 || ids[0] != 12 {
 		t.Fatalf("fabricated id should be dropped and the real one kept, got %v", ids)
+	}
+}
+
+func TestValidateProposedHypothesesDropsUncitedProposals(t *testing.T) {
+	facts := []models.Fact{
+		{ID: 12, Content: "De consolidator draait elke tien minuten."},
+	}
+	raw := []jsonProposedHypothesis{
+		// Nothing cited while it was shown facts: a hypothesis without source
+		// facts is rejected on creation, so creating it would only fill the log
+		// with rejections.
+		{Content: "De consolidator gaat binnenkort vaker draaien", VerificationPlan: "tel de runs"},
+		{Content: "De tien-minutenronde is te lang voor grote namespaces", VerificationPlan: "meet de doorlooptijd", SourceFactIDs: []int64{12}},
+	}
+
+	got := validateProposedHypotheses(raw, nil, facts, 5)
+
+	if len(got) != 1 {
+		t.Fatalf("want only the cited proposal, got %d: %+v", len(got), got)
+	}
+	if got[0].Content != "De tien-minutenronde is te lang voor grote namespaces" {
+		t.Fatalf("wrong proposal kept: %q", got[0].Content)
+	}
+
+	// Without facts in hand the rule cannot apply: there is nothing to cite. The
+	// other proposal still dies, because it names an id it was never shown.
+	gotNoFacts := validateProposedHypotheses(raw, nil, nil, 5)
+	if len(gotNoFacts) != 1 || gotNoFacts[0].Content != "De consolidator gaat binnenkort vaker draaien" {
+		t.Fatalf("without facts only the uncited proposal survives, got %+v", gotNoFacts)
 	}
 }

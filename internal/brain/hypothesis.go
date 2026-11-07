@@ -78,6 +78,11 @@ type hypothesisInput struct {
 // and then has none is worse than one that never named any.
 var ErrUnknownSourceFacts = fmt.Errorf("brain: hypothesis: source facts do not exist")
 
+// ErrNoSourceFacts is the rejection reason for a hypothesis that arrives with
+// no evidence at all. It is created and immediately rejected rather than
+// refused, so the suspicion itself stays readable in the log.
+var ErrNoSourceFacts = fmt.Errorf("rejected on creation: no source facts, so there is nothing to test this against")
+
 // verifiedFactIDs keeps only the ids that actually exist, in the order given.
 // Every path that creates a hypothesis goes through here, because the ids can
 // come from a model, an agent or a human, and none of them is trusted.
@@ -165,6 +170,17 @@ func (b *Brain) insertHypothesis(ctx context.Context, in hypothesisInput) (*mode
 		Detail:       detail,
 	}); err != nil {
 		return nil, err
+	}
+
+	// A belief nobody can trace back to anything is a guess with a plan. It is
+	// still recorded — the log is the point — but it never sits in the open
+	// list, and no counter-hypothesis (a paid model call) is spent on it.
+	if len(sourceFactIDs) == 0 {
+		rejected, err := b.RejectHypothesis(ctx, h.ID, ErrNoSourceFacts.Error())
+		if err != nil {
+			return nil, err
+		}
+		return rejected, nil
 	}
 
 	// A belief without an opposing case is only half a test. The counter is

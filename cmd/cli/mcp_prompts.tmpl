@@ -1076,6 +1076,8 @@ A hypothesis is different from a low-confidence fact:
 
 The verification plan is the critical differentiator. Without it, you just have a guess. With it, you have a testable belief.
 
+A hypothesis also needs source facts: the belief must point at something you read. One without source_fact_ids is created but rejected on the spot, because nothing could ever confirm it.
+
 CALL THIS WHEN:
 - You suspect something is true but haven't verified it yet
 - User says "I think...", "I suspect...", "maybe...", "possibly..."
@@ -1133,7 +1135,7 @@ How likely you think this hypothesis is to be true. 0.3-0.5 for weak suspicion, 
 
 
 {{define "create_hypothesis_source_fact_ids"}}
-Comma-separated IDs of facts that support this hypothesis. Optional — link facts that motivated this belief.
+Comma-separated IDs of the facts that made you suspect this. Required in practice: a hypothesis with no source facts is recorded but rejected immediately, because there is nothing to test it against and nothing that could ever confirm it. Cite the facts you actually read — an id that does not exist is refused.
 {{end}}
 
 
