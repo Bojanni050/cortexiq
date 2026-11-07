@@ -171,7 +171,10 @@ func renderConsent(w http.ResponseWriter, status int, data consentData) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' https://cortexiq.higaia.nl; frame-ancestors 'none'")
+	// The POST is protected by sameOrigin below. Do not add form-action here:
+	// Claude's embedded consent browser can report the relative form action as
+	// cross-origin even when the document and endpoint share this public issuer.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'")
 	w.WriteHeader(status)
 	_ = consentTemplate.Execute(w, data)
 }

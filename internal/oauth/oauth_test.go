@@ -307,11 +307,11 @@ func TestConsentFormCarriesTheWholeRequest(t *testing.T) {
 	}
 }
 
-func TestConsentCSPAllowsThePublicIssuerExplicitly(t *testing.T) {
+func TestConsentCSPDoesNotBlockConsentPost(t *testing.T) {
 	rec := httptest.NewRecorder()
 	renderConsent(rec, http.StatusOK, consentData{})
 	csp := rec.Header().Get("Content-Security-Policy")
-	if !strings.Contains(csp, "form-action 'self' https://cortexiq.higaia.nl") {
-		t.Fatalf("consent CSP = %q, want explicit public issuer in form-action", csp)
+	if strings.Contains(csp, "form-action") {
+		t.Fatalf("consent CSP = %q, must not constrain the consent form action", csp)
 	}
 }

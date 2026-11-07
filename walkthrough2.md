@@ -382,3 +382,9 @@ voor de regel dat er na 1000 regels een nieuw walkthrough-bestand komt.
 - Findings: Claude’s ingebedde browser meldde dat de POST naar `/oauth/authorize` door `form-action 'self'` werd geblokkeerd, hoewel de server volgens HTTP en nginx dezelfde-origin was. Productielogs lieten zien dat andere submits wel als 302 aankwamen; de browsercontext is dus afwijkend, niet de OAuth-handler.
 - Conclusions: de CSP niet verwijderen en de form-origin niet onbeperkt openen. De publieke issuer expliciet naast `'self'` toestaan (`https://cortexiq.higaia.nl`), zodat een browser die de embedded form-origin anders interpreteert toch alleen naar de eigen CortexIQ-origin mag posten.
 - Actions: `internal/oauth/templates.go` maakt de `form-action`-origin expliciet; `internal/oauth/oauth_test.go` controleert die header. Validatie volgt samen met de release; lokale Go-tests zijn niet beschikbaar omdat Go niet op de PATH staat.
+
+## 2026-11-07 (CSP-regel verwijderd voor Claude consent-browser)
+
+- Findings: de expliciete `form-action 'self' https://cortexiq.higaia.nl` in v0.1.43 werd door Claude nog steeds als blokkade gemeld, terwijl de productie-header correct was en de server-side same-origin-check de POST al beschermt.
+- Conclusions: `form-action` is hier dubbelop en veroorzaakt incompatibiliteit in Claude's embedded browser. De veilige oplossing is de directive weglaten, niet de hele CSP uitschakelen: `default-src 'none'`, inline styles en frame-bescherming blijven actief; `sameOrigin()` en redirect-validatie blijven de echte requestbeveiliging.
+- Actions: `internal/oauth/templates.go` verwijdert alleen `form-action` en documenteert waarom; `internal/oauth/oauth_test.go` controleert dat de consent-CSP geen `form-action` meer bevat. Daarna volgt release/deploy en een nieuwe Claude-authorization request.
