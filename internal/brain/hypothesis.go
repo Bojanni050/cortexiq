@@ -179,7 +179,58 @@ func (b *Brain) ListHypotheses(ctx context.Context, namespaceSlugs []string, sta
 		return nil, fmt.Errorf("list hypotheses: %w", err)
 	}
 	defer rows.Close()
-	return scanHypothesisRows(rows)
+	hyps, err := scanHypothesisRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := b.attachSourceFacts(ctx, hyps); err != nil {
+		return nil, err
+	}
+	return hyps, nil
+}
+
+// attachSourceFacts resolves the evidence behind a page of hypotheses in one
+// query. A fact that no longer exists keeps its id with empty content, so a
+// reader sees that it is gone instead of watching the id disappear.
+func (b *Brain) attachSourceFacts(ctx context.Context, hyps []models.Hypothesis) error {
+	var ids []int64
+	for _, h := range hyps {
+		ids = append(ids, h.SourceFactIDs...)
+		if h.ConfirmedFactID != nil {
+			ids = append(ids, *h.ConfirmedFactID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+
+	rows, err := b.pool.Query(ctx, `SELECT id, content FROM facts WHERE id = ANY($1)`, ids)
+	if err != nil {
+		return fmt.Errorf("source facts: %w", err)
+	}
+	defer rows.Close()
+
+	byID := make(map[int64]string, len(ids))
+	for rows.Next() {
+		var id int64
+		var content string
+		if err := rows.Scan(&id, &content); err != nil {
+			return fmt.Errorf("scan source fact: %w", err)
+		}
+		byID[id] = content
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for i := range hyps {
+		refs := make([]models.FactRef, 0, len(hyps[i].SourceFactIDs))
+		for _, id := range hyps[i].SourceFactIDs {
+			refs = append(refs, models.FactRef{ID: id, Content: byID[id]})
+		}
+		hyps[i].SourceFacts = refs
+	}
+	return nil
 }
 
 // GetHypothesis returns a single hypothesis by ID.
@@ -203,6 +254,11 @@ func (b *Brain) GetHypothesis(ctx context.Context, id int64) (*models.Hypothesis
 		}
 		return nil, fmt.Errorf("get hypothesis: %w", err)
 	}
+	one := []models.Hypothesis{h}
+	if err := b.attachSourceFacts(ctx, one); err != nil {
+		return nil, err
+	}
+	h.SourceFacts = one[0].SourceFacts
 	return &h, nil
 }
 

@@ -169,6 +169,18 @@ type Hypothesis struct {
 	CreatedAt   time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt   time.Time  `db:"updated_at" json:"updated_at"`
 	DeletedAt   *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
+
+	// SourceFacts is filled in after the scan, not read from a column. Resolving
+	// the evidence server-side keeps it honest: a client that looks the ids up
+	// in its own list of facts silently loses everything past the page size.
+	SourceFacts []FactRef `db:"-" json:"source_facts,omitempty"`
+}
+
+// FactRef is a fact id with just enough content to show what a hypothesis
+// rests on. Content is empty when the fact is gone (purged).
+type FactRef struct {
+	ID      int64  `json:"id"`
+	Content string `json:"content"`
 }
 
 // HypothesisEvent is one entry in a hypothesis' history. It answers who moved

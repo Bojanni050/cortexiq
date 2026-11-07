@@ -2044,7 +2044,7 @@ async function mmView(id) {
 
 async function renderHypotheses() {
   const byId = new Map();
-  const factLine = id => `<div><span class="mono">#${id}</span> ${byId.has(id) ? esc(byId.get(id)) : '<span class="muted">(fact not available)</span>'}</div>`;
+  const factLine = id => `<div><span class="mono">#${id}</span> ${byId.has(id) ? esc(byId.get(id)) : '<span class="muted">(fact no longer in memory)</span>'}</div>`;
   // What the hypothesis is based on, and how it ended (if it did).
   const basis = h => (h.source_fact_ids || []).length
     ? h.source_fact_ids.map(factLine).join('') : '<span class="muted">—</span>';
@@ -2064,8 +2064,10 @@ async function renderHypotheses() {
     headers: ['Hypothesis', ''],
     fields: ['id', 'content', 'verification_plan', 'status'],
     enrich: async (pageItems) => {
-      const facts = await apiList('/facts' + nsQS('&limit=1000'));
-      for (const f of facts) byId.set(f.id, f.content);
+      // The API resolves the evidence per hypothesis. Asking the facts endpoint
+      // instead looked fine until a namespace grew past the page size, after
+      // which older evidence read as "not available".
+      for (const h of pageItems) for (const f of (h.source_facts || [])) byId.set(f.id, f.content);
       counters = new Map(pageItems.filter(h => h.counter_of).map(h => [h.counter_of, h]));
     },
     row: h => `<tr class="rowlink" onclick="pickRow('hypotheses', ${h.id}, this)">
