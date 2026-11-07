@@ -84,7 +84,8 @@ var ErrUnknownSourceFacts = fmt.Errorf("brain: hypothesis: source facts do not e
 func (b *Brain) verifiedFactIDs(ctx context.Context, ids []int64) ([]int64, error) {
 	ids = nonNilIDs(ids)
 	if len(ids) == 0 {
-		return nil, nil
+		// Not nil: source_fact_ids is NOT NULL, and a nil slice becomes NULL.
+		return []int64{}, nil
 	}
 
 	rows, err := b.pool.Query(ctx, `SELECT id FROM facts WHERE id = ANY($1)`, ids)
