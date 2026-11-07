@@ -2048,6 +2048,14 @@ async function renderHypotheses() {
   // What the hypothesis is based on, and how it ended (if it did).
   const basis = h => (h.source_fact_ids || []).length
     ? h.source_fact_ids.map(factLine).join('') : '<span class="muted">—</span>';
+  // The proof count: facts alone flatter a belief, so the episode count is the
+  // number that matters. Six facts from one conversation are one leg.
+  const support = h => {
+    const f = h.support_facts || 0, e = h.support_episodes || 0;
+    if (!f) return '<span class="muted">nothing yet</span>';
+    return `${f} fact${f === 1 ? '' : 's'} from ${e} episode${e === 1 ? '' : 's'}` +
+      (e <= 1 ? ' <span class="badge pending" title="Only one conversation backs this belief so far.">single source</span>' : '');
+  };
   const outcome = h => {
     if (h.confirmed_fact_id) return `<div class="muted">${ts(h.confirmed_at)} → became fact</div>${factLine(h.confirmed_fact_id)}`;
     if (h.rejection_reason) return `<div class="muted">${ts(h.rejected_at)}</div><div>${esc(h.rejection_reason)}</div>`;
@@ -2071,7 +2079,7 @@ async function renderHypotheses() {
       counters = new Map(pageItems.filter(h => h.counter_of).map(h => [h.counter_of, h]));
     },
     row: h => `<tr class="rowlink" onclick="pickRow('hypotheses', ${h.id}, this)">
-      <td class="wrap"><span class="mono">#${h.id}</span> ${esc(h.content)}${h.method === 'inferred' ? ' <span class="badge pending" title="Proposed by the consolidator itself; only a human confirms it.">inferred</span>' : ''}${h.counter_of ? ` <span class="muted">(counter of #${h.counter_of})</span>` : counterTag(h)}</td>
+      <td class="wrap"><span class="mono">#${h.id}</span> ${esc(h.content)}${h.method === 'inferred' ? ' <span class="badge pending" title="Proposed by the consolidator itself; only a human confirms it.">inferred</span>' : ''}${h.counter_of ? ` <span class="muted">(counter of #${h.counter_of})</span>` : counterTag(h)}${h.support_facts > 0 && h.support_episodes <= 1 ? ' <span class="badge pending" title="Only one conversation backs this belief so far.">single source</span>' : ''}</td>
       <td class="row-actions">
         ${h.status === 'confirmed' || h.status === 'rejected' ? '' : `<button onclick="event.stopPropagation();hypoConfirm(${h.id})">confirm</button>
         <button onclick="event.stopPropagation();hypoReject(${h.id})">reject</button>`}
@@ -2086,6 +2094,7 @@ async function renderHypotheses() {
         ['Status', `${badge(h.status)}${outcome(h)}`],
         ['Confidence', pctCompact(h.confidence)],
         ['Based on', basis(h)],
+        ['Support', support(h)],
         ['Namespace', `<span class="mono">${esc(nsSlug(h.namespace_id))}</span>`],
         h.method ? ['Method', esc(h.method)] : null,
         ['Updated', ts(h.updated_at)],

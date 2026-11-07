@@ -140,6 +140,21 @@ func (b *Brain) consolidateHypothesisEvidence(ctx context.Context, nsID int64, c
 				errs = append(errs, fmt.Sprintf("update hypothesis %d confidence: %v", r.HypothesisID, err))
 				continue
 			}
+			// Only a supporting batch adds to the proof count. A weakening batch
+			// is evidence too, but counting it as support would make a belief
+			// look better the more it was doubted.
+			factIDs := factIDsOf(facts)
+			if r.Verdict == "supports" && len(factIDs) > 0 {
+				if _, err := b.pool.Exec(ctx,
+					`UPDATE hypotheses
+					    SET supported_by = ARRAY(SELECT DISTINCT unnest(supported_by || $2::bigint[]))
+					  WHERE id = $1`,
+					r.HypothesisID, factIDs,
+				); err != nil {
+					errs = append(errs, fmt.Sprintf("update hypothesis %d support: %v", r.HypothesisID, err))
+					continue
+				}
+			}
 			// A confidence that drifts without a trace is indistinguishable from
 			// one that was edited by hand, so every shift lands in the log.
 			reason := r.Reasoning
@@ -152,7 +167,7 @@ func (b *Brain) consolidateHypothesisEvidence(ctx context.Context, nsID int64, c
 				ConfidenceFrom: &hyp.Confidence,
 				ConfidenceTo:   &r.NewConfidence,
 				Reason:         strPtr(reason),
-				Detail:         map[string]any{"verdict": r.Verdict, "llm_confidence": r.Confidence, "facts_considered": len(facts)},
+				Detail:         map[string]any{"verdict": r.Verdict, "llm_confidence": r.Confidence, "facts_considered": len(facts), "fact_ids": factIDs},
 			}); err != nil {
 				errs = append(errs, fmt.Sprintf("record evidence for hypothesis %d: %v", r.HypothesisID, err))
 				continue

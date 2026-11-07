@@ -134,8 +134,8 @@ func (b *Brain) insertHypothesis(ctx context.Context, in hypothesisInput) (*mode
 
 	var h models.Hypothesis
 	err = b.pool.QueryRow(ctx,
-		`INSERT INTO hypotheses (namespace_id, content, confidence, verification_plan, source_fact_ids, method)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO hypotheses (namespace_id, content, confidence, verification_plan, source_fact_ids, supported_by, method)
+		 VALUES ($1, $2, $3, $4, $5, $5, $6)
 		 RETURNING id, namespace_id, content, confidence, status, verification_plan, method,
 		 confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
 		 created_at, updated_at, deleted_at, counter_of`,
@@ -149,6 +149,8 @@ func (b *Brain) insertHypothesis(ctx context.Context, in hypothesisInput) (*mode
 	if err != nil {
 		return nil, fmt.Errorf("create hypothesis: %w", err)
 	}
+	// The belief starts out resting on what it was built from.
+	h.SupportedBy = sourceFactIDs
 
 	detail := map[string]any{"method": h.Method, "source_fact_ids": sourceFactIDs}
 	for k, v := range in.Detail {
@@ -218,7 +220,7 @@ func (b *Brain) ListHypotheses(ctx context.Context, namespaceSlugs []string, sta
 	where, args := hypothesisWhere(nsIDs, status)
 	query := `SELECT id, namespace_id, content, confidence, status, verification_plan, method,
 	          confirmed_fact_id, rejection_reason, source_fact_ids, tested_at, confirmed_at, rejected_at,
-	          created_at, updated_at, deleted_at, counter_of
+	          created_at, updated_at, deleted_at, counter_of, supported_by
 	          FROM hypotheses WHERE ` + where +
 		fmt.Sprintf(" ORDER BY updated_at DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
 	args = append(args, page.Limit, page.Offset)
@@ -241,12 +243,29 @@ func (b *Brain) ListHypotheses(ctx context.Context, namespaceSlugs []string, sta
 // attachSourceFacts resolves the evidence behind a page of hypotheses in one
 // query. A fact that no longer exists keeps its id with empty content, so a
 // reader sees that it is gone instead of watching the id disappear.
+//
+// The same rows are the proof count: supported_by is every fact that has ever
+// argued for the belief. Episodes come from fact_sources, because six facts
+// from one conversation are one leg, not six.
 func (b *Brain) attachSourceFacts(ctx context.Context, hyps []models.Hypothesis) error {
+	seen := make(map[int64]struct{})
 	var ids []int64
+	add := func(id int64) {
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
 	for _, h := range hyps {
-		ids = append(ids, h.SourceFactIDs...)
+		for _, id := range h.SourceFactIDs {
+			add(id)
+		}
+		for _, id := range h.SupportedBy {
+			add(id)
+		}
 		if h.ConfirmedFactID != nil {
-			ids = append(ids, *h.ConfirmedFactID)
+			add(*h.ConfirmedFactID)
 		}
 	}
 	if len(ids) == 0 {
@@ -257,18 +276,24 @@ func (b *Brain) attachSourceFacts(ctx context.Context, hyps []models.Hypothesis)
 	if err != nil {
 		return fmt.Errorf("source facts: %w", err)
 	}
-	defer rows.Close()
 
 	byID := make(map[int64]string, len(ids))
 	for rows.Next() {
 		var id int64
 		var content string
 		if err := rows.Scan(&id, &content); err != nil {
+			rows.Close()
 			return fmt.Errorf("scan source fact: %w", err)
 		}
 		byID[id] = content
 	}
+	rows.Close()
 	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	episodes, err := b.factEpisodes(ctx, ids)
+	if err != nil {
 		return err
 	}
 
@@ -278,8 +303,38 @@ func (b *Brain) attachSourceFacts(ctx context.Context, hyps []models.Hypothesis)
 			refs = append(refs, models.FactRef{ID: id, Content: byID[id]})
 		}
 		hyps[i].SourceFacts = refs
+
+		hyps[i].SupportFacts = len(hyps[i].SupportedBy)
+		distinct := make(map[int64]struct{})
+		for _, id := range hyps[i].SupportedBy {
+			for _, ep := range episodes[id] {
+				distinct[ep] = struct{}{}
+			}
+		}
+		hyps[i].SupportEpisodes = len(distinct)
 	}
 	return nil
+}
+
+// factEpisodes maps each fact to the episodes it was extracted from. A fact
+// with no source row is simply absent from the map.
+func (b *Brain) factEpisodes(ctx context.Context, ids []int64) (map[int64][]int64, error) {
+	rows, err := b.pool.Query(ctx,
+		`SELECT fact_id, episode_id FROM fact_sources WHERE fact_id = ANY($1)`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("fact sources: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[int64][]int64, len(ids))
+	for rows.Next() {
+		var factID, episodeID int64
+		if err := rows.Scan(&factID, &episodeID); err != nil {
+			return nil, fmt.Errorf("scan fact source: %w", err)
+		}
+		out[factID] = append(out[factID], episodeID)
+	}
+	return out, rows.Err()
 }
 
 // GetHypothesis returns a single hypothesis by ID.

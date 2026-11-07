@@ -160,6 +160,10 @@ type Hypothesis struct {
 	ConfirmedFactID  *int64  `db:"confirmed_fact_id" json:"confirmed_fact_id"`
 	RejectionReason  *string `db:"rejection_reason" json:"rejection_reason"`
 	SourceFactIDs    []int64 `db:"source_fact_ids" json:"source_fact_ids"`
+	// SupportedBy is every fact that has ever argued FOR this belief: what it
+	// was created from plus each batch that came back supporting it. Its length
+	// is the proof count.
+	SupportedBy []int64 `db:"supported_by" json:"supported_by"`
 	// CounterOf points at the hypothesis this one argues against. It is set on
 	// the counter, not on the original, so the original stays a plain belief.
 	CounterOf   *int64     `db:"counter_of" json:"counter_of"`
@@ -174,6 +178,12 @@ type Hypothesis struct {
 	// the evidence server-side keeps it honest: a client that looks the ids up
 	// in its own list of facts silently loses everything past the page size.
 	SourceFacts []FactRef `db:"-" json:"source_facts,omitempty"`
+
+	// SupportFacts and SupportEpisodes are the proof count, derived per request.
+	// Facts alone flatter a belief: six facts from one conversation are one leg,
+	// not six. Episodes are what the facts actually came from.
+	SupportFacts    int `db:"-" json:"support_facts"`
+	SupportEpisodes int `db:"-" json:"support_episodes"`
 }
 
 // FactRef is a fact id with just enough content to show what a hypothesis

@@ -157,6 +157,15 @@ func (b *Brain) CountHypothesisEvents(ctx context.Context, namespaceSlugs []stri
 	return b.countWhere(ctx, "hypothesis_events", where, args...)
 }
 
+// factIDsOf collects the ids of a fact batch for the proof count and the log.
+func factIDsOf(facts []models.Fact) []int64 {
+	ids := make([]int64, 0, len(facts))
+	for _, f := range facts {
+		ids = append(ids, f.ID)
+	}
+	return ids
+}
+
 // strPtr is a small helper for the nullable text columns in a log entry.
 func strPtr(s string) *string {
 	if s == "" {
