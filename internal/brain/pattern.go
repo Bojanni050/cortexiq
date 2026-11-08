@@ -45,9 +45,13 @@ func (b *Brain) DeletePattern(ctx context.Context, id int64) error {
 // merge keeps what each sighting contributed — the stronger confidence, the
 // higher coherence and the union of the sources.
 //
+// sources is the set of things the statement is about (empty for a pattern the
+// window stage derived from facts alone). The sweep uses it to recognise the same
+// regularity in another wording, which the content key cannot see.
+//
 // It reports whether the row was new, so a run can say "3 new, 4 reinforced"
 // instead of pretending every derivation was an insight.
-func (b *Brain) storePattern(ctx context.Context, nsID int64, content string, confidence float32, factIDs, relIDs []int64, coherence float32) (inserted bool, err error) {
+func (b *Brain) storePattern(ctx context.Context, nsID int64, content string, confidence float32, factIDs, relIDs []int64, sources []string, coherence float32) (inserted bool, err error) {
 	// A nil slice reaches the driver as NULL and the id columns are NOT NULL: the
 	// row would be rejected. This is the regression the old stage test guarded,
 	// now guarded where the row is actually written.
@@ -57,10 +61,13 @@ func (b *Brain) storePattern(ctx context.Context, nsID int64, content string, co
 	if relIDs == nil {
 		relIDs = []int64{}
 	}
+	if sources == nil {
+		sources = []string{}
+	}
 	var created bool
 	err = b.pool.QueryRow(ctx,
-		`INSERT INTO patterns (namespace_id, content, confidence, source_fact_ids, source_rel_ids, coherence_score)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO patterns (namespace_id, content, confidence, source_fact_ids, source_rel_ids, source_entities, coherence_score)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 ON CONFLICT (namespace_id, content_key) WHERE deleted_at IS NULL
 		 DO UPDATE SET
 		   confidence = GREATEST(patterns.confidence, EXCLUDED.confidence),
@@ -73,9 +80,13 @@ func (b *Brain) storePattern(ctx context.Context, nsID int64, content string, co
 		     SELECT array_agg(DISTINCT x)
 		     FROM unnest(patterns.source_rel_ids || EXCLUDED.source_rel_ids) AS x
 		   ), '{}'),
+		   source_entities = COALESCE((
+		     SELECT array_agg(DISTINCT x)
+		     FROM unnest(patterns.source_entities || EXCLUDED.source_entities) AS x
+		   ), '{}'),
 		   updated_at = now()
 		 RETURNING (xmax = 0)`,
-		nsID, content, confidence, factIDs, relIDs, coherence,
+		nsID, content, confidence, factIDs, relIDs, sources, coherence,
 	).Scan(&created)
 	if err != nil {
 		return false, fmt.Errorf("store pattern: %w", err)

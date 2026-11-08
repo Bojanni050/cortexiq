@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/Bojanni050/cortexiq/internal/reasoner"
 )
@@ -145,7 +146,7 @@ func (b *Brain) consolidateToShapePatterns(ctx context.Context, nsID int64) (cou
 			// The cluster minimum times the share of sources that fit, the same
 			// way the window stage scores its patterns.
 			confidence := c.minConfidence * st.Coherence
-			if _, err := b.storePattern(ctx, nsID, st.Statement, confidence, c.factIDs, c.relIDs, st.Coherence); err != nil {
+			if _, err := b.storeShapePattern(ctx, nsID, c.target, st.Statement, confidence, c.factIDs, c.relIDs, c.sources, st.Coherence); err != nil {
 				errs = append(errs, fmt.Sprintf("store shape pattern: %v", err))
 				if err := b.recordShapeCluster(ctx, nsID, c, "error"); err != nil {
 					errs = append(errs, fmt.Sprintf("record failed cluster: %v", err))
@@ -255,6 +256,129 @@ func (b *Brain) recordShapeCluster(ctx context.Context, nsID int64, c *shapeClus
 	_, err := b.pool.Exec(ctx, shapeRecordSQL, nsID, shapeSignature(c.relationType, c.target),
 		c.relationType, c.target, len(c.sources), c.maxRelID, verdict)
 	return err
+}
+
+// shapeSameTargetSQL finds live patterns whose own evidence points at the same
+// target, in the namespace.
+const shapeSameTargetSQL = `
+SELECT p.id, p.source_entities
+FROM patterns p
+WHERE p.namespace_id = $1
+  AND p.deleted_at IS NULL
+  AND EXISTS (
+    SELECT 1
+    FROM relationships r
+    WHERE r.id = ANY(p.source_rel_ids)
+      AND lower(r.to_entity) = $2
+  )`
+
+// shapeMergeSQL folds a second sighting into the row that already says the same
+// thing about the same things.
+const shapeMergeSQL = `
+UPDATE patterns
+SET source_entities = COALESCE((
+      SELECT array_agg(DISTINCT x) FROM unnest(source_entities || $2::text[]) AS x
+    ), '{}'),
+    source_rel_ids = COALESCE((
+      SELECT array_agg(DISTINCT x) FROM unnest(source_rel_ids || $3::bigint[]) AS x
+    ), '{}'),
+    source_fact_ids = COALESCE((
+      SELECT array_agg(DISTINCT x) FROM unnest(source_fact_ids || $4::bigint[]) AS x
+    ), '{}'),
+    confidence      = GREATEST(confidence, $5),
+    coherence_score = GREATEST(coherence_score, $6),
+    updated_at      = now()
+WHERE id = $1`
+
+// storeShapePattern stores a statement the sweep derived from a cluster of edges,
+// merging it into a pattern that already states the same thing about the same
+// sources.
+//
+// The content key only catches identical wording, and production showed the same
+// regularity arriving twice: "Nmbrs, Yuki and … handle document chasing" next to
+// "Yuki, Nmbrs and … handle document chasing for SME/ZZP accountants". Two
+// conditions have to hold together, because either one alone is wrong:
+//
+//   - the evidence points at the same target. Clusters partition the edges, so
+//     this is really "the statement is about the same thing" (a cluster of
+//     `handles` edges and one of `handles_task` edges at the same target).
+//   - at least half of the smaller source set overlaps. On sources alone it would
+//     be wrong: the same four suppliers both chase documents and categorise
+//     receipts, and those are two regularities, not one.
+func (b *Brain) storeShapePattern(ctx context.Context, nsID int64, target, content string, confidence float32, factIDs, relIDs []int64, sources []string, coherence float32) (inserted bool, err error) {
+	if len(sources) > 0 {
+		var (
+			bestID   int64
+			bestSet  []string
+			bestHits int
+		)
+		rows, err := b.pool.Query(ctx, shapeSameTargetSQL, nsID, strings.ToLower(target))
+		if err != nil {
+			return false, fmt.Errorf("find patterns at the same target: %w", err)
+		}
+		for rows.Next() {
+			var (
+				id      int64
+				matched []string
+			)
+			if err := rows.Scan(&id, &matched); err != nil {
+				rows.Close()
+				return false, err
+			}
+			if hits := countOverlap(sources, matched); hits > bestHits {
+				bestID, bestSet, bestHits = id, matched, hits
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+
+		smaller := len(sources)
+		if len(bestSet) < smaller {
+			smaller = len(bestSet)
+		}
+		if bestID != 0 && bestHits*2 >= smaller {
+			if err := b.mergeShapePattern(ctx, bestID, relIDs, factIDs, sources, confidence, coherence); err != nil {
+				return false, err
+			}
+			return false, nil
+		}
+	}
+	return b.storePattern(ctx, nsID, content, confidence, factIDs, relIDs, sources, coherence)
+}
+
+// mergeShapePattern keeps the wording that is already there and adds what the
+// second sighting proved.
+func (b *Brain) mergeShapePattern(ctx context.Context, id int64, relIDs, factIDs []int64, sources []string, confidence, coherence float32) error {
+	if relIDs == nil {
+		relIDs = []int64{}
+	}
+	if factIDs == nil {
+		factIDs = []int64{}
+	}
+	if sources == nil {
+		sources = []string{}
+	}
+	if _, err := b.pool.Exec(ctx, shapeMergeSQL, id, sources, relIDs, factIDs, confidence, coherence); err != nil {
+		return fmt.Errorf("merge shape pattern: %w", err)
+	}
+	return nil
+}
+
+// countOverlap is how many items the two sets share.
+func countOverlap(a, b []string) int {
+	have := make(map[string]bool, len(b))
+	for _, s := range b {
+		have[s] = true
+	}
+	hits := 0
+	for _, s := range a {
+		if have[s] {
+			hits++
+		}
+	}
+	return hits
 }
 
 // uniqueStrings drops duplicates while keeping the order the query produced.

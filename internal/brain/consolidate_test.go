@@ -68,7 +68,7 @@ func TestIntegrationStorePatternInsertsEmptyArrayForMissingRels(t *testing.T) {
 	source := e.insertFact(t, "cortexiq consolidates every 5 minutes", nil)
 
 	inserted, err := e.b.storePattern(e.ctx, e.nsID,
-		"CortexIQ runs consolidation on Postgres.", 0.7, []int64{source}, nil, 0.7)
+		"CortexIQ runs consolidation on Postgres.", 0.7, []int64{source}, nil, nil, 0.7)
 	if err != nil {
 		t.Fatalf("storePattern: %v", err)
 	}

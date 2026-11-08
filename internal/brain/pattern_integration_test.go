@@ -20,7 +20,7 @@ func TestIntegrationStorePatternMergesTheSameRegularity(t *testing.T) {
 
 	inserted, err := e.b.storePattern(e.ctx, e.nsID,
 		"The deploy pipeline runs migrations before the container starts", 0.4,
-		[]int64{1, 2}, []int64{7}, 0.8)
+		[]int64{1, 2}, []int64{7}, nil, 0.8)
 	if err != nil {
 		t.Fatalf("storePattern: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestIntegrationStorePatternMergesTheSameRegularity(t *testing.T) {
 	// Same sentence: different spacing and case, and one more source of each kind.
 	inserted, err = e.b.storePattern(e.ctx, e.nsID,
 		"  the deploy pipeline   RUNS migrations before the container starts ", 0.6,
-		[]int64{2, 3}, []int64{8}, 0.9)
+		[]int64{2, 3}, []int64{8}, nil, 0.9)
 	if err != nil {
 		t.Fatalf("storePattern repeat: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestIntegrationStorePatternMergesTheSameRegularity(t *testing.T) {
 	// A different regularity is a different row.
 	inserted, err = e.b.storePattern(e.ctx, e.nsID,
 		"nginx binds to the Tailscale address for hosted services", 0.5,
-		[]int64{4, 5}, []int64{9}, 0.7)
+		[]int64{4, 5}, []int64{9}, nil, 0.7)
 	if err != nil {
 		t.Fatalf("storePattern new content: %v", err)
 	}

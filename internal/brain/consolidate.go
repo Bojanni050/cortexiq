@@ -1188,7 +1188,7 @@ func (b *Brain) consolidateToPatterns(ctx context.Context, nsID int64, cp *model
 			continue
 		}
 
-		if _, err := b.storePattern(ctx, nsID, p.Content, confidence, sourceFactIDs, sourceRelIDs, p.CoherenceScore); err != nil {
+		if _, err := b.storePattern(ctx, nsID, p.Content, confidence, sourceFactIDs, sourceRelIDs, nil, p.CoherenceScore); err != nil {
 			errs = append(errs, fmt.Sprintf("insert pattern: %v", err))
 			continue
 		}

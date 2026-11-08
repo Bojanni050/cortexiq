@@ -11,14 +11,21 @@ import (
 // target with the same relation type: the shape the sweep looks for.
 func shapeFixture(t *testing.T, e *testEnv, sources ...string) []int64 {
 	t.Helper()
+	return shapeFixtureEdges(t, e, "uses_transport", "http-first transport", sources...)
+}
+
+// shapeFixtureEdges is the same shape with the relation type and target spelled
+// out, so a test can build two clusters over the same sources.
+func shapeFixtureEdges(t *testing.T, e *testEnv, relType, target string, sources ...string) []int64 {
+	t.Helper()
 
 	var ids []int64
 	for _, source := range sources {
-		factID := e.insertFact(t, source+" reaches its server over the http-first transport", nil)
+		factID := e.insertFact(t, source+" reaches "+target+" via "+relType, nil)
 		if _, err := e.b.pool.Exec(e.ctx,
 			`INSERT INTO relationships (namespace_id, from_entity, relation_type, to_entity, confidence, source_fact_id)
-			 VALUES ($1, $2, 'uses_transport', 'http-first transport', 0.8, $3)`,
-			e.nsID, source, factID); err != nil {
+			 VALUES ($1, $2, $3, $4, 0.8, $5)`,
+			e.nsID, source, relType, target, factID); err != nil {
 			t.Fatalf("insert relationship for %s: %v", source, err)
 		}
 		ids = append(ids, factID)
@@ -166,6 +173,85 @@ func TestIntegrationShapeSweepIgnoresSmallClusters(t *testing.T) {
 	}
 	if count != 0 || llmCalls != 0 {
 		t.Fatalf("want no work for two sources, got %d patterns from %d calls", count, llmCalls)
+	}
+}
+
+// The same regularity reaches the sweep through two clusters — `uses` and
+// `uses_transport` over the same eleven servers — and the model words it
+// differently each time. That is one pattern with more evidence, not two rows.
+func TestIntegrationShapeSweepMergesAnotherWordingOfTheSameEvidence(t *testing.T) {
+	e := newEnv(t, nil)
+	shapeFixtureEdges(t, e, "uses", "http-first transport", "alpha", "beta", "gamma")
+	shapeFixtureEdges(t, e, "uses_transport", "http-first transport", "alpha", "beta", "gamma")
+
+	e.r.shapes = []*reasoner.ShapeStatement{
+		{Statement: "Services use an HTTP-first transport.", Coherence: 1.0},
+		{Statement: "Every client reaches its server over the http-first transport.", Coherence: 1.0},
+	}
+
+	count, llmCalls, errs := e.b.consolidateToShapePatterns(e.ctx, e.nsID)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if count != 2 || llmCalls != 1 {
+		t.Fatalf("want both clusters judged in one call, got %d patterns from %d calls", count, llmCalls)
+	}
+
+	var rows int
+	if err := e.b.pool.QueryRow(e.ctx,
+		`SELECT count(*) FROM patterns WHERE namespace_id = $1 AND deleted_at IS NULL`, e.nsID,
+	).Scan(&rows); err != nil {
+		t.Fatalf("count patterns: %v", err)
+	}
+	if rows != 1 {
+		t.Fatalf("one regularity in two wordings must be one row, got %d", rows)
+	}
+
+	var relIDs []int64
+	var entities []string
+	if err := e.b.pool.QueryRow(e.ctx,
+		`SELECT source_rel_ids, source_entities
+		   FROM patterns WHERE namespace_id = $1 AND deleted_at IS NULL`, e.nsID,
+	).Scan(&relIDs, &entities); err != nil {
+		t.Fatalf("read merged pattern: %v", err)
+	}
+	if len(relIDs) != 6 {
+		t.Errorf("want the union of both clusters as evidence (6 edges), got %v", relIDs)
+	}
+	if len(entities) != 3 {
+		t.Errorf("want the three sources once each, got %v", entities)
+	}
+}
+
+// The same four suppliers both chase documents and categorise receipts. Same
+// sources, different statement: these stay apart, which is why sources alone can
+// never be the merge key.
+func TestIntegrationShapeSweepKeepsTwoRegularitiesOverTheSameSources(t *testing.T) {
+	e := newEnv(t, nil)
+	shapeFixtureEdges(t, e, "handles", "document chasing", "nmbrs", "yuki", "blinqx")
+	shapeFixtureEdges(t, e, "handles", "receipt categorization", "nmbrs", "yuki", "blinqx")
+
+	e.r.shapes = []*reasoner.ShapeStatement{
+		{Statement: "Nmbrs, Yuki and Blinqx handle document chasing.", Coherence: 1.0},
+		{Statement: "Nmbrs, Yuki and Blinqx handle receipt categorization.", Coherence: 1.0},
+	}
+
+	count, _, errs := e.b.consolidateToShapePatterns(e.ctx, e.nsID)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if count != 2 {
+		t.Fatalf("want two patterns, got %d", count)
+	}
+
+	var rows int
+	if err := e.b.pool.QueryRow(e.ctx,
+		`SELECT count(*) FROM patterns WHERE namespace_id = $1 AND deleted_at IS NULL`, e.nsID,
+	).Scan(&rows); err != nil {
+		t.Fatalf("count patterns: %v", err)
+	}
+	if rows != 2 {
+		t.Fatalf("two different regularities over the same sources must stay two rows, got %d", rows)
 	}
 }
 
