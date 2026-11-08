@@ -283,7 +283,7 @@ func (b *Brain) GetOrCreateConsolidationProgress(ctx context.Context, namespaceI
 // SaveConsolidationProgress updates the checkpoint for a namespace.
 func (b *Brain) SaveConsolidationProgress(ctx context.Context, cp models.ConsolidationProgress) error {
 	now := time.Now().UTC()
-	_, err := b.pool.Exec(ctx,
+	tag, err := b.pool.Exec(ctx,
 		`UPDATE consolidation_progress SET
 			last_episode_id = $2, last_fact_id = $3, last_relationship_id = $4,
 			last_pattern_fact_id = $5, last_pattern_rel_id = $6,
@@ -310,6 +310,12 @@ func (b *Brain) SaveConsolidationProgress(ctx context.Context, cp models.Consoli
 	)
 	if err != nil {
 		return fmt.Errorf("save consolidation progress: %w", err)
+	}
+	// A missing row would make this a silent no-op, and a checkpoint that does not
+	// move is exactly what the stall detector reports as healthy. GetOrCreate runs
+	// before every consolidation, so this is a bug rather than a state.
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("save consolidation progress: namespace %d has no progress row", cp.NamespaceID)
 	}
 	return nil
 }

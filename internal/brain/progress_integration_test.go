@@ -15,6 +15,12 @@ import (
 func TestIntegrationSaveProgressMarksOnlyChangedStages(t *testing.T) {
 	e := newEnv(t, nil)
 
+	// Every run calls GetOrCreate first, so the row exists before the checkpoint is
+	// written; without it SaveConsolidationProgress has nothing to update.
+	if _, err := e.b.GetOrCreateConsolidationProgress(e.ctx, e.nsID); err != nil {
+		t.Fatalf("GetOrCreateConsolidationProgress: %v", err)
+	}
+
 	cp := models.ConsolidationProgress{NamespaceID: e.nsID, LastFactID: 5}
 	if err := e.b.SaveConsolidationProgress(e.ctx, cp); err != nil {
 		t.Fatalf("SaveConsolidationProgress: %v", err)
@@ -69,6 +75,9 @@ func TestIntegrationStageStallsNeedWaitingWork(t *testing.T) {
 	e := newEnv(t, nil)
 
 	fact := e.insertFact(t, "a fact nobody has looked at yet", nil)
+	if _, err := e.b.GetOrCreateConsolidationProgress(e.ctx, e.nsID); err != nil {
+		t.Fatalf("GetOrCreateConsolidationProgress: %v", err)
+	}
 	cp := models.ConsolidationProgress{NamespaceID: e.nsID}
 	if err := e.b.SaveConsolidationProgress(e.ctx, cp); err != nil {
 		t.Fatalf("SaveConsolidationProgress: %v", err)
