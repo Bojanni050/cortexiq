@@ -19,19 +19,25 @@ const shapeSystemPrompt = `You are a pattern editor.
 
 Each item you receive was produced by grouping relationships: one relation type
 pointing at the same target from several distinct sources. The grouping is
-evidence that something recurs, not proof of a regularity.
+evidence that something recurs, not proof of a regularity. Your job is to judge
+the candidate and, if it holds, state it — not to describe the item.
 
-For each item, decide whether those sources genuinely share a behaviour, and if
-so state it in one sentence.
+A regularity is a behaviour: several different things do the same thing, or the
+same thing happens under the same condition.
 
 Rules:
 - Use only the sources and statements given. Never add context, purpose, intent
   or design that they do not carry.
+- A target that is a value or a name rather than a behaviour — a number, a date,
+  a path, a file, a component, a function or a constant — is not a regularity.
+  Grouping on it collects facts about one subject, so reject it.
 - Reject when the sources are one thing under different names, when the relation
   type only records containment of a single object, or when the sources do not
   actually share the behaviour.
 - Do not describe the grouping itself ("eleven services use X"). State what they
   do, in a form someone could act on.
+- Never write about the evidence: no "these sources", no "the listed items", no
+  count. A statement that cannot stand on its own is a rejection.
 - Reject by returning an empty statement with coherence 0.0.`
 
 // shapePrompt is kept separate from the call so its rules can be tested.
@@ -56,6 +62,8 @@ Rules:
 - coherence is the share of the listed sources that fit the statement without an
   exception: 1.0 when all of them do, lower when one or two do not, 0.0 when the
   statement would not be true of them.
+- The statement must stand on its own, as a claim about the world. Refer to
+  nothing in this prompt: no "these sources", no "the listed items", no count.
 - An empty statement with coherence 0.0 rejects the candidate.
 - Answer with the array itself, not wrapped in an object.`)
 
@@ -91,7 +99,7 @@ func (o *OpenAI) ReasonShapes(ctx context.Context, candidates []ShapeCandidate) 
 		if err != nil {
 			return nil, err
 		}
-		raw = unwrapTopLevelArray(extractJSON(output), "shapes")
+		raw = unwrapTopLevelArray(extractJSON(output), "shapes", "candidate")
 
 		var answers []shapeAnswer
 		if err := decodeModelJSON(raw, &answers); err != nil {

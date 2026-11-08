@@ -34,6 +34,8 @@ func TestShapePromptAsksToPhraseNotToFind(t *testing.T) {
 		"source statement: alpha reaches its server over the http-first transport",
 		"Every candidate gets exactly one object",
 		"empty statement with coherence 0.0 rejects",
+		"The statement must stand on its own, as a claim about the world",
+		`no "these sources", no "the listed items", no count`,
 		"not wrapped in an object",
 	} {
 		if !strings.Contains(p, want) {
@@ -54,6 +56,51 @@ func TestShapeSystemPromptKeepsSearchOut(t *testing.T) {
 		if !strings.Contains(shapeSystemPrompt, want) {
 			t.Errorf("shapeSystemPrompt is missing %q", want)
 		}
+	}
+}
+
+// Production accepted "the archive list column has a minimum width of 240px" and
+// "released on 2026-10-08": a value target is one subject described many times,
+// not a behaviour several things share.
+func TestShapeSystemPromptRejectsValueTargets(t *testing.T) {
+	for _, want := range []string{
+		"A target that is a value or a name rather than a behaviour",
+		"Grouping on it collects facts about one subject, so reject it",
+	} {
+		if !strings.Contains(shapeSystemPrompt, want) {
+			t.Errorf("shapeSystemPrompt is missing %q", want)
+		}
+	}
+}
+
+// Production stored "These sources are involved in configuring a Claude Desktop
+// integration…". The statement has to be about the world, not about the input.
+func TestShapeSystemPromptForbidsDescribingTheEvidence(t *testing.T) {
+	for _, want := range []string{
+		"Never write about the evidence",
+		`no "these sources", no "the listed items", no`,
+	} {
+		if !strings.Contains(shapeSystemPrompt, want) {
+			t.Errorf("shapeSystemPrompt is missing %q", want)
+		}
+	}
+}
+
+// A model with one candidate answers with the element itself. Losing that answer
+// threw away four judged candidates per run, so the object is wrapped.
+func TestReasonShapesAcceptsASingleObject(t *testing.T) {
+	srv, _ := triageServer(t, `{"candidate": 1, "statement": "every client uses the http-first transport", "coherence": 1.0}`)
+	r := newTriage(t, srv.URL)
+
+	got, err := r.ReasonShapes(context.Background(), shapeCandidates()[:1])
+	if err != nil {
+		t.Fatalf("ReasonShapes: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want one result, got %d", len(got))
+	}
+	if got[0].Statement != "every client uses the http-first transport" || got[0].Coherence != 1.0 {
+		t.Fatalf("a bare object was not read as one element: %+v", got[0])
 	}
 }
 

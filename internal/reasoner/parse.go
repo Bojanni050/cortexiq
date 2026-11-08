@@ -200,7 +200,12 @@ func repairTruncatedArray(s string) string {
 // through decodeModelJSON, so the repairs keep working. Input that is already
 // an array, or that wraps no array at all, is returned unchanged so a real
 // parse error still surfaces.
-func unwrapTopLevelArray(raw, key string) string {
+//
+// members names the fields that identify one element of the answer. A model
+// that has only one candidate to report tends to send that element on its own
+// ({"pattern": ...} or {"candidate": 1, ...}) instead of wrapping it in an
+// array, and the element still has to be usable.
+func unwrapTopLevelArray(raw, key string, members ...string) string {
 	trimmed := strings.TrimSpace(raw)
 	if !strings.HasPrefix(trimmed, "{") {
 		return raw
@@ -211,11 +216,10 @@ func unwrapTopLevelArray(raw, key string) string {
 	if arr, ok := firstArrayInObject(trimmed); ok {
 		return arr
 	}
-	// One candidate sometimes arrives as the element itself rather than as the
-	// array that holds it: {"pattern": ...}. Wrapping it keeps the answer
-	// usable instead of losing it to a shape difference.
-	if strings.Contains(trimmed, `"pattern"`) {
-		return "[" + trimmed + "]"
+	for _, m := range members {
+		if strings.Contains(trimmed, `"`+m+`"`) {
+			return "[" + trimmed + "]"
+		}
 	}
 	return raw
 }

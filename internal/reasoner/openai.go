@@ -594,7 +594,7 @@ func (o *OpenAI) ReasonPatterns(ctx context.Context, facts []models.Fact, relati
 		if err != nil {
 			return nil, err
 		}
-		raw = unwrapTopLevelArray(extractJSON(output), "patterns")
+		raw = unwrapTopLevelArray(extractJSON(output), "patterns", "pattern")
 
 		var jpats []jsonPattern
 		if err := decodeModelJSON(raw, &jpats); err != nil {
