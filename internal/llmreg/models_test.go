@@ -3,6 +3,7 @@ package llmreg
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -229,7 +230,7 @@ func TestParseHopscotchCatalogue(t *testing.T) {
 	  {"id":"akash/GLM-5.3","object":"model","owned_by":"uniblock",
 	   "uniblock":{"input_rate_thousandths":900,"output_rate_thousandths":4000,"currency_code":"USD",
 	     "display_name":"GLM 5.3","context_window_tokens":1048576,"max_output_tokens":131072,
-	     "endpoint_families":["chat_completions"],"modalities_in":["text"],
+	     "endpoint_families":["chat_completions"],"modalities_in":["text"],"deprecated_at":0,
 	     "capabilities":{"streaming":"yes","tools":"yes","json_mode":"yes","vision":"unknown","audio":"no"}}},
 	  {"id":"vendor/bare","object":"model",
 	   "uniblock":{"input_rate_thousandths":100,"output_rate_thousandths":200,"currency_code":"USD",
@@ -278,6 +279,9 @@ func TestParseHopscotchCatalogue(t *testing.T) {
 		}
 	}
 
+	if full.Deprecated {
+		t.Error("deprecated_at 0 must not mark a model deprecated")
+	}
 	sparse := byID["vendor/bare"]
 	if len(sparse.Capabilities) != 0 {
 		t.Errorf("no/unknown capabilities were reported as features: %v", sparse.Capabilities)
@@ -304,5 +308,18 @@ func TestParseCatalogueTopLevelWinsOverUniblock(t *testing.T) {
 	}
 	if len(m.Capabilities) != 1 || m.Capabilities[0] != "vision" {
 		t.Errorf("capabilities = %v, want the top-level [vision]", m.Capabilities)
+	}
+}
+
+// deprecated_at arrives as a number; a real timestamp means retired, 0 means fine.
+func TestUniblockDeprecated(t *testing.T) {
+	cases := map[string]bool{
+		"0": false, "null": false, "": false, "false": false,
+		"1735689600": true, `"2026-01-01T00:00:00Z"`: true,
+	}
+	for in, want := range cases {
+		if got := uniblockDeprecated(json.RawMessage(in)); got != want {
+			t.Errorf("uniblockDeprecated(%s) = %v, want %v", in, got, want)
+		}
 	}
 }

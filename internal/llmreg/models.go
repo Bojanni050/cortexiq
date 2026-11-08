@@ -221,7 +221,7 @@ func parseCatalogue(body []byte, deepInfra bool) ([]Model, error) {
 			if m.Kind == "" && len(u.EndpointFamily) > 0 {
 				m.Kind = strings.ReplaceAll(u.EndpointFamily[0], "_", "-")
 			}
-			if u.DeprecatedAt != nil && strings.TrimSpace(*u.DeprecatedAt) != "" {
+			if uniblockDeprecated(u.DeprecatedAt) {
 				m.Deprecated = true
 			}
 		}
@@ -333,8 +333,10 @@ type uniblockBlock struct {
 	MaxOutput      int             `json:"max_output_tokens"`
 	EndpointFamily []string        `json:"endpoint_families"`
 	ModalitiesIn   []string        `json:"modalities_in"`
-	DeprecatedAt   *string         `json:"deprecated_at"`
-	DisplayName    string          `json:"display_name"`
+	// deprecated_at is a number in their payload (0 for "no"), which is why it is
+	// read raw: typing it as a string made the whole catalogue fail to decode.
+	DeprecatedAt json.RawMessage `json:"deprecated_at"`
+	DisplayName  string          `json:"display_name"`
 }
 
 // uniblockPricing converts that block. A price in another currency is dropped
@@ -393,4 +395,15 @@ func brief(body []byte) string {
 		s = s[:200] + "…"
 	}
 	return s
+}
+
+// uniblockDeprecated reads their deprecated_at, which is a number (0 when the
+// model is fine) and may also arrive as null.
+func uniblockDeprecated(raw json.RawMessage) bool {
+	v := strings.TrimSpace(string(raw))
+	switch v {
+	case "", "null", "0", "0.0", "false", `""`:
+		return false
+	}
+	return true
 }
