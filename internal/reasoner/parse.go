@@ -29,6 +29,14 @@ func decodeModelJSON(raw string, v any) error {
 			return nil
 		}
 	}
+	// A model that runs out of output tokens stops mid-object. Throwing away the
+	// whole batch because the last element is incomplete loses knowledge that is
+	// already written down, so keep the complete prefix of the array.
+	if salvaged := repairTruncatedArray(raw); salvaged != raw {
+		if retryErr := json.Unmarshal([]byte(salvaged), v); retryErr == nil {
+			return nil
+		}
+	}
 	return fmt.Errorf("%w (near %q)", err, nearJSONError(raw, err))
 }
 
@@ -129,4 +137,49 @@ func nearJSONError(raw string, err error) string {
 		return raw[:120]
 	}
 	return raw
+}
+
+// repairTruncatedArray closes an array that was cut off mid-element, keeping the
+// elements that were fully written. Only the last, incomplete element is dropped:
+// everything before it is valid JSON the model really produced.
+//
+// It returns the input unchanged when the array is not obviously truncated, so a
+// complete answer is never rewritten.
+func repairTruncatedArray(s string) string {
+	trimmed := strings.TrimSpace(s)
+	if !strings.HasPrefix(trimmed, "[") || strings.HasSuffix(trimmed, "]") {
+		return s
+	}
+	depth, inString, escaped := 0, false, false
+	lastComplete := -1
+	for i := 0; i < len(trimmed); i++ {
+		c := trimmed[i]
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == 92: // backslash
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '{', '[':
+			depth++
+		case '}', ']':
+			depth--
+			// depth 1 means the element closed but the outer array is still open.
+			if depth == 1 && c == '}' {
+				lastComplete = i + 1
+			}
+		}
+	}
+	if lastComplete <= 1 {
+		return s
+	}
+	return trimmed[:lastComplete] + "]"
 }

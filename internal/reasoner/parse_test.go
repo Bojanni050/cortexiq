@@ -107,3 +107,27 @@ func TestStructParsersAcceptTheSpaceInsideNumber(t *testing.T) {
 		t.Errorf("relationships = %+v", rels)
 	}
 }
+
+// A model that runs out of output tokens stops mid-object. Losing the whole batch
+// because the last element is incomplete throws away relationships that were
+// already written out in full.
+func TestDecodeModelJSONSalvagesATruncatedArray(t *testing.T) {
+	raw := `[{"fact_id": 3028, "from": "CortexIQ", "relation_type": "uses", "to": "pgvector", "confidence": 0.9},
+  {"fact_id": 3031, "from": "Goal log", "relation_type": "belongs_to", "to": "CortexI`
+	var got []jsonRelationship
+	if err := decodeModelJSON(raw, &got); err != nil {
+		t.Fatalf("a truncated array was rejected outright: %v", err)
+	}
+	if len(got) != 1 || got[0].FactID != 3028 {
+		t.Errorf("salvaged %d relationships, want only the complete first one: %+v", len(got), got)
+	}
+}
+
+// The salvage must not touch a complete array, however it is formatted.
+func TestRepairTruncatedArrayLeavesCompleteInputAlone(t *testing.T) {
+	for _, valid := range []string{`[]`, `[{"a": 1}]`, "[\n  {\"a\": 1},\n  {\"b\": 2}\n]"} {
+		if got := repairTruncatedArray(valid); got != valid {
+			t.Errorf("complete array rewritten:\n in: %q\nout: %q", valid, got)
+		}
+	}
+}
