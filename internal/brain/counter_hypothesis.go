@@ -84,6 +84,14 @@ func (b *Brain) proposeCounterHypothesis(ctx context.Context, h *models.Hypothes
 		log.Printf("counter hypothesis: hypothesis=#%d independent=%t took=%s error=%q", h.ID, independent, took, err.Error())
 		return
 	}
+	if counter == nil {
+		// The critic is allowed to decline: a model that has no argument against
+		// the belief, and a test double standing in for one, return no counter and
+		// no error. Storing it would dereference nothing at all and take the whole
+		// process down through a best-effort path.
+		log.Printf("counter hypothesis: hypothesis=#%d independent=%t took=%s declined", h.ID, independent, took)
+		return
+	}
 
 	created, err := b.insertCounterHypothesis(ctx, h, counter, independent, model)
 	if err != nil {
