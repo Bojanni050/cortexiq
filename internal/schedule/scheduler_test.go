@@ -20,6 +20,10 @@ type harness struct {
 	changes chan struct{}
 	ran     chan int64
 	block   chan struct{}
+
+	// work is what Pending reports: the namespaces a failed run left behind.
+	work      []int64
+	tickEvery time.Duration
 }
 
 func newHarness(cfg Config, namespaces ...int64) *harness {
@@ -77,6 +81,18 @@ func (h *harness) setConfig(cfg Config) {
 	}
 }
 
+func (h *harness) setWork(ids ...int64) {
+	h.mu.Lock()
+	h.work = ids
+	h.mu.Unlock()
+}
+
+func (h *harness) setTickEvery(d time.Duration) {
+	h.mu.Lock()
+	h.tickEvery = d
+	h.mu.Unlock()
+}
+
 func (h *harness) setBlock(ch chan struct{}) {
 	h.mu.Lock()
 	h.block = ch
@@ -97,10 +113,23 @@ func (h *harness) scheduler() *Scheduler {
 			defer h.mu.Unlock()
 			return h.cfg, nil
 		},
-		Episodes:  func() <-chan struct{} { return h.eps },
-		Drain:     h.drain,
-		Changes:   func() <-chan struct{} { return h.changes },
-		NewTicker: func(time.Duration) *time.Ticker { return time.NewTicker(10 * time.Millisecond) },
+		Episodes: func() <-chan struct{} { return h.eps },
+		Drain:    h.drain,
+		Changes:  func() <-chan struct{} { return h.changes },
+		Pending: func(context.Context) ([]int64, error) {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			return append([]int64(nil), h.work...), nil
+		},
+		NewTicker: func(time.Duration) *time.Ticker {
+			h.mu.Lock()
+			d := h.tickEvery
+			h.mu.Unlock()
+			if d == 0 {
+				d = 10 * time.Millisecond
+			}
+			return time.NewTicker(d)
+		},
 	}
 }
 
@@ -236,5 +265,56 @@ func TestSchedulerSwitchesModeWhenTheSettingChanges(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	if after := len(h.snapshot()); after != before {
 		t.Fatalf("events-only mode still ran %d times", after-before)
+	}
+}
+
+// A run that fails on one batch leaves the work behind it untouched. Waiting for
+// the next tick means waiting the whole interval — a day on a slow schedule — so
+// the scheduler tries once more, shortly, and then stops.
+func TestSchedulerRetriesPendingWorkOnce(t *testing.T) {
+	h := newHarness(ConfigFromInterval(time.Hour), 1, 2)
+	h.setTickEvery(time.Hour) // only the retry can produce the third run
+	h.setWork(2)              // namespace 2 still has work after the run
+
+	s := h.scheduler()
+	s.RetryDelay = 20 * time.Millisecond
+	run(t, s)
+
+	if id := waitCall(t, h); id != 1 {
+		t.Fatalf("first run = %d, want 1", id)
+	}
+	if id := waitCall(t, h); id != 2 {
+		t.Fatalf("second run = %d, want 2", id)
+	}
+	if id := waitCall(t, h); id != 2 {
+		t.Fatalf("retry ran namespace %d, want 2", id)
+	}
+
+	// No third attempt: the retry happens once, so a batch that keeps failing
+	// cannot turn into a model call every few minutes.
+	select {
+	case id := <-h.ran:
+		t.Fatalf("a third run (%d) happened; the retry must not loop", id)
+	case <-time.After(80 * time.Millisecond):
+	}
+}
+
+// Without work waiting there is nothing to retry, and arming a timer anyway would
+// make every quiet tick look busy.
+func TestSchedulerDoesNotRetryWhenNothingIsWaiting(t *testing.T) {
+	h := newHarness(ConfigFromInterval(time.Hour), 1)
+	h.setTickEvery(time.Hour)
+
+	s := h.scheduler()
+	s.RetryDelay = 20 * time.Millisecond
+	run(t, s)
+
+	if id := waitCall(t, h); id != 1 {
+		t.Fatalf("first run = %d, want 1", id)
+	}
+	select {
+	case id := <-h.ran:
+		t.Fatalf("namespace %d ran although nothing was pending", id)
+	case <-time.After(80 * time.Millisecond):
 	}
 }

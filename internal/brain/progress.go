@@ -229,3 +229,40 @@ func (b *Brain) pendingBehindCheckpoints(ctx context.Context, nsID int64, stages
 	}
 	return out, nil
 }
+
+// NamespacesWithPendingWork returns the namespaces where the two extraction
+// stages still have rows waiting behind their checkpoint. The scheduler uses it
+// to retry soon after a run that failed on a batch, instead of waiting for the
+// next tick — which is up to the whole interval, a day on a slow schedule.
+//
+// Only the episode and relationship stages count. The others (patterns, goals,
+// failures, hypotheses, causal) legitimately leave their checkpoint behind when
+// they have nothing to look at — a namespace without goals never advances the
+// goal checkpoint — so using them would schedule a retry on every tick forever.
+func (b *Brain) NamespacesWithPendingWork(ctx context.Context) ([]int64, error) {
+	rows, err := b.pool.Query(ctx,
+		`SELECT DISTINCT n.id
+		   FROM namespaces n
+		   JOIN consolidation_progress p ON p.namespace_id = n.id
+		  WHERE EXISTS (SELECT 1 FROM episodes e
+		                 WHERE e.namespace_id = n.id AND e.deleted_at IS NULL
+		                   AND e.id > p.last_episode_id)
+		     OR EXISTS (SELECT 1 FROM facts f
+		                 WHERE f.namespace_id = n.id AND f.deleted_at IS NULL
+		                   AND f.id > p.last_fact_id)
+		  ORDER BY n.id`)
+	if err != nil {
+		return nil, fmt.Errorf("namespaces with pending work: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan pending namespace: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}

@@ -124,3 +124,55 @@ func TestIntegrationStageStallsNeedWaitingWork(t *testing.T) {
 		t.Errorf("a frozen checkpoint with work behind it was not reported: %+v", stalls)
 	}
 }
+
+// The scheduler retries namespaces that still have work behind a checkpoint, so
+// this query decides whether a retry happens at all.
+func TestIntegrationNamespacesWithPendingWork(t *testing.T) {
+	e := newEnv(t, nil)
+
+	// A fresh namespace with nothing in it is not pending.
+	if ids, err := e.b.NamespacesWithPendingWork(e.ctx); err != nil {
+		t.Fatalf("NamespacesWithPendingWork: %v", err)
+	} else {
+		for _, id := range ids {
+			if id == e.nsID {
+				t.Fatalf("an empty namespace %d was reported as pending", id)
+			}
+		}
+	}
+
+	if _, err := e.b.GetOrCreateConsolidationProgress(e.ctx, e.nsID); err != nil {
+		t.Fatalf("GetOrCreateConsolidationProgress: %v", err)
+	}
+	fact := e.insertFact(t, "a fact the relationships stage has not seen", nil)
+
+	ids, err := e.b.NamespacesWithPendingWork(e.ctx)
+	if err != nil {
+		t.Fatalf("NamespacesWithPendingWork: %v", err)
+	}
+	var found bool
+	for _, id := range ids {
+		if id == e.nsID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a namespace with a fact behind its checkpoint was not reported: %v", ids)
+	}
+
+	// Once the checkpoint is past the work, nothing is pending any more.
+	if err := e.b.SaveConsolidationProgress(e.ctx, models.ConsolidationProgress{
+		NamespaceID: e.nsID, LastFactID: fact, LastEpisodeID: fact,
+	}); err != nil {
+		t.Fatalf("SaveConsolidationProgress: %v", err)
+	}
+	ids, err = e.b.NamespacesWithPendingWork(e.ctx)
+	if err != nil {
+		t.Fatalf("NamespacesWithPendingWork after checkpoint: %v", err)
+	}
+	for _, id := range ids {
+		if id == e.nsID {
+			t.Errorf("namespace %d still reported as pending after its checkpoint moved", id)
+		}
+	}
+}

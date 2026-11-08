@@ -30,6 +30,15 @@ type Scheduler struct {
 	Drain func() []int64
 	// Changes fires when the stored schedule changed.
 	Changes func() <-chan struct{}
+	// Pending returns the namespaces that still have work waiting behind a
+	// checkpoint. A run that fails on one batch leaves the work ahead of it
+	// untouched, and waiting for the next tick means waiting up to the whole
+	// interval — a day on a slow schedule. nil disables the early retry.
+	Pending func(ctx context.Context) ([]int64, error)
+	// RetryDelay is how long after such a run the pending work is tried again.
+	// One retry per cycle, never a loop: a batch that fails deterministically
+	// must not turn into an LLM call every few minutes.
+	RetryDelay time.Duration
 	// NewTicker makes the periodic timer; nil means time.NewTicker. Tests
 	// replace it to get a fast clock without waiting minutes.
 	NewTicker func(time.Duration) *time.Ticker
@@ -76,7 +85,36 @@ func (s *Scheduler) Run(ctx context.Context) error {
 
 	s.logf("schedule: mode=%s interval=%s", cfg.Mode, cfg.Interval())
 
+	// retry is armed after a run that left work behind, and fires once.
+	var retryT *time.Timer
+	var retryC <-chan time.Time
+	armRetry := func(ctx context.Context) {
+		if s.Pending == nil || s.RetryDelay <= 0 {
+			return
+		}
+		ids, err := s.Pending(ctx)
+		if err != nil {
+			s.logf("schedule: cannot read pending work: %v", err)
+			return
+		}
+		if len(ids) == 0 {
+			return
+		}
+		if retryT != nil {
+			retryT.Stop()
+		}
+		retryT = time.NewTimer(s.RetryDelay)
+		retryC = retryT.C
+		s.logf("schedule: %d namespace(s) still have work waiting; retrying in %s", len(ids), s.RetryDelay)
+	}
+	defer func() {
+		if retryT != nil {
+			retryT.Stop()
+		}
+	}()
+
 	s.runAll(ctx)
+	armRetry(ctx)
 
 	for {
 		// Events that arrived while a run was going become the next run. The
@@ -84,6 +122,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		ids := s.drain()
 		if len(ids) > 0 && cfg.TriggersOnEvents() {
 			s.runNamespaces(ctx, ids)
+			armRetry(ctx)
 			continue
 		}
 
@@ -93,6 +132,21 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			return nil
 		case <-ticks:
 			s.runAll(ctx)
+			armRetry(ctx)
+		case <-retryC:
+			// One attempt: whatever is still behind after this waits for the next
+			// tick, so a permanently failing batch cannot spin.
+			retryC = nil
+			left, err := s.Pending(ctx)
+			if err != nil {
+				s.logf("schedule: cannot read pending work: %v", err)
+				continue
+			}
+			if len(left) == 0 {
+				continue
+			}
+			s.logf("schedule: retrying %d namespace(s) with work still waiting", len(left))
+			s.runNamespaces(ctx, left)
 		case <-episodes:
 			// Only a wake-up; the next iteration drains the namespaces.
 		case <-changes:
@@ -143,7 +197,7 @@ func (s *Scheduler) runNamespaces(ctx context.Context, ids []int64) {
 	var run []int64
 	for _, id := range ids {
 		if len(allowed) > 0 && !allowed[id] {
-			s.logf("schedule: namespace %d is outside the configured set; skipping event run", id)
+			s.logf("schedule: namespace %d is outside the configured set; skipping run", id)
 			continue
 		}
 		run = append(run, id)
