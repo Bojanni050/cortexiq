@@ -37,6 +37,11 @@ var Intervals = []time.Duration{
 	5 * time.Minute,
 	10 * time.Minute,
 	30 * time.Minute,
+	time.Hour,
+	2 * time.Hour,
+	6 * time.Hour,
+	12 * time.Hour,
+	24 * time.Hour,
 }
 
 // Config is the global consolidation schedule.

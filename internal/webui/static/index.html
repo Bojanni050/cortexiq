@@ -2441,7 +2441,7 @@ async function renderStatus() {
   const freq = s.consolidation_error ? `<span class="muted">could not be read: ${esc(s.consolidation_error)}</span>`
     : (!s.schedule ? '<span class="muted">unknown</span>'
     : `${esc(s.schedule.mode)}${s.schedule.mode !== 'events' && s.schedule.interval_seconds
-      ? ` · every ${Number(s.schedule.interval_seconds) >= 60 ? Number(s.schedule.interval_seconds) / 60 + ' min' : s.schedule.interval_seconds + 's'}` : ''}`);
+      ? ` · every ${secs(Number(s.schedule.interval_seconds))}` : ''}`);
   const kv = (k, v) => `<tr><td class="muted">${k}</td><td>${v}</td></tr>`;
   document.getElementById('content').innerHTML = `
     <div class="stats">
@@ -2815,10 +2815,29 @@ async function renderRuns() {
     if (!bits.length) return '<span class="muted">—</span>';
     return `<span class="mono" title="proposed / auto-confirmed / auto-rejected / confidence updated">${bits.join(' ')}</span>`;
   };
+  // A stage that stopped moving is invisible in the run list: a failing batch
+  // shows one error line per run, and every fact behind it is skipped in silence.
+  // This is the block that says it out loud.
+  let stalls = [];
+  try { stalls = await apiList('/consolidation/stages' + nsQS('')); } catch (e) { stalls = []; }
+  const stuck = stalls.filter(x => x.stalled);
+  const stuckBlock = stuck.length ? `<div class="card" style="border-color:var(--red);margin:0 0 16px">
+      <h3>Stalled stages</h3>
+      <p class="muted">Work is waiting behind a checkpoint that has not moved. Everything after that point is skipped in silence until it clears, which is what a batch the model keeps failing on looks like.</p>
+      ${table(['Namespace', 'Stage', 'Checkpoint', 'Waiting', 'Last move'], stuck.map(x => `<tr>
+        <td class="mono">${esc(x.namespace)}</td>
+        <td>${esc(x.stage)}</td>
+        <td class="mono">#${x.checkpoint}</td>
+        <td><span class="badge pending">${x.pending}</span></td>
+        <td class="muted">${ts(x.changed_at)} (${ago(x.changed_at)})</td>
+      </tr>`))}
+    </div>` : '';
+
   await listTab('runs', {
     path: o => '/runs' + qs(o),
     headers: ['Started', 'Namespace', 'Duration', 'Episodes', 'Skipped', 'Facts', 'Dedup', 'Near-miss', 'Rels', 'Patterns', 'Contra', 'Hyp', 'LLM calls', 'Errors'],
     fields: ['id', 'namespace_slug', 'error_sample'],
+    above: stuckBlock,
     row: r => `<tr>
       <td class="muted">${ts(r.started_at)}</td>
       <td class="mono">${esc(r.namespace_slug || nsSlug(r.namespace_id))}</td>
@@ -3101,7 +3120,10 @@ async function showEdgePanel(edge) {
 }
 
 function secs(v) {
-  return v < 60 ? v + ' seconds' : (v / 60) + (v === 60 ? ' minute' : ' minutes');
+  if (v < 60) return v + ' seconds';
+  if (v < 3600) return (v / 60) + (v === 60 ? ' minute' : ' minutes');
+  const h = v / 3600;
+  return h + (h === 1 ? ' hour' : ' hours');
 }
 
 async function renderSettings() {
@@ -3121,13 +3143,15 @@ async function renderSettings() {
     <div class="card">
       <h3>Consolidation schedule</h3>
       <p class="muted">New memories arrive as episodes; a run turns them into facts, relationships and patterns. One setting covers the whole installation and takes effect without a restart.</p>
-      <div class="label" style="padding:16px 0 6px">When to consolidate</div>
-      <select id="sc-mode" onchange="scSync()" style="width:100%;max-width:460px">${modeOpts}</select>
-      <div class="label" style="padding:16px 0 6px">Interval</div>
-      <select id="sc-interval" style="width:100%;max-width:460px">${intOpts}</select>
-      <p class="muted" style="margin:14px 0 0">${modes.find(m => m[0] === s.mode)[2]}</p>
-      <div class="actions" style="margin-top:16px"><button class="primary" onclick="saveSchedule()">Save</button></div>
-      <p class="muted" style="margin-top:14px">Current: <b>${current}</b>. Every start does one catch-up run, so memories written while the service was down are not missed.</p>
+      <div class="card-body">
+        <div class="label" style="padding:0 0 6px">When to consolidate</div>
+        <select id="sc-mode" onchange="scSync()" style="width:100%;max-width:460px">${modeOpts}</select>
+        <div class="label" style="padding:20px 0 6px">Interval</div>
+        <select id="sc-interval" style="width:100%;max-width:460px">${intOpts}</select>
+        <p class="muted" style="margin:16px 0 0">${modes.find(m => m[0] === s.mode)[2]}</p>
+      </div>
+      <div class="actions"><button class="primary" onclick="saveSchedule()">Save</button></div>
+      <p class="muted" style="margin:0 0 18px">Current: <b>${current}</b>. Every start does one catch-up run, so memories written while the service was down are not missed.</p>
     </div>
     <div id="models-card"></div>`;
   scSync();

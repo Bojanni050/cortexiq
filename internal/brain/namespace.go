@@ -288,7 +288,20 @@ func (b *Brain) SaveConsolidationProgress(ctx context.Context, cp models.Consoli
 			last_episode_id = $2, last_fact_id = $3, last_relationship_id = $4,
 			last_pattern_fact_id = $5, last_pattern_rel_id = $6,
 			last_goal_progress_fact_id = $7, last_failure_id = $8, last_failure_episode_id = $9, last_hypothesis_fact_id = $10, last_hypothesis_proposal_fact_id = $11,
-			last_causal_fact_id = $12, last_decay_run = $13, last_run = $14, updated_at = $15
+			last_causal_fact_id = $12, last_decay_run = $13, last_run = $14, updated_at = $15,
+			stage_changed_at = consolidation_progress.stage_changed_at || jsonb_strip_nulls(jsonb_build_object(
+			  'episodes',      CASE WHEN consolidation_progress.last_episode_id      IS DISTINCT FROM $2  THEN to_jsonb($15::timestamptz) END,
+			  'facts',         CASE WHEN consolidation_progress.last_fact_id         IS DISTINCT FROM $3  THEN to_jsonb($15::timestamptz) END,
+			  'relationships', CASE WHEN consolidation_progress.last_relationship_id IS DISTINCT FROM $4  THEN to_jsonb($15::timestamptz) END,
+			  'patterns',      CASE WHEN consolidation_progress.last_pattern_fact_id IS DISTINCT FROM $5
+			                         OR consolidation_progress.last_pattern_rel_id  IS DISTINCT FROM $6  THEN to_jsonb($15::timestamptz) END,
+			  'goals',         CASE WHEN consolidation_progress.last_goal_progress_fact_id IS DISTINCT FROM $7 THEN to_jsonb($15::timestamptz) END,
+			  'failures',      CASE WHEN consolidation_progress.last_failure_id          IS DISTINCT FROM $8
+			                         OR consolidation_progress.last_failure_episode_id IS DISTINCT FROM $9 THEN to_jsonb($15::timestamptz) END,
+			  'hypotheses',    CASE WHEN consolidation_progress.last_hypothesis_fact_id            IS DISTINCT FROM $10
+			                         OR consolidation_progress.last_hypothesis_proposal_fact_id IS DISTINCT FROM $11 THEN to_jsonb($15::timestamptz) END,
+			  'causal',        CASE WHEN consolidation_progress.last_causal_fact_id  IS DISTINCT FROM $12 THEN to_jsonb($15::timestamptz) END
+			))
 		 WHERE namespace_id = $1`,
 		cp.NamespaceID, cp.LastEpisodeID, cp.LastFactID, cp.LastRelationshipID,
 		cp.LastPatternFactID, cp.LastPatternRelID,

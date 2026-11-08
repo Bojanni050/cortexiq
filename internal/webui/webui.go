@@ -92,6 +92,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/retractions", h.retractions)
 	api.HandleFunc("/api/v1/purge-log", h.purgeLog)
 	api.HandleFunc("/api/v1/consolidation", h.consolidation)
+	api.HandleFunc("/api/v1/consolidation/stages", h.consolidationStages)
 	api.HandleFunc("/api/v1/graph", h.graph)
 	api.HandleFunc("/api/v1/stats", h.stats)
 	api.HandleFunc("/api/v1/settings/schedule", h.schedule)
@@ -1787,6 +1788,22 @@ func (h *Handler) consolidation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
+}
+
+// consolidationStages reports checkpoints that stopped moving while work waits
+// behind them. A run that fails on the same batch looks healthy from every other
+// angle — no error in the list, no counter moving — so this is the only place
+// where "consolidation is stuck" is visible.
+func (h *Handler) consolidationStages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	items, err := h.Brain.ConsolidationStageStalls(r.Context(), namespacesParam(r))
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, nonNil(items))
 }
 
 func (h *Handler) stats(w http.ResponseWriter, r *http.Request) {

@@ -74,3 +74,17 @@ func TestIntervalChoicesMatchIntervals(t *testing.T) {
 		t.Errorf("got %d modes, want 3", len(Modes()))
 	}
 }
+
+// The dashboard offers what Validate accepts, so a longer interval has to be in
+// the list or a hand-set 24 hours becomes an unreadable schedule.
+func TestValidateAcceptsLongIntervals(t *testing.T) {
+	for _, d := range []time.Duration{time.Hour, 6 * time.Hour, 12 * time.Hour, 24 * time.Hour} {
+		cfg := ConfigFromInterval(d)
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("%v rejected: %v", d, err)
+		}
+	}
+	if err := ConfigFromInterval(25 * time.Hour).Validate(); err == nil {
+		t.Error("25 hours should not be an accepted interval")
+	}
+}
