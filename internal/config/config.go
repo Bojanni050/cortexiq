@@ -75,6 +75,13 @@ type Config struct {
 	// those counters; setting this makes the metrics page read them where they
 	// are recorded. Empty keeps the dashboard's local registry.
 	MetricsSource string `env:"CORTEXIQ_METRICS_SOURCE" envDefault:""`
+	// WriteWorker drains the deferred write queue in this process. Both server
+	// processes may run one: the claim statement skips rows another worker holds,
+	// so they cannot collide, and whichever is up keeps the queue moving.
+	WriteWorker bool `env:"CORTEXIQ_WRITE_WORKER" envDefault:"true"`
+	// WriteWorkerRetention is how long a finished write job stays readable before
+	// it is pruned. A week is long enough to answer "what happened to my write?".
+	WriteWorkerRetention time.Duration `env:"CORTEXIQ_WRITE_JOB_RETENTION" envDefault:"168h"`
 	// OAuth 2.1 authorization server for the MCP endpoint. It is disabled unless
 	// both the issuer and the admin password are set: a half-configured
 	// authorization server is worse than none, so the MCP endpoint then keeps

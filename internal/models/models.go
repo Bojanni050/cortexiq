@@ -267,6 +267,27 @@ type GoalEvent struct {
 	GoalContent string `db:"goal_content" json:"goal_content"`
 }
 
+// WriteJob is one deferred memory write. The row is the durable promise: it
+// exists before the caller is told "accepted", so a crash leaves work to recover
+// instead of a memory that vanished.
+type WriteJob struct {
+	ID          int64      `db:"id" json:"id"`
+	NamespaceID *int64     `db:"namespace_id" json:"namespace_id"`
+	Namespace   string     `db:"namespace_slug" json:"namespace"`
+	Actor       string     `db:"actor" json:"actor"`
+	State       string     `db:"state" json:"state"`
+	Attempts    int        `db:"attempts" json:"attempts"`
+	EpisodeID   *int64     `db:"episode_id" json:"episode_id"`
+	Error       *string    `db:"error" json:"error"`
+	CreatedAt   time.Time  `db:"created_at" json:"created_at"`
+	StartedAt   *time.Time `db:"started_at" json:"started_at"`
+	FinishedAt  *time.Time `db:"finished_at" json:"finished_at"`
+	// Payload is the remember call as the caller asked for it. It is returned so
+	// a caller can see what a job still owes, and it is omitted from list
+	// responses to keep a queue overview readable.
+	Payload json.RawMessage `db:"payload" json:"payload,omitempty"`
+}
+
 // Failure records what didn't work, why, and what to do instead.
 type Failure struct {
 	ID          int64      `db:"id" json:"id"`

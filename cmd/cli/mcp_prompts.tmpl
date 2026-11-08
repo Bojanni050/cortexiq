@@ -312,6 +312,26 @@ Optional comma-separated pointers to where this memory came from outside CortexI
 Set true together with external_key to replace the memory that currently holds that key with this new content. The old one is retired and its link to the new one kept, and facts that rested only on the old one are closed, all in one step. Without external_key this is an error.
 {{end}}
 
+{{define "remember_async"}}
+Set true when the caller must never wait for the write: the request is validated and gated now, then stored as a durable job and answered with a job_id instead of an episode id. Use it in hooks and plugins that cannot afford to block a reply, or that would lose the memory if they died mid-call. The memory is guaranteed once the job id exists, even if the server restarts; poll get_job to learn the episode id, or that the write was skipped (noise, social closer) or failed. Leave it off when you need the episode id immediately, or when you rely on external_key answering "this key is already taken" as an error.
+{{end}}
+
+{{define "get_job_description"}}
+Returns one deferred write: its state (queued, running, done, skipped or failed), the episode id once it is stored, the attempt count, and the reason it was skipped or failed. Use it to follow up on a job_id from remember with async set.
+{{end}}
+
+{{define "get_job_id"}}
+The job id that remember returned when it accepted the write.
+{{end}}
+
+{{define "list_jobs_description"}}
+Lists the deferred write queue, newest first. A queued job is a promise not yet kept: it is durable, so a restart does not lose it. A growing queue means no worker is running (check the server log for "write worker"); a rising failed count means writes are being refused for a reason worth reading.
+{{end}}
+
+{{define "list_jobs_state"}}
+Optional filter: queued, running, done, skipped or failed. skipped is a refusal (noise filter, social closer), not an error.
+{{end}}
+
 {{define "remember_complete_goal"}}
 Optional goal ID to close in the same call. Write down what you finished and pass the goal it belongs to: the goal becomes completed, and this memory is recorded as its evidence, so "why is this done" points at the episode instead of being reconstructed later. The goal must be active and filed in this namespace or in one of its ancestors. Nothing else about the write changes.
 {{end}}

@@ -3,7 +3,10 @@
 > Status: phases 3 and 4 are implemented and merged (PR #8, `ff2d4c7`; CI incl.
 > the Postgres integration tests green), and the dedicated invalidate call
 > (`POST /api/v1/invalidate`, MCP `invalidate`) is built on top of them. Phase 2
-> is done, ANY-filter and tag character set included. The rest is proposal.
+> is done, ANY-filter and tag character set included. Phase 5 (async retain) is
+> built on 2026-11-08 as a durable write queue (`write_jobs`), after the latency
+> measurement showed the write is not slow but the promise was unbeatable. The
+> rest is proposal.
 > Written 2026-11-02, revised 2026-11-03, revised 2026-11-08 after the ANY-filter
 > after a review and after reading Gaia-Cloud's merge code. Source of the
 > dependency list: Gaia-Cloud (`Bojanni050/Gaia-Cloud`,
@@ -45,7 +48,7 @@ state.
 | 2 | Arbitrary tags per item, readable in recall output | `memoryKindOf` reads item tags; `gaia:*` tags | **done** (migration 00037): tags on episodes and facts, accepted by `remember`, returned by `recall`, AND-filter and ANY-filter (`tags_any`) |
 | 3 | Superseding version writes + rebuildable mirror | `cognitionSync.js`, `reconcile-hindsight-tags.js` | `valid_until`, superseding facts and `forget` exist; no keyed upsert |
 | 4 | Provenance `sources: ['foundation:<id>']` | `evidenceRecall.js` Dual Recall | no per-item pointer to something outside CortexIQ |
-| 5 | Async fire-and-forget retain | `reflectOnTurn` (`async: true, timeout: null`) | `POST /api/v1/remember` is synchronous |
+| 5 | Async fire-and-forget retain | `reflectOnTurn` (`async: true, timeout: null`) | **done** (migration 00056): `"async": true` on `remember` answers `202` with a job id; a durable `write_jobs` row is drained by a worker, `GET /api/v1/jobs/{id}` reports the outcome |
 | 6 | Server-enforced `agent_identity` | `memory.js` (identity always Gaia) | no equivalent |
 
 Phases 1–6 are ordered by how hard Gaia is blocked without them: 1 and 2 block
@@ -62,12 +65,12 @@ Judged on what CortexIQ gains with no Gaia in the picture:
 | 2 Tags (done) | Already shipped | AND and ANY filters both exist; nothing open. |
 | 3 Keyed upsert + supersede (`external_key`) | **Yes, clearly** | Any integration that mirrors external state (a Hermes plugin, a file or ticket sync, re-running an import, the Hindsight → CortexIQ migration) gets idempotent re-runs instead of duplicates, and a queryable history of how a statement changed (`superseded_by`). |
 | 4 Pointers to outside sources (`external_refs`) | **Yes, cheap** | Any memory can name where it came from: a commit (`commit:bf575f8`), a file, a URL, a ticket. Today that only survives as prose in `content`. |
-| 5 Async `remember` | **Only if measured** | Useful for hooks and plugins that must never block a reply. If `remember` is fast today it is unnecessary; if embedding makes it slow, it pays off for every client. Measure latency first. |
+| 5 Async `remember` | **Built 2026-11-08** | Measured at p50 106ms / p95 135ms (warm local Ollama, `bge-m3`) with a 1669ms cold start. Latency was not the reason to build it; durability was: a hook that dies mid-call must not lose a memory. `"async": true` gates synchronously, writes a `write_jobs` row, answers 202, and a worker stores the episode. |
 | 6 Server-enforced identity | **Weak** | CortexIQ already has principals (`authz.go`, `fact_feedback`). A second identity concept is only justified by a concrete failure, e.g. several agents sharing one store and needing to tell their writes apart. Optional, last. |
 
-Net: **3 and 4 are worth building on their own merits**; 1 and 5 depend on a
-measurement; 2 is done; 6 is optional. That ordering also matches the rollout
-below.
+Net: **3 and 4 are worth building on their own merits**; 1 depends on a
+measurement; 2 and 5 are done; 6 is optional. That ordering also matches the
+rollout below.
 
 ## Phase 1 — Quota recall over namespaces
 
@@ -307,7 +310,7 @@ episodes' `external_refs`, the way they already carry tags (`sourceRefs` in
 results return `external_key` (episodes only) and `external_refs`, filled in one
 query per table after the final cut (`attachProvenance`).
 
-## Phase 5 — Async retain
+## Phase 5 — Async retain (built 2026-11-08)
 
 ### Why
 
@@ -330,6 +333,37 @@ queue latency is measured to matter; if more than one, shard by namespace so
 per-key order holds. `GET /api/v1/jobs/<id>` reports `queued | done | failed`.
 Durability: enqueue = insert into a `write_jobs` table first, so a crash
 mid-queue leaves recoverable work, not lost memory.
+
+### Built
+
+The shape above is what shipped, with three amendments from building it:
+
+1. **Durable first, then accepted.** `POST /api/v1/remember` with `"async": true`
+   runs the gates (noise filter, secret redaction and social filter included),
+   inserts one `write_jobs` row and only then answers `202` with a job id and a
+   `Location` header. The gates run again in the worker: a rule that changes
+   between enqueue and run still applies, and the redacted text is what gets
+   stored — never the secret.
+2. **One job at a time, and never two in one namespace.** The claim is a single
+   `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED)` that also skips a
+   namespace already `running`, so supersede chains and keyed writes land in the
+   order they were asked for. That is also what makes it safe to run a worker in
+   both containers.
+3. **`skipped` is a state, not an error.** A write the gates refuse (noise, a
+   social closer) ends as `skipped` with the reason; a taken key, a missing goal
+   or a rejected write fails permanently; anything else (embedding down, database
+   blip) is retried with a `next_attempt_at` backoff up to three attempts. A
+   worker that dies mid-run leaves a `running` row that is requeued once it is
+   older than the stall window.
+
+`GET /api/v1/jobs` and `GET /api/v1/jobs/{id}` are the read side, MCP has `get_job`
+and `list_jobs`, and `remember` also takes `async` there. Finished jobs are pruned
+after `CORTEXIQ_WRITE_JOB_RETENTION` (default 168h); `CORTEXIQ_WRITE_WORKER=false`
+turns the worker off in a process.
+
+Measured before building, on production (v0.1.48, local Ollama `bge-m3`): p50
+106ms, p95 135ms, first call after a restart 1669ms, and 0.6ms for a request the
+gates refuse. The decision to build came from durability, not from those numbers.
 
 ## Phase 6 — Server-enforced agent identity (optional)
 
@@ -381,7 +415,7 @@ Build order, by independent value and risk:
    Gaia, and all that `gaia-logos` needs.
 2. **Phase 1** — after the fixture has been run on live data and shown a real
    problem.
-3. **Phase 5** — after `remember` latency has been measured.
+3. **Phase 5** — built 2026-11-08; keep the synchronous path as the default.
 4. **Phase 6** — only against a named failure.
 
 Gaia's `hindsightClient.js` is then ported one store at a time: point

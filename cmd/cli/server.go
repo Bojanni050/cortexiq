@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Bojanni050/cortexiq/internal/bootstrap"
+	"github.com/Bojanni050/cortexiq/internal/brain"
 	"github.com/Bojanni050/cortexiq/internal/llmreg"
 	"github.com/Bojanni050/cortexiq/internal/webui"
 	"github.com/prometheus/client_golang/prometheus"
@@ -98,6 +99,17 @@ func serveHTTP(ctx context.Context, cmd *cli.Command) error {
 
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+
+	// Deferred writes are accepted before they are stored, so the queue must be
+	// drained by a process that is actually alive. This one is close to the
+	// client; the MCP process may run a second worker safely.
+	if bc.Config.WriteWorker {
+		go bc.Brain.RunWriteWorker(ctx, brain.WriteWorkerConfig{
+			Retention: bc.Config.WriteWorkerRetention,
+		})
+	} else {
+		log.Println("write worker disabled: async remember jobs will stay queued")
+	}
 
 	go func() {
 		log.Printf("http server listening on %s (dashboard: http://%s/ui)", addr, addr)

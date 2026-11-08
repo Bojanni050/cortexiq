@@ -230,6 +230,9 @@ type Brain struct {
 	episodeNS       map[int64]struct{}
 	episodeSignal   chan struct{}
 	scheduleChanged chan struct{}
+	// writeWake wakes the write worker the moment a job is queued in this
+	// process. The poll in RunWriteWorker covers jobs another process queued.
+	writeWake chan struct{}
 
 	// mmMu guards mmRefreshing, the set of mental models this process is
 	// currently synthesizing. It keeps the consolidation sweep and a manual
@@ -289,6 +292,7 @@ func New(pool *pgxpool.Pool, e embedder.Embedder, r reasoner.Reasoner, q *querie
 		config:   cfg,
 
 		episodeSignal:   make(chan struct{}, 1),
+		writeWake:       make(chan struct{}, 1),
 		scheduleChanged: make(chan struct{}, 1),
 		mmRefreshing:    make(map[int64]struct{}),
 	}, nil

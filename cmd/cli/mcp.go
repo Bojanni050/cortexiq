@@ -174,6 +174,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("external_refs", mcp.Description(render("remember_external_refs"))),
 		mcp.WithBoolean("supersedes", mcp.Description(render("remember_supersedes"))),
 		mcp.WithNumber("complete_goal", mcp.Description(render("remember_complete_goal"))),
+		mcp.WithBoolean("async", mcp.Description(render("remember_async"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		content := request.GetString("content", "")
 		namespace, err := requiredNamespace(request.GetString("namespace", ""))
@@ -191,6 +192,36 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			return nil, err
 		}
 		completeGoal := optionalID(request.GetInt("complete_goal", 0))
+
+		// A connector that must never fail a reply hands the write over here: the
+		// gates still run now, but the embedding and the insert are a job that
+		// survives this process. The client polls get_job for the outcome.
+		if request.GetBool("async", false) {
+			payload, _, err := bc.Brain.AdmitWrite(ctx, namespace, content, importance, tags)
+			if errors.Is(err, brain.ErrSocialCloser) || errors.Is(err, brain.ErrWriteFiltered) {
+				return skippedResult(err)
+			}
+			if err != nil {
+				return nil, err
+			}
+			payload.OccurredAt = occurredAt
+			payload.ExternalKey = request.GetString("external_key", "")
+			payload.ExternalRefs = splitList(request.GetString("external_refs", ""))
+			payload.Supersedes = request.GetBool("supersedes", false)
+			payload.CompleteGoal = completeGoal
+			jobID, err := bc.Brain.EnqueueWrite(ctx, payload)
+			if err != nil {
+				return nil, err
+			}
+			b, _ := json.Marshal(map[string]any{
+				"job_id":    jobID,
+				"state":     brain.WriteJobQueued,
+				"namespace": namespace,
+				"message":   "Write accepted; poll get_job for the outcome",
+			})
+			return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+		}
+
 		out, err := bc.Brain.RememberWithOutcome(ctx, namespace, content, brain.RememberOptions{
 			OccurredAt:   occurredAt,
 			Importance:   importance,
@@ -824,6 +855,45 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
+	mcpServer.AddTool(mcp.NewTool("get_job",
+		mcp.WithDescription(render("get_job_description")),
+		mcp.WithNumber("job_id", mcp.Description(render("get_job_id")), mcp.Required()),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		job, err := bc.Brain.GetWriteJob(ctx, int64(request.GetInt("job_id", 0)))
+		if errors.Is(err, brain.ErrWriteJobNotFound) {
+			return nil, fmt.Errorf("job not found")
+		}
+		if err != nil {
+			return nil, err
+		}
+		b, _ := json.Marshal(job)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
+	mcpServer.AddTool(mcp.NewTool("list_jobs",
+		mcp.WithDescription(render("list_jobs_description")),
+		mcp.WithString("state", mcp.Description(render("list_jobs_state"))),
+		mcp.WithNumber("limit", mcp.Description(render("pagination_limit")), mcp.DefaultNumber(50)),
+		mcp.WithNumber("offset", mcp.Description(render("pagination_offset")), mcp.DefaultNumber(0)),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		state := request.GetString("state", "")
+		switch state {
+		case "", brain.WriteJobQueued, brain.WriteJobRunning, brain.WriteJobDone,
+			brain.WriteJobSkipped, brain.WriteJobFailed:
+		default:
+			return nil, fmt.Errorf("unknown state %q: use queued, running, done, skipped or failed", state)
+		}
+		jobs, err := bc.Brain.ListWriteJobs(ctx, state, brain.Pagination{
+			Limit:  request.GetInt("limit", 50),
+			Offset: request.GetInt("offset", 0),
+		})
+		if err != nil {
+			return nil, err
+		}
+		b, _ := json.Marshal(jobs)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
 	mcpServer.AddTool(mcp.NewTool("memory_stats",
 		mcp.WithDescription("Return memory statistics: total entries stored, database size, and the date range of the oldest and newest stored memories."),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -1435,6 +1505,8 @@ var readOnlyTools = map[string]bool{
 	"list_failures":          true,
 	"list_causal_links":      true,
 	"get_context":            true,
+	"get_job":                true,
+	"list_jobs":              true,
 	"trace_causal_chain":     true,
 	"memory_stats":           true,
 }
@@ -1591,6 +1663,21 @@ func mcpServeCmd(ctx context.Context, cmd *cli.Command) error {
 			defer wg.Done()
 			runConsolidationTicker(ctx, bc, cmd)
 		}()
+	}
+
+	// A connector that writes with async:true gets a 202 from this process, so
+	// something here has to honour it. Two workers over one queue are safe: the
+	// claim skips rows and namespaces already in flight.
+	if bc.Config.WriteWorker {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			bc.Brain.RunWriteWorker(ctx, brain.WriteWorkerConfig{
+				Retention: bc.Config.WriteWorkerRetention,
+			})
+		}()
+	} else {
+		log.Println("write worker disabled: async remember jobs will stay queued")
 	}
 
 	fmt.Printf("Starting MCP server on %s (sse: /sse, streamable http: /mcp)\n", addr)

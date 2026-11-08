@@ -62,6 +62,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/recall", h.recall)
 	api.HandleFunc("/api/v1/reflect", h.reflect)
 	api.HandleFunc("/api/v1/remember", h.remember)
+	api.HandleFunc("/api/v1/jobs", h.jobs)
+	api.HandleFunc("/api/v1/jobs/", h.jobItem)
 	api.HandleFunc("/api/v1/invalidate", h.invalidate)
 	api.HandleFunc("/api/v1/tags/timeline", h.tagTimeline)
 	api.HandleFunc("/api/v1/tags", h.tags)
@@ -909,6 +911,11 @@ func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
 		ExternalRefs []string `json:"external_refs"`
 		Sources      []string `json:"sources"`
 		Supersedes   bool     `json:"supersedes"`
+		// Async answers 202 with a job id instead of waiting for the write. The
+		// gates still run now; only the embedding and the insert are deferred.
+		Async bool `json:"async"`
+		// CompleteGoal closes that goal in the same write (see brain.RememberOptions).
+		CompleteGoal *int64 `json:"complete_goal"`
 	}
 	if err := readBody(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -931,7 +938,57 @@ func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	out, err := h.Brain.RememberWithOutcome(r.Context(), rememberNamespace(body.Namespace, body.Namespaces), body.Content, brain.RememberOptions{
+	namespace := rememberNamespace(body.Namespace, body.Namespaces)
+
+	// A deferred write is accepted before it is stored, so the caller must be
+	// able to see how it ended. Only the embedding and the insert move; the
+	// gates run here, and a refused write is still refused now.
+	if body.Async {
+		payload, decision, err := h.Brain.AdmitWrite(r.Context(), namespace, body.Content, importance, body.Tags)
+		if errors.Is(err, brain.ErrSocialCloser) {
+			writeJSON(w, http.StatusOK, map[string]any{"skipped": true, "reason": brain.ErrSocialCloser.Error()})
+			return
+		}
+		if errors.Is(err, brain.ErrWriteFiltered) {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"skipped":       true,
+				"reason":        err.Error(),
+				"secret_labels": decision.SecretLabels,
+				"noise_score":   decision.NoiseScore,
+			})
+			return
+		}
+		if !hdl(w, err) {
+			return
+		}
+		payload.OccurredAt = occurredAt
+		payload.ExternalKey = body.ExternalKey
+		payload.ExternalRefs = append(body.ExternalRefs, body.Sources...)
+		payload.Supersedes = body.Supersedes
+		payload.CompleteGoal = body.CompleteGoal
+
+		jobID, err := h.Brain.EnqueueWrite(r.Context(), payload)
+		if !hdl(w, err) {
+			return
+		}
+		w.Header().Set("Location", fmt.Sprintf("/api/v1/jobs/%d", jobID))
+		resp := map[string]any{
+			"job_id":    jobID,
+			"state":     brain.WriteJobQueued,
+			"namespace": namespace,
+			"message":   "Write accepted; it is stored as soon as a worker picks it up",
+		}
+		if decision.Action == "warn" {
+			resp["warning"] = "queued with warnings"
+			resp["reasons"] = decision.Reasons
+			resp["secret_labels"] = decision.SecretLabels
+			resp["noise_score"] = decision.NoiseScore
+		}
+		writeJSON(w, http.StatusAccepted, resp)
+		return
+	}
+
+	out, err := h.Brain.RememberWithOutcome(r.Context(), namespace, body.Content, brain.RememberOptions{
 		OccurredAt:   occurredAt,
 		Importance:   importance,
 		Tags:         body.Tags,
@@ -981,6 +1038,57 @@ func (h *Handler) remember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+// jobs serves the deferred write queue: what is waiting, what failed, and what a
+// client's 202 turned into. A queue nobody can read is a queue nobody trusts.
+func (h *Handler) jobs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	state := r.URL.Query().Get("state")
+	switch state {
+	case "", brain.WriteJobQueued, brain.WriteJobRunning, brain.WriteJobDone,
+		brain.WriteJobSkipped, brain.WriteJobFailed:
+	default:
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid state %q", state))
+		return
+	}
+	items, err := h.Brain.ListWriteJobs(r.Context(), state, pagination(r))
+	if !hdl(w, err) {
+		return
+	}
+	n, err := h.Brain.CountWriteJobs(r.Context(), state)
+	if !hdl(w, err) {
+		return
+	}
+	total(w, n)
+	writeJSON(w, http.StatusOK, nonNil(items))
+}
+
+// jobItem answers one job. This is how a caller learns what its accepted write
+// became: done with an episode id, skipped with the refusal, or failed with the
+// reason.
+func (h *Handler) jobItem(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	id, _, err := pathID(r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	job, err := h.Brain.GetWriteJob(r.Context(), id)
+	if errors.Is(err, brain.ErrWriteJobNotFound) {
+		writeErr(w, http.StatusNotFound, err)
+		return
+	}
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
 }
 
 // rememberNamespace picks the target namespace for a write: the first explicit
