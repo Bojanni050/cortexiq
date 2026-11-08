@@ -3206,7 +3206,7 @@ async function renderModelsCard() {
     // dimensions, so changing it is a re-embed job, not a dropdown.
     const btn = p.purpose === 'embedding'
       ? '<span class="muted">read-only</span>'
-      : `<button onclick="modelDialog('${p.purpose}')">change</button>`;
+      : `<button class="primary" onclick="modelDialog('${p.purpose}')">Change model</button>`;
     return `<tr><td><b>${esc(spec[1])}</b><div class="muted">${esc(spec[2])}</div></td>
       <td>${source}${env}</td><td>${model}${note}</td><td>${price}</td><td class="row-actions">${btn}</td></tr>`;
   }).join('');
