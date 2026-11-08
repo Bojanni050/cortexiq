@@ -172,6 +172,7 @@ func main() {
 					&cli.StringFlag{Name: "to", Usage: "Exclude event/valid time at or after this bound (RFC3339 or YYYY-MM-DD)"},
 					&cli.FloatFlag{Name: "mmr", Usage: "MMR diversity 0..1 (0=relevance, 1=diversity, 0.5=balanced); default: server config"},
 					&cli.StringSliceFlag{Name: "tag", Aliases: []string{"t"}, Usage: "Only memories carrying every one of these tags (repeatable)"},
+					&cli.StringSliceFlag{Name: "tag-any", Usage: "Only memories carrying at least one of these tags (repeatable); combines with --tag"},
 				},
 			},
 			{
@@ -185,6 +186,7 @@ func main() {
 					&cli.StringFlag{Name: "context", Usage: "Additional context to include in the answer synthesis"},
 					&cli.StringFlag{Name: "types", Usage: "Comma-separated filter: fact, episode, failure, goal"},
 					&cli.StringSliceFlag{Name: "tag", Aliases: []string{"t"}, Usage: "Ground the answer only on memories carrying every one of these tags (repeatable)"},
+					&cli.StringSliceFlag{Name: "tag-any", Usage: "Ground the answer on memories carrying at least one of these tags (repeatable); combines with --tag"},
 					&cli.StringFlag{Name: "as-of", Usage: "Answer from what the system knew at this time (RFC3339 or YYYY-MM-DD)"},
 					&cli.StringFlag{Name: "known-from", Usage: "Answer from what the system held in [known-from, known-to) (RFC3339 or YYYY-MM-DD); not with --as-of"},
 					&cli.StringFlag{Name: "known-to", Usage: "Exclusive end of the knowledge window (RFC3339 or YYYY-MM-DD)"},

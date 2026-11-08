@@ -3,8 +3,8 @@
 > Status: phases 3 and 4 are implemented and merged (PR #8, `ff2d4c7`; CI incl.
 > the Postgres integration tests green), and the dedicated invalidate call
 > (`POST /api/v1/invalidate`, MCP `invalidate`) is built on top of them. Phase 2
-> is done except the ANY-filter
-> and the tag character set (see there). The rest is proposal. Written 2026-11-02, revised 2026-11-03
+> is done, ANY-filter and tag character set included. The rest is proposal.
+> Written 2026-11-02, revised 2026-11-03, revised 2026-11-08 after the ANY-filter
 > after a review and after reading Gaia-Cloud's merge code. Source of the
 > dependency list: Gaia-Cloud (`Bojanni050/Gaia-Cloud`,
 > `services/gaia-api/src/hindsightClient.js` and `docs/memory-pipe.md`),
@@ -42,7 +42,7 @@ state.
 | # | Gaia dependency | Where in Gaia-Cloud | CortexIQ today |
 |---|---|---|---|
 | 1 | Recall across several stores with a per-store quota | `createCrossBankRecallClient`, `mergeBankSlices` | `recall` over several namespaces fuses all candidates into one RRF list |
-| 2 | Arbitrary tags per item, readable in recall output | `memoryKindOf` reads item tags; `gaia:*` tags | **done** (migration 00037): tags on episodes and facts, accepted by `remember`, returned by `recall`, AND-filter; only an ANY-filter is open |
+| 2 | Arbitrary tags per item, readable in recall output | `memoryKindOf` reads item tags; `gaia:*` tags | **done** (migration 00037): tags on episodes and facts, accepted by `remember`, returned by `recall`, AND-filter and ANY-filter (`tags_any`) |
 | 3 | Superseding version writes + rebuildable mirror | `cognitionSync.js`, `reconcile-hindsight-tags.js` | `valid_until`, superseding facts and `forget` exist; no keyed upsert |
 | 4 | Provenance `sources: ['foundation:<id>']` | `evidenceRecall.js` Dual Recall | no per-item pointer to something outside CortexIQ |
 | 5 | Async fire-and-forget retain | `reflectOnTurn` (`async: true, timeout: null`) | `POST /api/v1/remember` is synchronous |
@@ -59,7 +59,7 @@ Judged on what CortexIQ gains with no Gaia in the picture:
 | Phase | Useful without Gaia? | Why |
 |---|---|---|
 | 1 Quota recall over namespaces | **Maybe — measure first** | A `recall` on `/` or a parent returns one top-k list. A large namespace can fill every slot while small ones (`/self`, `/users/...`) never surface. That is a real risk, but unmeasured here: RRF is rank-based, so the "incomparable scales" argument from Hindsight carries over only weakly. It is a *diversity guarantee*, not a scale fix. Run the fixture below against live data before building. |
-| 2 Tags (done) | Already shipped | Only the optional ANY-filter is open; build it when a caller asks. |
+| 2 Tags (done) | Already shipped | AND and ANY filters both exist; nothing open. |
 | 3 Keyed upsert + supersede (`external_key`) | **Yes, clearly** | Any integration that mirrors external state (a Hermes plugin, a file or ticket sync, re-running an import, the Hindsight → CortexIQ migration) gets idempotent re-runs instead of duplicates, and a queryable history of how a statement changed (`superseded_by`). |
 | 4 Pointers to outside sources (`external_refs`) | **Yes, cheap** | Any memory can name where it came from: a commit (`commit:bf575f8`), a file, a URL, a ticket. Today that only survives as prose in `content`. |
 | 5 Async `remember` | **Only if measured** | Useful for hooks and plugins that must never block a reply. If `remember` is fast today it is unnecessary; if embedding makes it slow, it pays off for every client. Measure latency first. |
@@ -150,7 +150,7 @@ one failing slice leaves the other two intact with a recomputed quota, (d) a
 listed parent and child do not duplicate items. Port the cases of
 `test/hindsightCrossBankRecall.test.js` rather than inventing new ones.
 
-## Phase 2 — Tags on episodes and facts (mostly done)
+## Phase 2 — Tags on episodes and facts (done)
 
 ### Why
 
@@ -168,14 +168,20 @@ recall accept `tags` and return each item's `tags`. Epistemic marks stay
 client-side (Gaia's `memoryKindOf`): CortexIQ stores and returns tags, it does
 not interpret them.
 
-### Remaining gap
+### The ANY-filter (built 2026-11-08)
 
-The existing recall filter is **AND** (an item must carry every listed tag). A
-caller may need **OR** (e.g. `gaia:hypothesis` or `gaia:pattern`). Add an
-optional `tags_any: []string` next to `tags`, same normalisation
-(`NormalizeTags`), same GIN index (`&&` overlap operator). Both set means AND of
-the two conditions. Build it only once a concrete call site needs it; until
-then the read side works with `tags` alone.
+The AND filter alone could not answer "any of these kinds". `tags_any` is
+**OR** (at least one listed tag present) and composes with `tags`: both set means
+AND of the two conditions. It is normalised by the same `NormalizeTags` and uses
+the same GIN index through the `&&` overlap operator. Both conditions live in one
+`queries.TagFilter` value, so a new filter cannot be forgotten in one of the four
+recall arms: the arms are fused by rank, and an unfiltered arm would put excluded
+rows back into the result.
+
+Reachable from `recall` and `reflect` — MCP `tags_any`, HTTP `tags_any`, CLI
+`--tag-any` — because Gaia's client reads memory kinds on both paths. Failures
+and goals carry no tags, so any tag condition excludes them, including an
+ANY-only one.
 
 **Resolved (2026-11-03):** `NormalizeTags` used to accept only
 `^[a-z0-9][a-z0-9_-]*$`, which rejected Gaia's `gaia:hypothesis` and

@@ -149,22 +149,22 @@ func TestRecallWindowTemplatesRender(t *testing.T) {
 			return q.RecallFactsWindow([]int64{7}, vec, 10, nil, &from, &to, Known{})
 		},
 		"fact keyword": func() (string, []any, error) {
-			return q.RecallFactsKeywordWindow([]int64{7}, "project", 10, nil, &from, &to, Known{}, nil)
+			return q.RecallFactsKeywordWindow([]int64{7}, "project", 10, nil, &from, &to, Known{}, TagFilter{})
 		},
 		"fact graph": func() (string, []any, error) {
-			return q.RecallFactsGraphWindow([]int64{7}, "project", vec, 10, 0.4, nil, &from, &to, Known{}, nil)
+			return q.RecallFactsGraphWindow([]int64{7}, "project", vec, 10, 0.4, nil, &from, &to, Known{}, TagFilter{})
 		},
 		"episode vector": func() (string, []any, error) {
 			return q.RecallEpisodesWindow([]int64{7}, vec, 10, nil, &from, &to, Known{})
 		},
 		"episode keyword": func() (string, []any, error) {
-			return q.RecallEpisodesKeywordWindow([]int64{7}, "project", 10, nil, &from, &to, Known{}, nil)
+			return q.RecallEpisodesKeywordWindow([]int64{7}, "project", 10, nil, &from, &to, Known{}, TagFilter{})
 		},
 		"fact temporal": func() (string, []any, error) {
-			return q.RecallFactsTemporal([]int64{7}, 10, nil, &from, &to, Known{}, nil)
+			return q.RecallFactsTemporal([]int64{7}, 10, nil, &from, &to, Known{}, TagFilter{})
 		},
 		"episode temporal": func() (string, []any, error) {
-			return q.RecallEpisodesTemporal([]int64{7}, 10, nil, &from, &to, Known{}, nil)
+			return q.RecallEpisodesTemporal([]int64{7}, 10, nil, &from, &to, Known{}, TagFilter{})
 		},
 	}
 	for name, build := range checks {
@@ -214,25 +214,25 @@ func TestRecallTagFilterRendersInEveryArm(t *testing.T) {
 	tags := []string{"beslissing", "pgvector"}
 	builders := map[string]func() (string, []any, error){
 		"fact vector": func() (string, []any, error) {
-			return q.RecallFactsWindowWithEmbedding([]int64{7}, vec, 10, nil, nil, nil, Known{}, false, tags)
+			return q.RecallFactsWindowWithEmbedding([]int64{7}, vec, 10, nil, nil, nil, Known{}, false, TagFilter{All: tags})
 		},
 		"fact keyword": func() (string, []any, error) {
-			return q.RecallFactsKeywordWindow([]int64{7}, "project", 10, nil, nil, nil, Known{}, tags)
+			return q.RecallFactsKeywordWindow([]int64{7}, "project", 10, nil, nil, nil, Known{}, TagFilter{All: tags})
 		},
 		"fact graph": func() (string, []any, error) {
-			return q.RecallFactsGraphWindow([]int64{7}, "project", vec, 10, 0, nil, nil, nil, Known{}, tags)
+			return q.RecallFactsGraphWindow([]int64{7}, "project", vec, 10, 0, nil, nil, nil, Known{}, TagFilter{All: tags})
 		},
 		"fact temporal": func() (string, []any, error) {
-			return q.RecallFactsTemporal([]int64{7}, 10, nil, nil, nil, Known{}, tags)
+			return q.RecallFactsTemporal([]int64{7}, 10, nil, nil, nil, Known{}, TagFilter{All: tags})
 		},
 		"episode vector": func() (string, []any, error) {
-			return q.RecallEpisodesWindowWithEmbedding([]int64{7}, vec, 10, nil, nil, nil, Known{}, false, tags)
+			return q.RecallEpisodesWindowWithEmbedding([]int64{7}, vec, 10, nil, nil, nil, Known{}, false, TagFilter{All: tags})
 		},
 		"episode keyword": func() (string, []any, error) {
-			return q.RecallEpisodesKeywordWindow([]int64{7}, "project", 10, nil, nil, nil, Known{}, tags)
+			return q.RecallEpisodesKeywordWindow([]int64{7}, "project", 10, nil, nil, nil, Known{}, TagFilter{All: tags})
 		},
 		"episode temporal": func() (string, []any, error) {
-			return q.RecallEpisodesTemporal([]int64{7}, 10, nil, nil, nil, Known{}, tags)
+			return q.RecallEpisodesTemporal([]int64{7}, 10, nil, nil, nil, Known{}, TagFilter{All: tags})
 		},
 	}
 	for name, build := range builders {
@@ -264,7 +264,7 @@ func TestRecallTagFilterRendersInEveryArm(t *testing.T) {
 	}
 
 	// Without tags the filter must disappear entirely, not match on an empty array.
-	sql, args, err := q.RecallFactsWindowWithEmbedding([]int64{7}, vec, 10, nil, nil, nil, Known{}, false, nil)
+	sql, args, err := q.RecallFactsWindowWithEmbedding([]int64{7}, vec, 10, nil, nil, nil, Known{}, false, TagFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,4 +276,112 @@ func TestRecallTagFilterRendersInEveryArm(t *testing.T) {
 			t.Errorf("unfiltered recall bound a tag argument: %v", args)
 		}
 	}
+}
+
+// tags_any must reach every arm too, as an overlap (&&) rather than a
+// containment (@>): the two conditions are different operators against the same
+// GIN index, and a missing one silently widens the result.
+func TestRecallTagsAnyRendersInEveryArm(t *testing.T) {
+	q, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vec := pgvector.NewVector([]float32{1, 0})
+	anyTags := []string{"gaia:hypothesis", "gaia:decision"}
+	builders := map[string]func() (string, []any, error){
+		"fact vector": func() (string, []any, error) {
+			return q.RecallFactsWindowWithEmbedding([]int64{7}, vec, 10, nil, nil, nil, Known{}, false, TagFilter{Any: anyTags})
+		},
+		"fact keyword": func() (string, []any, error) {
+			return q.RecallFactsKeywordWindow([]int64{7}, "project", 10, nil, nil, nil, Known{}, TagFilter{Any: anyTags})
+		},
+		"fact graph": func() (string, []any, error) {
+			return q.RecallFactsGraphWindow([]int64{7}, "project", vec, 10, 0, nil, nil, nil, Known{}, TagFilter{Any: anyTags})
+		},
+		"fact temporal": func() (string, []any, error) {
+			return q.RecallFactsTemporal([]int64{7}, 10, nil, nil, nil, Known{}, TagFilter{Any: anyTags})
+		},
+		"episode vector": func() (string, []any, error) {
+			return q.RecallEpisodesWindowWithEmbedding([]int64{7}, vec, 10, nil, nil, nil, Known{}, false, TagFilter{Any: anyTags})
+		},
+		"episode keyword": func() (string, []any, error) {
+			return q.RecallEpisodesKeywordWindow([]int64{7}, "project", 10, nil, nil, nil, Known{}, TagFilter{Any: anyTags})
+		},
+		"episode temporal": func() (string, []any, error) {
+			return q.RecallEpisodesTemporal([]int64{7}, 10, nil, nil, nil, Known{}, TagFilter{Any: anyTags})
+		},
+	}
+	for name, build := range builders {
+		t.Run(name, func(t *testing.T) {
+			sql, args, err := build()
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "tags && ARRAY[$"
+			if name == "fact graph" {
+				want = "f.tags && ARRAY[$"
+			}
+			if !strings.Contains(sql, want) {
+				t.Errorf("SQL lacks %q:\n%s", want, sql)
+			}
+			if strings.Contains(sql, "tags @>") {
+				t.Errorf("tags_any rendered as containment:\n%s", sql)
+			}
+			if !strings.Contains(sql, "]::text[]") {
+				t.Errorf("SQL lacks the text[] cast:\n%s", sql)
+			}
+			if !argsContainAll(args, anyTags) {
+				t.Errorf("tags_any arguments not bound: %v", args)
+			}
+		})
+	}
+}
+
+// Both conditions at once must render as two clauses: tags_any is never allowed
+// to stand in for tags, or a caller asking for "every tag and one of these" would
+// get the union instead of the intersection.
+func TestRecallTagsAllAndAnyRenderTogether(t *testing.T) {
+	q, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vec := pgvector.NewVector([]float32{1, 0})
+	sql, args, err := q.RecallFactsWindowWithEmbedding([]int64{7}, vec, 10, nil, nil, nil, Known{}, false,
+		TagFilter{All: []string{"beslissing"}, Any: []string{"gaia:hypothesis", "gaia:decision"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sql, "tags @> ARRAY[$") || !strings.Contains(sql, "tags && ARRAY[$") {
+		t.Errorf("both tag conditions should render:\n%s", sql)
+	}
+	if !strings.Contains(sql, " AND ") {
+		t.Errorf("conditions should be ANDed:\n%s", sql)
+	}
+	bound := 0
+	for _, a := range args {
+		if s, ok := a.(string); ok && (s == "beslissing" || s == "gaia:hypothesis" || s == "gaia:decision") {
+			bound++
+		}
+	}
+	if bound != 3 {
+		t.Errorf("bound %d of 3 tag arguments: %v", bound, args)
+	}
+}
+
+// argsContainAll reports whether every tag reached the argument list. The
+// template expands a slice into one placeholder per element, so tags arrive as
+// separate string arguments rather than as a []string.
+func argsContainAll(args []any, want []string) bool {
+	seen := map[string]bool{}
+	for _, a := range args {
+		if s, ok := a.(string); ok {
+			seen[s] = true
+		}
+	}
+	for _, w := range want {
+		if !seen[w] {
+			return false
+		}
+	}
+	return true
 }

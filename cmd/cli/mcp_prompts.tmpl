@@ -325,7 +325,11 @@ Optional reason the state changed ("hypothesis was rejected: contradicted by the
 {{end}}
 
 {{define "recall_tags"}}
-Optional comma-separated tags to narrow the search: only memories carrying all of them are returned (AND, not OR). Tags are lowercase words like 'beslissing' or 'klant-x'; the filter applies to consolidated facts and to raw episodes. Failures and goals have no tags and are excluded when this is set.
+Optional comma-separated tags to narrow the search: only memories carrying all of them are returned (AND, not OR). Tags are lowercase words like 'beslissing' or 'klant-x'; the filter applies to consolidated facts and to raw episodes. Use tags_any instead when any one of a family of tags will do. Failures and goals have no tags and are excluded when this is set.
+{{end}}
+
+{{define "recall_tags_any"}}
+Optional comma-separated tags to widen-by-family: a memory is returned when it carries at least one of them (OR). Combine with tags to require every tag there and one tag here. Use it for a set of related tags ('gaia:hypothesis', 'gaia:decision') when you do not care which one matched. Failures and goals have no tags and are excluded when this is set.
 {{end}}
 
 {{define "list_tags_description"}}
@@ -469,6 +473,10 @@ Comma-separated namespace paths to search for grounding memories. Each path matc
 
 {{define "reflect_tags"}}
 Optional comma-separated tags to ground the answer only on memories carrying every one of them (AND, not OR). Use it when the question is about a kind of knowledge rather than a place: e.g. tags "beslissing" answers "which decisions did we take", whatever namespace they live in. Combine with namespaces to keep the scope narrow. Mental models are filtered separately (they have their own tags).
+{{end}}
+
+{{define "reflect_tags_any"}}
+Optional comma-separated tags to ground the answer on memories carrying at least one of them (OR). Combine with tags to require every tag there and one tag here. Use it when a family of tags answers the question, e.g. "gaia:hypothesis,gaia:decision" for "what does Gaia claim".
 {{end}}
 
 {{define "reflect_limit"}}

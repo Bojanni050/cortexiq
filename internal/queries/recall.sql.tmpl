@@ -1,22 +1,30 @@
 {{/* Modifications copyright (c) 2026 Bojan van der Heide */}}
 {{/*
-  Tags narrow a recall: every requested tag must be present (AND, not OR), so a
-  filter can only make the result smaller. The filter must appear in every arm —
-  vector, keyword, graph and temporal — because the arms are fused by rank; an
-  unfiltered arm would put untagged rows back into the result.
+  Tags narrow a recall along two axes. "tags" is an AND condition: every listed
+  tag must be present. "tags_any" is an OR condition: at least one listed tag
+  must be present. Both together mean "all of tags, and one of tags_any". Either
+  way a filter can only make the result smaller — the conditions are ANDed onto
+  the WHERE clause, never ORed with it.
+  The filter must appear in every arm — vector, keyword, graph and temporal —
+  because the arms are fused by rank; an unfiltered arm would put excluded rows
+  back into the result. Both operators use the GIN index on tags (@> and &&).
 */}}
 {{define "tag_filter"}}
 {{if .Args.tags}}
     AND tags @> ARRAY[{{.Bind .Args.tags}}]::text[]
 {{end}}
+{{if .Args.tags_any}}
+    AND tags && ARRAY[{{.Bind .Args.tags_any}}]::text[]
 {{end}}
-
+{{end}}
 {{define "tag_filter_f"}}
 {{if .Args.tags}}
     AND f.tags @> ARRAY[{{.Bind .Args.tags}}]::text[]
 {{end}}
+{{if .Args.tags_any}}
+    AND f.tags && ARRAY[{{.Bind .Args.tags_any}}]::text[]
 {{end}}
-
+{{end}}
 {{define "recall_episodes"}}
 SELECT
     id,
@@ -40,7 +48,6 @@ WHERE deleted_at IS NULL
 ORDER BY embedding <=> {{.Bind .Args.vector}}
 LIMIT {{.Bind .Args.limit}}
 {{end}}
-
 {{define "recall_facts"}}
 SELECT
     id,
@@ -70,7 +77,6 @@ WHERE deleted_at IS NULL
 ORDER BY embedding <=> {{.Bind .Args.vector}}
 LIMIT {{.Bind .Args.limit}}
 {{end}}
-
 {{define "recall_episodes_keyword"}}
 SELECT
     id,
@@ -92,7 +98,6 @@ WHERE deleted_at IS NULL
 ORDER BY score DESC, id DESC
 LIMIT {{.Bind .Args.limit}}
 {{end}}
-
 {{define "recall_facts_keyword"}}
 SELECT
     id,
@@ -120,7 +125,6 @@ WHERE deleted_at IS NULL
 ORDER BY score DESC, id DESC
 LIMIT {{.Bind .Args.limit}}
 {{end}}
-
 {{define "graph_matched"}}
 SELECT DISTINCT lower(e) AS name
 FROM (
@@ -145,12 +149,10 @@ FROM (
 WHERE length(e) >= 3
     AND lower({{.Bind .Args.query}}) ~ ('(?<![[:alnum:]])' || regexp_replace(lower(e), '([.*+?^${}()|\[\]\\])', '\\\1', 'g') || '(?![[:alnum:]])')
 {{end}}
-
 {{define "recall_matched_entities"}}
 {{template "graph_matched" .}}
 ORDER BY name
 {{end}}
-
 {{define "recall_facts_graph"}}
 WITH matched AS (
 {{template "graph_matched" .}}
@@ -208,7 +210,6 @@ WHERE f.deleted_at IS NULL
 {{if not (or .Args.as_of .Args.known_from .Args.known_to .Args.from .Args.to)}}
     AND (f.valid_until IS NULL OR f.valid_until > now())
 {{end}}
-
 {{if .Args.namespace_ids}}
     AND f.namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
 {{end}}
@@ -216,7 +217,6 @@ WHERE f.deleted_at IS NULL
 ORDER BY c.hop, COALESCE(1 - (f.embedding <=> {{.Bind .Args.vector}}), -1) DESC, c.confidence DESC, c.id DESC
 LIMIT {{.Bind .Args.limit}}
 {{end}}
-
 {{/*
   Knowledge time (what the system held) and valid time (what was true) are
   separate axes. as_of is the point form of the knowledge axis; known_from and
@@ -239,7 +239,6 @@ LIMIT {{.Bind .Args.limit}}
     AND (valid_until IS NULL OR valid_until > now())
 {{end}}
 {{end}}
-
 {{/* Episodes are never withdrawn, so only the end of the knowledge window matters. */}}
 {{define "episode_time_filter"}}
 {{if .Args.as_of}}
@@ -255,7 +254,6 @@ LIMIT {{.Bind .Args.limit}}
     AND occurred_at < {{.Bind .Args.to}}
 {{end}}
 {{end}}
-
 {{define "recall_episodes_temporal"}}
 SELECT id, namespace_id, content, occurred_at, created_at, importance, tags, 1.0::real AS score
 FROM episodes
@@ -268,7 +266,6 @@ WHERE deleted_at IS NULL
 ORDER BY occurred_at DESC, id DESC
 LIMIT {{.Bind .Args.limit}}
 {{end}}
-
 {{define "recall_facts_temporal"}}
 SELECT id, namespace_id, content, confidence, created_at, importance, tags, 1.0::real AS score
 FROM facts
@@ -287,7 +284,6 @@ WHERE deleted_at IS NULL
 ORDER BY COALESCE(valid_from, created_at) DESC, id DESC
 LIMIT {{.Bind .Args.limit}}
 {{end}}
-
 {{/*
   Failures and goals carry no embedding and no stored tsvector: they are few and
   hand-written, so the tsvector is built on the fly (same tokenizer as
@@ -318,7 +314,6 @@ WHERE doc @@ websearch_to_tsquery('simple', {{.Bind .Args.query}})
 ORDER BY score DESC, id DESC
 LIMIT {{.Bind .Args.limit}}
 {{end}}
-
 {{define "recall_goals_keyword"}}
 SELECT
     id,

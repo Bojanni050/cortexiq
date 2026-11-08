@@ -22,8 +22,8 @@ import (
 
 	"github.com/Bojanni050/cortexiq/internal/bootstrap"
 	"github.com/Bojanni050/cortexiq/internal/brain"
-	"github.com/Bojanni050/cortexiq/internal/observability"
 	"github.com/Bojanni050/cortexiq/internal/oauth"
+	"github.com/Bojanni050/cortexiq/internal/observability"
 	"github.com/Bojanni050/cortexiq/internal/scope"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -282,6 +282,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("to", mcp.Description(render("to_param"))),
 		mcp.WithString("types", mcp.Description(render("recall_types"))),
 		mcp.WithString("tags", mcp.Description(render("recall_tags"))),
+		mcp.WithString("tags_any", mcp.Description(render("recall_tags_any"))),
 		mcp.WithNumber("mmr", mcp.Description(render("recall_mmr"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query := request.GetString("query", "")
@@ -330,7 +331,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			mmr = &v
 		}
 
-		results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo, Types: types, Tags: splitList(request.GetString("tags", "")), MMR: mmr})
+		results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo, Types: types, Tags: splitList(request.GetString("tags", "")), TagsAny: splitList(request.GetString("tags_any", "")), MMR: mmr})
 		if err != nil {
 			return nil, err
 		}
@@ -351,6 +352,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("known_to", mcp.Description(render("known_to_param"))),
 		mcp.WithString("types", mcp.Description(render("recall_types"))),
 		mcp.WithString("tags", mcp.Description(render("reflect_tags"))),
+		mcp.WithString("tags_any", mcp.Description(render("reflect_tags_any"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query := request.GetString("query", "")
 		if strings.TrimSpace(query) == "" {
@@ -411,6 +413,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			KnownTo:    knownTo,
 			Types:      types,
 			Tags:       splitList(request.GetString("tags", "")),
+			TagsAny:    splitList(request.GetString("tags_any", "")),
 		})
 		if err != nil {
 			return nil, err

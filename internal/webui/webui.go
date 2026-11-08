@@ -696,6 +696,9 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 		Types []string `json:"types"`
 		// Tags narrows the search to memories carrying every listed tag (AND).
 		Tags []string `json:"tags"`
+		// TagsAny narrows the search to memories carrying at least one of these
+		// tags (OR). Combined with tags it means every tag in tags and one here.
+		TagsAny []string `json:"tags_any"`
 		// AsOf is an RFC 3339 moment: recall what was known then.
 		AsOf string `json:"as_of"`
 		From string `json:"from"`
@@ -718,7 +721,7 @@ func (h *Handler) recall(w http.ResponseWriter, r *http.Request) {
 	if len(body.Namespaces) == 0 {
 		body.Namespaces = []string{"/"}
 	}
-	opts := brain.RecallOptions{Types: body.Types, Tags: body.Tags}
+	opts := brain.RecallOptions{Types: body.Types, Tags: body.Tags, TagsAny: body.TagsAny}
 	for _, t := range body.Types {
 		if t != "fact" && t != "episode" && t != "failure" && t != "goal" {
 			writeErr(w, http.StatusBadRequest, fmt.Errorf("invalid type %q: use fact, episode, failure or goal", t))
@@ -796,6 +799,10 @@ func (h *Handler) reflect(w http.ResponseWriter, r *http.Request) {
 		MMR              *float64 `json:"mmr"`
 		SkipMentalModels bool     `json:"skip_mental_models"`
 		MentalModelTags  []string `json:"mental_model_tags"`
+		// Tags ground the answer only on memories carrying every listed tag;
+		// TagsAny on memories carrying at least one of them. They compose.
+		Tags    []string `json:"tags"`
+		TagsAny []string `json:"tags_any"`
 	}
 	if err := readBody(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -819,6 +826,8 @@ func (h *Handler) reflect(w http.ResponseWriter, r *http.Request) {
 		Limit:            body.Limit,
 		Context:          body.Context,
 		Types:            body.Types,
+		Tags:             body.Tags,
+		TagsAny:          body.TagsAny,
 		MMR:              body.MMR,
 		SkipMentalModels: body.SkipMentalModels,
 		MentalModelTags:  body.MentalModelTags,

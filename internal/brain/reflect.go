@@ -61,6 +61,10 @@ type ReflectOptions struct {
 	// (AND, not OR), the same way RecallOptions.Tags does. Mental models keep
 	// their own filter (MentalModelTags); this only applies to recalled memories.
 	Tags []string
+	// TagsAny narrows the grounding recall to memories carrying at least one of
+	// the listed tags (OR), the same way RecallOptions.TagsAny does. It composes
+	// with Tags: every tag in Tags and one tag in TagsAny.
+	TagsAny []string
 	// MMR overrides the server MMR lambda for the grounding recall. nil keeps
 	// the server config; 0 disables MMR; 0..1 balances relevance vs diversity.
 	MMR *float64
@@ -145,6 +149,7 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 		KnownTo:   opts.KnownTo,
 		Types:     opts.Types,
 		Tags:      opts.Tags,
+		TagsAny:   opts.TagsAny,
 		MMR:       opts.MMR,
 	}
 	results, err := b.RecallWith(ctx, namespaces, query, limit, recallOpts)

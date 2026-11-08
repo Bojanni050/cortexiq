@@ -46,12 +46,12 @@ func (q *Queries) RecallEpisodes(namespaceIDs []int64, vector pgvector.Vector, l
 // and/or by the event-time window [from, to). When includeEmbedding is true the
 // embedding column is also selected (for MMR diversification).
 func (q *Queries) RecallEpisodesWindow(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf, from, to *time.Time, known Known) (string, []any, error) {
-	return q.RecallEpisodesWindowWithEmbedding(namespaceIDs, vector, limit, asOf, from, to, known, false, nil)
+	return q.RecallEpisodesWindowWithEmbedding(namespaceIDs, vector, limit, asOf, from, to, known, false, TagFilter{})
 }
 
 // RecallEpisodesWindowWithEmbedding is RecallEpisodesWindow with an option to
 // include the embedding column in the result (needed for MMR).
-func (q *Queries) RecallEpisodesWindowWithEmbedding(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf, from, to *time.Time, known Known, includeEmbedding bool, tags []string) (string, []any, error) {
+func (q *Queries) RecallEpisodesWindowWithEmbedding(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf, from, to *time.Time, known Known, includeEmbedding bool, tags TagFilter) (string, []any, error) {
 	args := map[string]any{
 		"vector":            vector,
 		"limit":             limit,
@@ -60,7 +60,7 @@ func (q *Queries) RecallEpisodesWindowWithEmbedding(namespaceIDs []int64, vector
 	if len(namespaceIDs) > 0 {
 		args["namespace_ids"] = namespaceIDs
 	}
-	setTags(args, tags)
+	setTagFilter(args, tags)
 	setAsOf(args, asOf)
 	setWindow(args, from, to)
 	setKnown(args, known)
@@ -75,12 +75,12 @@ func (q *Queries) RecallFacts(namespaceIDs []int64, vector pgvector.Vector, limi
 
 // RecallFactsWindow returns fact vector hits constrained by valid-time overlap.
 func (q *Queries) RecallFactsWindow(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf, from, to *time.Time, known Known) (string, []any, error) {
-	return q.RecallFactsWindowWithEmbedding(namespaceIDs, vector, limit, asOf, from, to, known, false, nil)
+	return q.RecallFactsWindowWithEmbedding(namespaceIDs, vector, limit, asOf, from, to, known, false, TagFilter{})
 }
 
 // RecallFactsWindowWithEmbedding is RecallFactsWindow with an option to include
 // the embedding column in the result (needed for MMR).
-func (q *Queries) RecallFactsWindowWithEmbedding(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf, from, to *time.Time, known Known, includeEmbedding bool, tags []string) (string, []any, error) {
+func (q *Queries) RecallFactsWindowWithEmbedding(namespaceIDs []int64, vector pgvector.Vector, limit int, asOf, from, to *time.Time, known Known, includeEmbedding bool, tags TagFilter) (string, []any, error) {
 	args := map[string]any{
 		"vector":            vector,
 		"limit":             limit,
@@ -89,7 +89,7 @@ func (q *Queries) RecallFactsWindowWithEmbedding(namespaceIDs []int64, vector pg
 	if len(namespaceIDs) > 0 {
 		args["namespace_ids"] = namespaceIDs
 	}
-	setTags(args, tags)
+	setTagFilter(args, tags)
 	setAsOf(args, asOf)
 	setWindow(args, from, to)
 	setKnown(args, known)
@@ -99,12 +99,12 @@ func (q *Queries) RecallFactsWindowWithEmbedding(namespaceIDs []int64, vector pg
 // RecallEpisodesKeyword returns SQL + args for episode full-text search.
 // query is a websearch-syntax string (see brain.keywordQuery).
 func (q *Queries) RecallEpisodesKeyword(namespaceIDs []int64, query string, limit int, asOf *time.Time) (string, []any, error) {
-	return q.RecallEpisodesKeywordWindow(namespaceIDs, query, limit, asOf, nil, nil, Known{}, nil)
+	return q.RecallEpisodesKeywordWindow(namespaceIDs, query, limit, asOf, nil, nil, Known{}, TagFilter{})
 }
 
-func (q *Queries) RecallEpisodesKeywordWindow(namespaceIDs []int64, query string, limit int, asOf, from, to *time.Time, known Known, tags []string) (string, []any, error) {
+func (q *Queries) RecallEpisodesKeywordWindow(namespaceIDs []int64, query string, limit int, asOf, from, to *time.Time, known Known, tags TagFilter) (string, []any, error) {
 	args := keywordArgs(namespaceIDs, query, limit, asOf)
-	setTags(args, tags)
+	setTagFilter(args, tags)
 	setWindow(args, from, to)
 	setKnown(args, known)
 	return q.tpl.Execute("recall_episodes_keyword", args)
@@ -112,12 +112,12 @@ func (q *Queries) RecallEpisodesKeywordWindow(namespaceIDs []int64, query string
 
 // RecallFactsKeyword returns SQL + args for fact full-text search.
 func (q *Queries) RecallFactsKeyword(namespaceIDs []int64, query string, limit int, asOf *time.Time) (string, []any, error) {
-	return q.RecallFactsKeywordWindow(namespaceIDs, query, limit, asOf, nil, nil, Known{}, nil)
+	return q.RecallFactsKeywordWindow(namespaceIDs, query, limit, asOf, nil, nil, Known{}, TagFilter{})
 }
 
-func (q *Queries) RecallFactsKeywordWindow(namespaceIDs []int64, query string, limit int, asOf, from, to *time.Time, known Known, tags []string) (string, []any, error) {
+func (q *Queries) RecallFactsKeywordWindow(namespaceIDs []int64, query string, limit int, asOf, from, to *time.Time, known Known, tags TagFilter) (string, []any, error) {
 	args := keywordArgs(namespaceIDs, query, limit, asOf)
-	setTags(args, tags)
+	setTagFilter(args, tags)
 	setWindow(args, from, to)
 	setKnown(args, known)
 	return q.tpl.Execute("recall_facts_keyword", args)
@@ -143,20 +143,20 @@ func (q *Queries) RecallGoalsKeyword(namespaceIDs []int64, query string, limit i
 // ordered by cosine similarity of their embedding to vector (the query's), so
 // an entity with many facts puts the ones that answer the question first.
 func (q *Queries) RecallFactsGraph(namespaceIDs []int64, query string, vector pgvector.Vector, limit int, asOf *time.Time) (string, []any, error) {
-	return q.RecallFactsGraphWindow(namespaceIDs, query, vector, limit, 0, asOf, nil, nil, Known{}, nil)
+	return q.RecallFactsGraphWindow(namespaceIDs, query, vector, limit, 0, asOf, nil, nil, Known{}, TagFilter{})
 }
 
 // minSimilarity, when positive, keeps a neighbour only if its embedding is at
 // least that close to the query. Without it the arm adds every fact whose entity
 // a neighbour shares, however unrelated the fact itself is: a topic question that
 // happens to name one entity then collects that entity's whole neighbourhood.
-func (q *Queries) RecallFactsGraphWindow(namespaceIDs []int64, query string, vector pgvector.Vector, limit int, minSimilarity float32, asOf, from, to *time.Time, known Known, tags []string) (string, []any, error) {
+func (q *Queries) RecallFactsGraphWindow(namespaceIDs []int64, query string, vector pgvector.Vector, limit int, minSimilarity float32, asOf, from, to *time.Time, known Known, tags TagFilter) (string, []any, error) {
 	args := keywordArgs(namespaceIDs, query, limit, asOf)
 	args["vector"] = vector
 	if minSimilarity > 0 {
 		args["min_similarity"] = minSimilarity
 	}
-	setTags(args, tags)
+	setTagFilter(args, tags)
 	setWindow(args, from, to)
 	setKnown(args, known)
 	return q.tpl.Execute("recall_facts_graph", args)
@@ -164,24 +164,24 @@ func (q *Queries) RecallFactsGraphWindow(namespaceIDs []int64, query string, vec
 
 // Temporal methods return the same row shape as their vector/keyword peers,
 // ordered by event/valid-time proximity within the requested window.
-func (q *Queries) RecallEpisodesTemporal(namespaceIDs []int64, limit int, asOf, from, to *time.Time, known Known, tags []string) (string, []any, error) {
+func (q *Queries) RecallEpisodesTemporal(namespaceIDs []int64, limit int, asOf, from, to *time.Time, known Known, tags TagFilter) (string, []any, error) {
 	args := map[string]any{"limit": limit}
 	if len(namespaceIDs) > 0 {
 		args["namespace_ids"] = namespaceIDs
 	}
-	setTags(args, tags)
+	setTagFilter(args, tags)
 	setAsOf(args, asOf)
 	setWindow(args, from, to)
 	setKnown(args, known)
 	return q.tpl.Execute("recall_episodes_temporal", args)
 }
 
-func (q *Queries) RecallFactsTemporal(namespaceIDs []int64, limit int, asOf, from, to *time.Time, known Known, tags []string) (string, []any, error) {
+func (q *Queries) RecallFactsTemporal(namespaceIDs []int64, limit int, asOf, from, to *time.Time, known Known, tags TagFilter) (string, []any, error) {
 	args := map[string]any{"limit": limit}
 	if len(namespaceIDs) > 0 {
 		args["namespace_ids"] = namespaceIDs
 	}
-	setTags(args, tags)
+	setTagFilter(args, tags)
 	setAsOf(args, asOf)
 	setWindow(args, from, to)
 	setKnown(args, known)
@@ -206,9 +206,28 @@ func keywordArgs(namespaceIDs []int64, query string, limit int, asOf *time.Time)
 	return args
 }
 
-func setTags(args map[string]any, tags []string) {
-	if len(tags) > 0 {
-		args["tags"] = tags
+// TagFilter is the tag condition of a recall arm, as two independent
+// conditions. All is an AND condition: every listed tag must be present. Any is
+// an OR condition: at least one of the listed tags must be present. Setting both
+// means "every tag in All, and one of Any". The zero value filters nothing, and
+// the two conditions never widen each other — a filter can only remove rows.
+//
+// Normalization (lower case, trim, validate) belongs to the caller; this package
+// only renders what it is given.
+type TagFilter struct {
+	All []string
+	Any []string
+}
+
+// Empty reports that the filter removes nothing.
+func (f TagFilter) Empty() bool { return len(f.All) == 0 && len(f.Any) == 0 }
+
+func setTagFilter(args map[string]any, tags TagFilter) {
+	if len(tags.All) > 0 {
+		args["tags"] = tags.All
+	}
+	if len(tags.Any) > 0 {
+		args["tags_any"] = tags.Any
 	}
 }
 
@@ -264,7 +283,7 @@ func (q *Queries) FetchEpisodesByTags(namespaceID int64, afterID int64, limit in
 		"after_id":     afterID,
 		"limit":        limit,
 	}
-	setTags(args, tags)
+	setTagFilter(args, TagFilter{All: tags})
 	return q.tpl.Execute("fetch_episodes", args)
 }
 

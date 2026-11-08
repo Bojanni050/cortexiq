@@ -29,6 +29,12 @@ type RecallOptions struct {
 	// "bugfix". Facts carry the union of the tags of the episodes they were
 	// consolidated from, so filtering keeps working after consolidation.
 	Tags []string
+	// TagsAny narrows the search to memories carrying at least one of the listed
+	// tags (OR). It is the loose counterpart of Tags and the two compose: set both
+	// and a memory must carry every tag in Tags and one tag in TagsAny. Use it for
+	// a family of tags ("gaia:hypothesis", "gaia:decision") when the caller does
+	// not care which one; use Tags when it does.
+	TagsAny []string
 	// Graph overrides the configured graph arm for this call: true forces it on,
 	// false forces it off, nil keeps the configuration. The recall evaluation uses
 	// it to compare the same corpus with and without the arm.
@@ -79,6 +85,7 @@ type RecallTrace struct {
 	Routed []string `json:"routed,omitempty"`
 	// Tags is the normalized filter the recall ran with.
 	Tags         []string `json:"tags,omitempty"`
+	TagsAny      []string `json:"tags_any,omitempty"`
 	Limit        int      `json:"limit"`
 	Candidates   int      `json:"candidates"`
 	Namespaces   []string `json:"namespaces"`

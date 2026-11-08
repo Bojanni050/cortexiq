@@ -106,7 +106,7 @@ func recallCmd(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	bc := getBootstrap(cmd)
-	results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo, Tags: cmd.StringSlice("tag"), MMR: mmr})
+	results, err := bc.Brain.RecallWith(ctx, namespaces, query, limit, brain.RecallOptions{AsOf: asOf, From: from, To: to, KnownFrom: knownFrom, KnownTo: knownTo, Tags: cmd.StringSlice("tag"), TagsAny: cmd.StringSlice("tag-any"), MMR: mmr})
 	if err != nil {
 		return err
 	}
@@ -172,6 +172,7 @@ func reflectCmd(ctx context.Context, cmd *cli.Command) error {
 		KnownTo:    knownTo,
 		Types:      types,
 		Tags:       cmd.StringSlice("tag"),
+		TagsAny:    cmd.StringSlice("tag-any"),
 	})
 	if err != nil {
 		return err

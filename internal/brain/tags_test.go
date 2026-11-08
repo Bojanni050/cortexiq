@@ -154,6 +154,102 @@ func TestIntegrationRecallFiltersByTag(t *testing.T) {
 	}
 }
 
+// tags_any is the loose counterpart of tags: it selects the union of the listed
+// tags, composes with the AND filter instead of replacing it, and still excludes
+// the types that carry no tags at all.
+func TestIntegrationRecallFiltersByAnyTag(t *testing.T) {
+	e := newEnv(t, nil)
+
+	const text = "gaia the logo reads as a spiral turning inward"
+	hypothesis, err := e.b.RememberWith(e.ctx, e.ns, text, RememberOptions{
+		Tags: []string{"gaia:hypothesis"},
+	})
+	if err != nil {
+		t.Fatalf("RememberWith: %v", err)
+	}
+	decision, err := e.b.RememberWith(e.ctx, e.ns, text+" (settled)", RememberOptions{
+		Tags: []string{"gaia:decision"},
+	})
+	if err != nil {
+		t.Fatalf("RememberWith: %v", err)
+	}
+	other, err := e.b.RememberWith(e.ctx, e.ns, text+" (unrelated)", RememberOptions{
+		Tags: []string{"bugfix"},
+	})
+	if err != nil {
+		t.Fatalf("RememberWith: %v", err)
+	}
+	untagged, err := e.b.RememberWith(e.ctx, e.ns, text+" (no tags)", RememberOptions{})
+	if err != nil {
+		t.Fatalf("RememberWith: %v", err)
+	}
+
+	ids := func(res []RecallResult) map[int64]bool {
+		got := make(map[int64]bool, len(res))
+		for _, r := range res {
+			if r.EpisodeID != nil {
+				got[*r.EpisodeID] = true
+			}
+		}
+		return got
+	}
+
+	// The union of the two Gaia kinds, and nothing else.
+	union, err := e.b.RecallWith(e.ctx, []string{e.ns}, "gaia logo spiral", 10, RecallOptions{
+		TagsAny: []string{"gaia:hypothesis", "gaia:decision"},
+	})
+	if err != nil {
+		t.Fatalf("RecallWith: %v", err)
+	}
+	got := ids(union)
+	if !got[hypothesis] || !got[decision] {
+		t.Errorf("tags_any missed a tagged memory: %v (want %d and %d)", got, hypothesis, decision)
+	}
+	for _, unwanted := range []int64{other, untagged} {
+		if got[unwanted] {
+			t.Errorf("episode %d was not tagged with either requested tag but came back", unwanted)
+		}
+	}
+
+	// tags and tags_any compose: every tag in tags, one tag in tags_any.
+	narrowed, err := e.b.RecallWith(e.ctx, []string{e.ns}, "gaia logo spiral", 10, RecallOptions{
+		Tags:    []string{"gaia:decision"},
+		TagsAny: []string{"gaia:hypothesis", "gaia:decision"},
+	})
+	if err != nil {
+		t.Fatalf("RecallWith: %v", err)
+	}
+	got = ids(narrowed)
+	if !got[decision] || got[hypothesis] {
+		t.Errorf("tags+tags_any should intersect, not union: %v", got)
+	}
+
+	// Failures carry no tags. An any-only recall that names the failure type must
+	// still leave them out instead of returning unfiltered rows.
+	if _, err := e.b.CreateFailure(e.ctx, e.nsID, "gaia logo spiral redrawn from scratch", "lost the spiral", "start from the spiral", nil); err != nil {
+		t.Fatalf("CreateFailure: %v", err)
+	}
+	withWork, err := e.b.RecallWith(e.ctx, []string{e.ns}, "gaia logo spiral", 10, RecallOptions{
+		Types:   []string{"episode", "failure"},
+		TagsAny: []string{"gaia:hypothesis", "gaia:decision"},
+	})
+	if err != nil {
+		t.Fatalf("RecallWith: %v", err)
+	}
+	for _, r := range withWork {
+		if r.Type == "failure" {
+			t.Errorf("failure %d has no tags and must not satisfy a tags_any filter", r.ID)
+		}
+	}
+
+	// An invalid tag fails loudly rather than silently matching nothing.
+	if _, err := e.b.RecallWith(e.ctx, []string{e.ns}, "gaia logo spiral", 10, RecallOptions{
+		TagsAny: []string{"Gaia Hypothesis"},
+	}); err == nil {
+		t.Error("invalid tags_any should be rejected")
+	}
+}
+
 func TestIntegrationListTagsCounts(t *testing.T) {
 	e := newEnv(t, nil)
 
