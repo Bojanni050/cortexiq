@@ -456,6 +456,21 @@ func main() {
 				},
 			},
 			{
+				Name:  "canonicalize",
+				Usage: "Fold entity name variants onto one spelling",
+				Commands: []*cli.Command{
+					{
+						Name:   "relationships",
+						Usage:  "Normalize entity names in relationships and drop the ones that name nothing",
+						Action: canonicalizeRelationshipsCmd,
+						Flags: []cli.Flag{
+							&cli.StringSliceFlag{Name: "namespaces", Aliases: []string{"n"}, Usage: "Namespace paths to clean (each includes descendants)"},
+							&cli.BoolFlag{Name: "dry-run", Aliases: []string{"d"}, Usage: "Print the mapping without changing anything"},
+						},
+					},
+				},
+			},
+			{
 				Name:  "context",
 				Usage: "Manage working context",
 				Commands: []*cli.Command{

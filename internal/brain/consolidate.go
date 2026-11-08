@@ -965,6 +965,19 @@ func (b *Brain) consolidateFactsToRelationships(ctx context.Context, nsID int64,
 // the stored confidence; source_fact_id keeps pointing at the first fact. Returns
 // whether a new row was created.
 func (b *Brain) storeRelationship(ctx context.Context, nsID, factID int64, rel *reasoner.StructuredRelationship) (bool, error) {
+	// Folding happens here, once, for every writer: the extractor may only quote a
+	// name verbatim ("from and to must be mentioned verbatim in that fact"), so the
+	// same product arrives as "Hindsight", "the Hindsight MCP setup" and
+	// "Hindsight's MCP server" from three facts. Storing them as three entities
+	// inflated the source count the sweep thresholds on.
+	from, fromOK := NormalizeEntity(rel.FromEntity)
+	to, toOK := NormalizeEntity(rel.ToEntity)
+	if !fromOK || !toOK {
+		// "the problem --affects--> the workload" names nothing. Dropping it keeps
+		// the graph honest; the fact itself is still there to be recalled.
+		return false, nil
+	}
+
 	// Rows without a canonical_type are compared by their lowercased relation_type.
 	key := rel.CanonicalType
 	if key == "" {
@@ -979,7 +992,7 @@ func (b *Brain) storeRelationship(ctx context.Context, nsID, factID int64, rel *
 		   AND COALESCE(canonical_type, lower(btrim(relation_type))) = $4
 		   AND deleted_at IS NULL
 		 ORDER BY id LIMIT 1`,
-		nsID, rel.FromEntity, rel.ToEntity, key,
+		nsID, from, to, key,
 	).Scan(&id, &conf)
 	switch {
 	case err == nil:
@@ -996,7 +1009,7 @@ func (b *Brain) storeRelationship(ctx context.Context, nsID, factID int64, rel *
 	if _, err := b.pool.Exec(ctx,
 		`INSERT INTO relationships (namespace_id, from_entity, relation_type, canonical_type, to_entity, confidence, source_fact_id)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		nsID, rel.FromEntity, rel.RelationType, strPtrOrNull(rel.CanonicalType), rel.ToEntity, rel.Confidence, factID,
+		nsID, from, rel.RelationType, strPtrOrNull(rel.CanonicalType), to, rel.Confidence, factID,
 	); err != nil {
 		return false, fmt.Errorf("insert relationship: %w", err)
 	}
