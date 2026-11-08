@@ -19,13 +19,13 @@ func TestIntegrationRelationshipsAreDeduplicatedAndCanonical(t *testing.T) {
 	f2 := e.insertFact(t, "bo uses kilo code daily", nil)
 	f3 := e.insertFact(t, "The kit includes a battery", nil)
 	f4 := e.insertFact(t, "The kit contains a battery", nil)
-	f5 := e.insertFact(t, "The port is reachable at 8445", nil)
+	f5 := e.insertFact(t, "The port is reachable via loopback", nil)
 	e.r.rels = map[int64][]*reasoner.StructuredRelationship{
 		f1: {rel("Bo", "uses", "uses", "Kilo Code", 0.8)},
 		f2: {rel("bo", "uses", "uses", "KILO CODE", 0.95)},
 		f3: {rel("kit", "includes", "contains", "battery", 0.8)},
 		f4: {rel("kit", "contains", "contains", "battery", 0.8)},
-		f5: {rel("port", "reachable_at", "", "8445", 0.8)},
+		f5: {rel("port", "reachable_at", "", "loopback", 0.8)},
 	}
 
 	count, _, errs := e.b.consolidateFactsToRelationships(e.ctx, e.nsID, &models.ConsolidationProgress{})

@@ -4,6 +4,7 @@ package brain
 import (
 	"context"
 	"strings"
+	"unicode"
 )
 
 // entityTrimWords describe how something is set up, deployed or configured rather
@@ -21,6 +22,8 @@ var entityTrimWords = map[string]bool{
 	"process": true, "processes": true, "argument": true, "arguments": true,
 	"config": true, "configuration": true, "instance": true, "package": true,
 	"task": true, "scheduled": true, "server": true, "mcp": true, "agent": true,
+	// "8443 origin" is a value with a role attached, not a second entity.
+	"origin": true,
 }
 
 // entityEmptyNames are what is left once nothing but a description remains: "the
@@ -38,11 +41,14 @@ var entityEmptyNames = map[string]bool{
 	"self-hosted": true, "known-working": true, "functional": true,
 	"scheduled": true, "separate": true, "duplicate": true, "seven": true,
 	"no longer": true, "relationships": true,
+	// A role or a reference is not a thing either. The second dry run left
+	// ":8443 origin" and "bare 'url'" standing as entities.
+	"origin": true, "url": true,
 }
 
 // entityLeadingNoise are prefixes that say how something is run, not what it is.
 var entityLeadingNoise = []string{
-	"npx with ", "npx ", "the ", "a ", "an ", "working ",
+	"npx with ", "npx ", "the ", "a ", "an ", "working ", "bare ",
 	"separate ", "duplicate ", "functional ", "known-working ", "seven ",
 }
 
@@ -67,7 +73,7 @@ var entityClauseWords = map[string]bool{
 // dry run before it touches anything.
 func NormalizeEntity(name string) (string, bool) {
 	s := strings.ToLower(strings.Join(strings.Fields(name), " "))
-	s = strings.Trim(s, " \t.,;:!?")
+	s = strings.Trim(s, " \t.,;:!?'\"`")
 	if s == "" {
 		return "", false
 	}
@@ -96,7 +102,7 @@ func NormalizeEntity(name string) (string, bool) {
 				s = s[:i]
 			}
 		}
-		s = strings.Trim(strings.TrimSpace(s), ".,;:!?")
+		s = strings.Trim(strings.TrimSpace(s), ".,;:!?'\"`")
 		// "Hindsight's MCP server" owns the same name as "Hindsight".
 		s = strings.TrimSuffix(strings.TrimSpace(s), "'s")
 		if s == before {
@@ -104,13 +110,25 @@ func NormalizeEntity(name string) (string, bool) {
 		}
 	}
 
-	if s == "" || entityEmptyNames[s] {
+	if s == "" || entityEmptyNames[s] || !hasLetter(s) {
 		return "", false
 	}
 	if isEntityDescription(s) {
 		return "", false
 	}
 	return s, true
+}
+
+// hasLetter reports whether a name contains a letter at all. The second dry run
+// left ":8443" and "8443 origin" standing: a port, a version or a count is a value
+// an edge mentions, never the thing an edge connects.
+func hasLetter(s string) bool {
+	for _, r := range s {
+		if unicode.IsLetter(r) {
+			return true
+		}
+	}
+	return false
 }
 
 // isEntityDescription reports whether what is left is a clause or a gerund phrase

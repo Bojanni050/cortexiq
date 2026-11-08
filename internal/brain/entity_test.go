@@ -50,6 +50,14 @@ func TestNormalizeEntityFoldsNameVariants(t *testing.T) {
 		{"no longer in use", "", false},
 		{"relationships in batches of 5", "", false},
 
+		// The second dry run: a port is a value, and a quote survived the trim.
+		{"'--allow-http' flag", "--allow-http", true},
+		{"'-y' flag", "-y", true},
+		{":8443", "", false},
+		{"8443 origin", "", false},
+		{"8643 on localhost", "", false},
+		{"bare 'url' entry", "", false},
+
 		{"the problem", "", false},
 		{"the workload", "", false},
 		{"the app", "", false},
