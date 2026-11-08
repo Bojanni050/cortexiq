@@ -230,7 +230,7 @@ Output ONLY this JSON: {"same": true} when the New fact adds nothing, otherwise 
 		var resp struct {
 			Same *bool `json:"same"`
 		}
-		if err := json.Unmarshal([]byte(extractJSON(output)), &resp); err != nil || resp.Same == nil {
+		if err := decodeModelJSON(extractJSON(output), &resp); err != nil || resp.Same == nil {
 			valErr = errors.New("parse same-fact response")
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
@@ -314,12 +314,12 @@ func parseStructuredFacts(output string) ([]*StructuredFact, error) {
 	var jfs []jsonFact
 	switch {
 	case strings.HasPrefix(raw, "["):
-		if err := json.Unmarshal([]byte(raw), &jfs); err != nil {
+		if err := decodeModelJSON(raw, &jfs); err != nil {
 			return nil, fmt.Errorf("parse json: %w", err)
 		}
 	case strings.HasPrefix(raw, "{"):
 		var one jsonFact
-		if err := json.Unmarshal([]byte(raw), &one); err != nil {
+		if err := decodeModelJSON(raw, &one); err != nil {
 			return nil, fmt.Errorf("parse json: %w", err)
 		}
 		jfs = []jsonFact{one}
@@ -446,7 +446,7 @@ Rules:
 		}
 
 		var jrels []jsonRelationship
-		if err := json.Unmarshal([]byte(extractJSON(output)), &jrels); err != nil {
+		if err := decodeModelJSON(extractJSON(output), &jrels); err != nil {
 			valErr = fmt.Errorf("parse json: %w", err)
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
@@ -547,7 +547,7 @@ Rules:
 		raw := extractJSON(output)
 
 		var jpats []jsonPattern
-		if err := json.Unmarshal([]byte(raw), &jpats); err != nil {
+		if err := decodeModelJSON(raw, &jpats); err != nil {
 			valErr = fmt.Errorf("parse json: %w", err)
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
@@ -641,7 +641,7 @@ Rules:
 		raw := extractJSON(output)
 
 		var jc jsonContradiction
-		if err := json.Unmarshal([]byte(raw), &jc); err != nil {
+		if err := decodeModelJSON(raw, &jc); err != nil {
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
 		}
@@ -722,7 +722,7 @@ Rules:
 		raw := extractJSON(output)
 
 		var jlinks []jsonCausalLink
-		if err := json.Unmarshal([]byte(raw), &jlinks); err != nil {
+		if err := decodeModelJSON(raw, &jlinks); err != nil {
 			valErr = fmt.Errorf("parse json: %w", err)
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
@@ -831,7 +831,7 @@ Rules:
 		raw := extractJSON(output)
 
 		var jassess []jsonGoalProgress
-		if err := json.Unmarshal([]byte(raw), &jassess); err != nil {
+		if err := decodeModelJSON(raw, &jassess); err != nil {
 			valErr = fmt.Errorf("parse json: %w", err)
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
@@ -947,7 +947,7 @@ Rules for pattern extraction (higher-order):
 		raw := extractJSON(output)
 
 		var jpatterns []jsonFailurePattern
-		if err := json.Unmarshal([]byte(raw), &jpatterns); err != nil {
+		if err := decodeModelJSON(raw, &jpatterns); err != nil {
 			valErr = fmt.Errorf("parse json: %w", err)
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
@@ -1081,7 +1081,7 @@ Rules:
 		raw := extractJSON(output)
 
 		var jevidence []jsonHypothesisEvidence
-		if err := json.Unmarshal([]byte(raw), &jevidence); err != nil {
+		if err := decodeModelJSON(raw, &jevidence); err != nil {
 			valErr = fmt.Errorf("parse json: %w", err)
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
@@ -1249,7 +1249,7 @@ func (o *OpenAI) ProposeCounterHypothesis(ctx context.Context, h models.Hypothes
 		raw := extractJSON(output)
 
 		var jc jsonCounterHypothesis
-		if err := json.Unmarshal([]byte(raw), &jc); err != nil {
+		if err := decodeModelJSON(raw, &jc); err != nil {
 			valErr = fmt.Errorf("parse json: %w", err)
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
@@ -1333,11 +1333,11 @@ func proposalParse(raw string) ([]jsonProposedHypothesis, error) {
 	var wrapped struct {
 		Hypotheses []jsonProposedHypothesis `json:"hypotheses"`
 	}
-	if err := json.Unmarshal([]byte(raw), &wrapped); err == nil && wrapped.Hypotheses != nil {
+	if err := decodeModelJSON(raw, &wrapped); err == nil && wrapped.Hypotheses != nil {
 		return wrapped.Hypotheses, nil
 	}
 	var list []jsonProposedHypothesis
-	if err := json.Unmarshal([]byte(raw), &list); err == nil {
+	if err := decodeModelJSON(raw, &list); err == nil {
 		return list, nil
 	}
 	return nil, fmt.Errorf("expected an object with a hypotheses array or a bare array")
