@@ -175,24 +175,43 @@ func TestIntegrationConfirmedHypothesisRecordsItsOriginAndEvidence(t *testing.T)
 	}
 }
 
-// A hypothesis made from nothing has no episodes behind it, but it is still
-// traceable: the reference names the hypothesis.
-func TestIntegrationHypothesisWithoutEvidenceIsStillTraceable(t *testing.T) {
+// A hypothesis made from nothing is a guess with a plan: it is recorded, but it
+// is rejected on the spot and never sits in the open list. What must survive is
+// the trail — the proposal and the rejection are both in the event log, so the
+// guess can still be traced even though it can never be confirmed.
+func TestIntegrationHypothesisWithoutEvidenceIsRejectedAndTraceable(t *testing.T) {
 	e := newEnv(t, nil)
 	h, err := e.b.CreateHypothesis(e.ctx, e.nsID, "deploys are slower on mondays", "compare the deploy logs", 0.5, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.b.UpdateHypothesisStatus(e.ctx, h.ID, "testing"); err != nil {
-		t.Fatal(err)
+	if h.Status != "rejected" {
+		t.Fatalf("status = %q, want rejected without source facts", h.Status)
 	}
-	_, fact, err := e.b.ConfirmHypothesis(e.ctx, h.ID)
+	if h.RejectionReason == nil || *h.RejectionReason != ErrNoSourceFacts.Error() {
+		t.Fatalf("rejection reason = %v, want %q", h.RejectionReason, ErrNoSourceFacts.Error())
+	}
+
+	// Confirming it is not a way around the rule.
+	if _, _, err := e.b.ConfirmHypothesis(e.ctx, h.ID); err == nil {
+		t.Fatal("a rejected hypothesis without source facts was confirmed")
+	}
+
+	events, err := e.b.ListHypothesisEvents(e.ctx, []string{e.ns}, h.ID, Pagination{Limit: 10})
 	if err != nil {
-		t.Fatalf("ConfirmHypothesis: %v", err)
+		t.Fatalf("ListHypothesisEvents: %v", err)
 	}
-	o := e.factOrigin(t, fact.ID)
-	if str(o.ref) != "hypothesis:"+itoa(h.ID) || len(o.sources) != 0 {
-		t.Fatalf("ref = %s sources = %v; want the hypothesis reference and no episodes", str(o.ref), o.sources)
+	var proposed, rejected bool
+	for _, ev := range events {
+		switch ev.Event {
+		case HypothesisEventProposed:
+			proposed = true
+		case HypothesisEventRejected:
+			rejected = true
+		}
+	}
+	if !proposed || !rejected {
+		t.Fatalf("events = %+v; want the proposal and the rejection recorded", events)
 	}
 }
 
@@ -244,7 +263,15 @@ func TestIntegrationFailurePatternFactRecordsItsFailuresAndEpisodes(t *testing.T
 // out of episodes from one a hypothesis was confirmed into.
 func TestIntegrationRecallReturnsTheOriginOfAFact(t *testing.T) {
 	e := newEnv(t, nil)
-	h, err := e.b.CreateHypothesis(e.ctx, e.nsID, "deploys are slower on mondays", "compare the deploy logs", 0.5, nil)
+	// A hypothesis has to rest on something to leave the proposal stage, so the
+	// recall path below sees a confirmed fact rather than an auto-rejected guess.
+	ep := e.rememberEpisode(t, "the deploy logs show monday runs take twice as long")
+	evidence := e.insertFact(t, "monday deploy runs take twice as long", nil)
+	if _, err := e.b.pool.Exec(e.ctx,
+		`INSERT INTO fact_sources (fact_id, episode_id) VALUES ($1, $2)`, evidence, ep); err != nil {
+		t.Fatal(err)
+	}
+	h, err := e.b.CreateHypothesis(e.ctx, e.nsID, "deploys are slower on mondays", "compare the deploy logs", 0.5, []int64{evidence})
 	if err != nil {
 		t.Fatal(err)
 	}

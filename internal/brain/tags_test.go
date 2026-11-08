@@ -242,9 +242,11 @@ func TestIntegrationRecallFiltersByAnyTag(t *testing.T) {
 		}
 	}
 
-	// An invalid tag fails loudly rather than silently matching nothing.
+	// An invalid tag fails loudly rather than silently matching nothing. A slash
+	// is not in the vocabulary (inner whitespace is rewritten to '-', so it is not
+	// the test case here).
 	if _, err := e.b.RecallWith(e.ctx, []string{e.ns}, "gaia logo spiral", 10, RecallOptions{
-		TagsAny: []string{"Gaia Hypothesis"},
+		TagsAny: []string{"gaia/hypothesis"},
 	}); err == nil {
 		t.Error("invalid tags_any should be rejected")
 	}
