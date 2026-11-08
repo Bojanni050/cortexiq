@@ -112,6 +112,25 @@ type ChatMessage struct {
 	Content string
 }
 
+// ShapeCandidate is one regularity candidate for ReasonShapes: the same relation
+// type pointing at the same target from several distinct sources. It is found by
+// grouping relationships, not by reading a window of consecutive memories, which
+// is why it can catch recurrence that spreads over weeks.
+type ShapeCandidate struct {
+	RelationType string
+	Target       string
+	Sources      []string // distinct from_entity values: the proof of recurrence
+	Samples      []string // a few statements behind the edges, for vocabulary
+}
+
+// ShapeStatement is the model's answer for one candidate. An empty Statement, or
+// a zero Coherence, is a rejection: the grouping was an artifact of extraction
+// rather than a behaviour the sources share.
+type ShapeStatement struct {
+	Statement string
+	Coherence float32 // 0.0 = rejected, 1.0 = every source fits without exception
+}
+
 // Reasoner synthesizes structured reasoning over text input.
 type Reasoner interface {
 	// Chat performs a free-form chat completion. Unlike the structured Reason*
@@ -140,6 +159,14 @@ type Reasoner interface {
 
 	// ReasonPatterns takes facts and relationships and extracts abstract patterns.
 	ReasonPatterns(ctx context.Context, facts []models.Fact, relationships []models.Relationship) ([]*StructuredPattern, error)
+
+	// ReasonShapes phrases or rejects regularities the database already found.
+	// Each candidate is a relation type pointing at one target from several
+	// distinct sources; the grouping is the evidence, so the model only has to
+	// say whether those sources genuinely share the behaviour and, if so, to
+	// state it. A zero Coherence means "not a recurrence". The result has one
+	// entry per candidate, in the same order.
+	ReasonShapes(ctx context.Context, candidates []ShapeCandidate) ([]*ShapeStatement, error)
 
 	// ReasonContradiction classifies whether a new fact replaces, contradicts, or is compatible with an old fact.
 	ReasonContradiction(ctx context.Context, entity, property, oldValue, newValue string) (*ContradictionResult, error)

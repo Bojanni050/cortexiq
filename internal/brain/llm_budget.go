@@ -87,6 +87,13 @@ func (r budgetReasoner) ReasonPatterns(ctx context.Context, facts []models.Fact,
 	return r.inner.ReasonPatterns(ctx, facts, relationships)
 }
 
+func (r budgetReasoner) ReasonShapes(ctx context.Context, candidates []reasoner.ShapeCandidate) ([]*reasoner.ShapeStatement, error) {
+	if err := consumeLLMCall(ctx); err != nil {
+		return nil, err
+	}
+	return r.inner.ReasonShapes(ctx, candidates)
+}
+
 func (r budgetReasoner) ReasonContradiction(ctx context.Context, entity, property, oldValue, newValue string) (*reasoner.ContradictionResult, error) {
 	if err := consumeLLMCall(ctx); err != nil {
 		return nil, err

@@ -228,6 +228,17 @@ func (b *Brain) consolidateNamespace(ctx context.Context, nsID int64) (Consolida
 		result.Errors = append(result.Errors, errs...)
 	}
 
+	// Stage 3b: Relationship clusters -> Patterns. The window above only sees
+	// facts that happen to sit next to each other; recurrence across weeks lives
+	// in the graph, where the same relation points at one target from many
+	// sources. Its own cursor decides what has already been judged.
+	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
+		shapeCount, llmCalls, errs := b.consolidateToShapePatterns(ctx, nsID)
+		result.PatternsFound += shapeCount
+		result.LLMCalls += llmCalls
+		result.Errors = append(result.Errors, errs...)
+	}
+
 	// Stage 8: Hypothesis Evidence Scanning
 	if ctx.Err() == nil && !llmBudgetExhausted(ctx) {
 		autoConfirmed, autoRejected, updated, llmCalls, errs := b.consolidateHypothesisEvidence(ctx, nsID, cp)

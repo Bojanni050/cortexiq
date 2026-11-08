@@ -62,17 +62,19 @@ func (fakeEmbedder) Embed(_ context.Context, text string) ([]float32, error) {
 
 // fakeReasoner implements just enough for the pipeline and records what it saw.
 type fakeReasoner struct {
-	mu          sync.Mutex
-	causalCalls [][]int64 // fact IDs passed to each ReasonCausalLinks call
-	subjects    []string  // subject passed to each ReasonStructured call
-	sameAnswer  bool      // what ReasonSameFact answers
-	sameCalls   int
-	rels        map[int64][]*reasoner.StructuredRelationship // what ReasonRelationshipsBatch returns, by fact ID
-	patterns    []*reasoner.StructuredPattern                // what ReasonPatterns returns
-	chatAnswer  string                                       // what Chat returns
-	failurePats []*reasoner.FailurePatternResult             // what ReasonFailurePatterns returns
-	goalAssess  []*reasoner.GoalProgressAssessment           // what ReasonGoalProgress returns
-	chatCalls   int
+	mu              sync.Mutex
+	causalCalls     [][]int64 // fact IDs passed to each ReasonCausalLinks call
+	subjects        []string  // subject passed to each ReasonStructured call
+	sameAnswer      bool      // what ReasonSameFact answers
+	sameCalls       int
+	rels            map[int64][]*reasoner.StructuredRelationship // what ReasonRelationshipsBatch returns, by fact ID
+	patterns        []*reasoner.StructuredPattern                // what ReasonPatterns returns
+	shapes          []*reasoner.ShapeStatement                   // what ReasonShapes returns; nil means "accept everything"
+	shapeCandidates [][]reasoner.ShapeCandidate                  // candidates passed to each ReasonShapes call
+	chatAnswer      string                                       // what Chat returns
+	failurePats     []*reasoner.FailurePatternResult             // what ReasonFailurePatterns returns
+	goalAssess      []*reasoner.GoalProgressAssessment           // what ReasonGoalProgress returns
+	chatCalls       int
 }
 
 // Chat returns the canned chatAnswer, or a default grounded answer.
@@ -112,6 +114,21 @@ func (r *fakeReasoner) ReasonRelationshipsBatch(context.Context, []models.Fact) 
 }
 func (r *fakeReasoner) ReasonPatterns(context.Context, []models.Fact, []models.Relationship) ([]*reasoner.StructuredPattern, error) {
 	return r.patterns, nil
+}
+func (r *fakeReasoner) ReasonShapes(_ context.Context, candidates []reasoner.ShapeCandidate) ([]*reasoner.ShapeStatement, error) {
+	r.mu.Lock()
+	r.shapeCandidates = append(r.shapeCandidates, candidates)
+	r.mu.Unlock()
+
+	if r.shapes != nil {
+		return r.shapes, nil
+	}
+	// By default every candidate is a regularity made of all its sources.
+	out := make([]*reasoner.ShapeStatement, len(candidates))
+	for i := range candidates {
+		out[i] = &reasoner.ShapeStatement{Statement: "every source shares the behaviour", Coherence: 1.0}
+	}
+	return out, nil
 }
 func (r *fakeReasoner) ReasonContradiction(context.Context, string, string, string, string) (*reasoner.ContradictionResult, error) {
 	return &reasoner.ContradictionResult{Classification: reasoner.ClassificationCompatible}, nil

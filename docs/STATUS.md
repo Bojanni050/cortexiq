@@ -45,6 +45,11 @@ it landed:
   summary. Three parser defects surfaced only against a live model: an object
   wrapper, an id-array as the first array, and `coherence: 0.0` being clamped to
   `0.5` when it means "this is not a recurrence" (`v0.1.56`–`v0.1.61`).
+- **Shape sweep** — a second pattern path that groups relationships by relation
+  type and target and asks the model only to phrase or reject a candidate three
+  or more sources point to. A window of consecutive facts cannot see recurrence
+  that spreads over weeks; the relationship graph can. Its own `pattern_clusters`
+  cursor keeps a judged candidate out of the queue until new edges arrive.
 - **Stall detection** — each stage's checkpoint gets a `stage_changed_at`
   timestamp, stalled stages show on the Runs tab, and the scheduler retries when
   episode or relationship work is pending (`v0.1.51`–`v0.1.54`).
