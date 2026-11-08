@@ -71,6 +71,7 @@ type fakeReasoner struct {
 	patterns    []*reasoner.StructuredPattern                // what ReasonPatterns returns
 	chatAnswer  string                                       // what Chat returns
 	failurePats []*reasoner.FailurePatternResult             // what ReasonFailurePatterns returns
+	goalAssess  []*reasoner.GoalProgressAssessment           // what ReasonGoalProgress returns
 	chatCalls   int
 }
 
@@ -126,7 +127,9 @@ func (r *fakeReasoner) ReasonCausalLinks(_ context.Context, facts []models.Fact)
 	return nil, nil
 }
 func (r *fakeReasoner) ReasonGoalProgress(context.Context, []models.Goal, []models.Fact) ([]*reasoner.GoalProgressAssessment, error) {
-	return nil, nil
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.goalAssess, nil
 }
 func (r *fakeReasoner) ReasonFailurePatterns(context.Context, []models.Failure, []string) ([]*reasoner.FailurePatternResult, error) {
 	return r.failurePats, nil

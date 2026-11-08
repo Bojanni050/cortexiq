@@ -69,36 +69,63 @@ func (b *Brain) consolidateGoalProgress(ctx context.Context, nsID int64, cp *mod
 		return
 	}
 
-	for _, a := range assessments {
-		var note string
-		switch a.Assessment {
-		case "progress":
-			note = fmt.Sprintf("\n[PROGRESS] %s (confidence: %.2f)", a.Note, a.Confidence)
-			annotated++
-		case "suggested_complete":
-			note = fmt.Sprintf("\n[SUGGESTED COMPLETE] %s (confidence: %.2f)", a.Note, a.Confidence)
-			annotated++
-			suggestedComplete++
-		case "contradicted":
-			note = fmt.Sprintf("\n[CONTRADICTED] %s (confidence: %.2f)", a.Note, a.Confidence)
-			annotated++
-		default:
-			continue
-		}
-
-		_, err := b.pool.Exec(ctx,
-			`UPDATE goals SET notes = notes || $2, updated_at = now() WHERE id = $1`,
-			a.GoalID, note,
-		)
-		if err != nil {
-			errs = append(errs, fmt.Sprintf("annotate goal %d: %v", a.GoalID, err))
-		}
-	}
-
 	var maxFactID int64
 	for _, f := range facts {
 		if f.ID > maxFactID {
 			maxFactID = f.ID
+		}
+	}
+
+	// The newest entry per goal decides whether this run has anything new to say.
+	// The same conclusion drawn from the same facts is not a new observation, and
+	// writing it again would add one row per run to a log nobody could read.
+	if err := b.attachLatestEvents(ctx, goals); err != nil {
+		errs = append(errs, fmt.Sprintf("latest goal events: %v", err))
+	}
+	known := make(map[int64]bool, len(goals))
+	previous := make(map[int64]models.GoalEvent, len(goals))
+	for i := range goals {
+		known[goals[i].ID] = true
+		if goals[i].LatestEvent != nil {
+			previous[goals[i].ID] = *goals[i].LatestEvent
+		}
+	}
+
+	for _, a := range assessments {
+		var event string
+		switch a.Assessment {
+		case "progress":
+			event = GoalEventProgress
+		case "suggested_complete":
+			event = GoalEventSuggestedComplete
+		case "contradicted":
+			event = GoalEventContradicted
+		default:
+			// "irrelevant" is the model saying it has nothing to add; so does an
+			// unknown goal id, which would only fail the foreign key.
+			continue
+		}
+		if !known[a.GoalID] {
+			continue
+		}
+		if prev, ok := previous[a.GoalID]; ok && prev.Event == event &&
+			prev.FactID != nil && *prev.FactID == maxFactID {
+			continue
+		}
+
+		confidence, factID := a.Confidence, maxFactID
+		if err := recordGoalEvent(ctx, b.pool, goalEvent{
+			GoalID: a.GoalID, NamespaceID: nsID, Event: event,
+			Note: strPtr(a.Note), Confidence: &confidence, FactID: &factID,
+		}); err != nil {
+			errs = append(errs, fmt.Sprintf("record goal event %d: %v", a.GoalID, err))
+			continue
+		}
+		// Counted only when something was written: the run summary must not claim
+		// an annotation that the log does not contain.
+		annotated++
+		if event == GoalEventSuggestedComplete {
+			suggestedComplete++
 		}
 	}
 	if maxFactID > cp.LastGoalProgressFactID {

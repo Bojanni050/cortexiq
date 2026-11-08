@@ -49,6 +49,13 @@ type RememberOptions struct {
 	// Supersedes allows a keyed write to replace an episode holding different
 	// content. It requires ExternalKey.
 	Supersedes bool
+	// CompleteGoal, when set, closes that goal in the same call: this episode is
+	// the evidence, so the goal's history records which memory ended it. That is
+	// the session-end trigger — an agent writes down what it finished and the
+	// goal it was working towards moves with it, instead of waiting for a sweep
+	// that only ever suggested. The goal must sit in this namespace or in one of
+	// its ancestors.
+	CompleteGoal *int64
 }
 
 // RememberWithImportance is Remember with an explicit importance in 0..1
@@ -167,6 +174,14 @@ func (b *Brain) RememberWithOutcome(ctx context.Context, namespaceSlug, content 
 		return RememberOutcome{Decision: decision}, ErrSocialCloser
 	}
 
+	// Closing a goal is validated before the embedding call: the common failures
+	// (unknown id, already done, another namespace) must not cost a write.
+	if opts.CompleteGoal != nil {
+		if err := b.checkGoalCompletable(ctx, *opts.CompleteGoal, namespaceSlug); err != nil {
+			return RememberOutcome{Decision: decision}, err
+		}
+	}
+
 	occurred := time.Now().UTC()
 	if opts.OccurredAt != nil {
 		occurred = *opts.OccurredAt
@@ -208,6 +223,13 @@ func (b *Brain) RememberWithOutcome(ctx context.Context, namespaceSlug, content 
 	// facts while the evaluation is still running.
 	if !out.Unchanged && !strings.HasPrefix(namespaceSlug, "/eval/") {
 		b.noteEpisode(nsID)
+	}
+	if opts.CompleteGoal != nil {
+		// The memory is already stored at this point, so a failure here must say
+		// so: the caller has to know the episode exists and the goal did not move.
+		if _, err := b.CompleteGoalWithEvidence(ctx, *opts.CompleteGoal, "", &out.ID); err != nil {
+			return out, fmt.Errorf("memory stored as episode %d, but completing goal %d failed: %w", out.ID, *opts.CompleteGoal, err)
+		}
 	}
 	return out, nil
 }

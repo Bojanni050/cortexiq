@@ -73,6 +73,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/facts/", h.factItem)
 	api.HandleFunc("/api/v1/goals", h.goals)
 	api.HandleFunc("/api/v1/goals/", h.goalItem)
+	api.HandleFunc("/api/v1/goal-events", h.goalEvents)
 	api.HandleFunc("/api/v1/hypotheses", h.hypotheses)
 	api.HandleFunc("/api/v1/hypotheses/", h.hypothesisItem)
 	api.HandleFunc("/api/v1/hypothesis-events", h.hypothesisEvents)
@@ -1316,6 +1317,34 @@ func (h *Handler) hypotheses(w http.ResponseWriter, r *http.Request) {
 // who moved one, from which state to which, on what evidence. The hypothesis
 // row only keeps the latest state, so this is the only way to see a rejection
 // that was later reopened, or a confidence that drifted call by call.
+// goalEvents is the read side of the goal log: newest first, optionally for one
+// goal. It is how "why does this goal say suggested_complete" gets an answer.
+func (h *Handler) goalEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	var goalID int64
+	if raw := r.URL.Query().Get("goal_id"); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, errors.New("goal_id must be a number"))
+			return
+		}
+		goalID = id
+	}
+	items, err := h.Brain.ListGoalEvents(r.Context(), namespacesParam(r), goalID, pagination(r))
+	if !hdl(w, err) {
+		return
+	}
+	n, err := h.Brain.CountGoalEvents(r.Context(), namespacesParam(r), goalID)
+	if !hdl(w, err) {
+		return
+	}
+	total(w, n)
+	writeJSON(w, http.StatusOK, nonNil(items))
+}
+
 func (h *Handler) hypothesisEvents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))

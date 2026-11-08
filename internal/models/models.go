@@ -236,6 +236,35 @@ type Goal struct {
 	CreatedAt   time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt   time.Time  `db:"updated_at" json:"updated_at"`
 	DeletedAt   *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
+
+	// LatestEvent is the newest entry in the goal's history, joined in for
+	// display. It answers "what does the reader think of this goal" without a
+	// second call, and it is where a progress inference lives now that notes is
+	// the user's own text again. Nil while nothing has happened since creation.
+	LatestEvent *GoalEvent `db:"-" json:"latest_event,omitempty"`
+}
+
+// GoalEvent is one entry in a goal's history. The goal row only holds the latest
+// status; this is the record of who moved it, on what evidence, and what the
+// consolidator inferred along the way.
+type GoalEvent struct {
+	ID          int64           `db:"id" json:"id"`
+	GoalID      int64           `db:"goal_id" json:"goal_id"`
+	NamespaceID int64           `db:"namespace_id" json:"namespace_id"`
+	Event       string          `db:"event" json:"event"`
+	Actor       string          `db:"actor" json:"actor"`
+	StatusFrom  *string         `db:"status_from" json:"status_from"`
+	StatusTo    *string         `db:"status_to" json:"status_to"`
+	Note        *string         `db:"note" json:"note"`
+	Confidence  *float32        `db:"confidence" json:"confidence"`
+	FactID      *int64          `db:"fact_id" json:"fact_id"`
+	EpisodeID   *int64          `db:"episode_id" json:"episode_id"`
+	Detail      json.RawMessage `db:"detail" json:"detail,omitempty"`
+	CreatedAt   time.Time       `db:"created_at" json:"created_at"`
+
+	// GoalContent is joined in for display: a goal that was deleted for good
+	// takes its events with it, but while it lives the log should read as prose.
+	GoalContent string `db:"goal_content" json:"goal_content"`
 }
 
 // Failure records what didn't work, why, and what to do instead.

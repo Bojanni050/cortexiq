@@ -155,6 +155,7 @@ func main() {
 					&cli.StringFlag{Name: "occurred-at", Usage: "When it occurred (RFC3339 or YYYY-MM-DD)"},
 					&cli.FloatFlag{Name: "importance", Value: 0.5, Usage: "How much it matters, 0..1 (0.5 = neutral)"},
 					&cli.StringSliceFlag{Name: "tag", Aliases: []string{"t"}, Usage: "Tag describing what it is about (repeatable)"},
+					&cli.IntFlag{Name: "complete-goal", Usage: "Also complete this goal, recording the memory as its evidence"},
 				},
 			},
 			{

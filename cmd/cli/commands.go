@@ -37,9 +37,10 @@ func rememberCmd(ctx context.Context, cmd *cli.Command) error {
 
 	bc := getBootstrap(cmd)
 	id, decision, err := bc.Brain.RememberWithDecision(ctx, namespace, content, brain.RememberOptions{
-		OccurredAt: occurredAt,
-		Importance: float32(cmd.Float("importance")),
-		Tags:       cmd.StringSlice("tag"),
+		OccurredAt:   occurredAt,
+		Importance:   float32(cmd.Float("importance")),
+		Tags:         cmd.StringSlice("tag"),
+		CompleteGoal: optionalID(cmd.Int("complete-goal")),
 	})
 	if errors.Is(err, brain.ErrSocialCloser) {
 		return printJSON(map[string]any{"skipped": true, "reason": err.Error()})

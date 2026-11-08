@@ -73,6 +73,16 @@ func splitList(raw string) []string {
 	return out
 }
 
+// optionalID turns an optional numeric argument into a pointer, so "not set" and
+// "set to zero" stay different things. Ids start at 1, so 0 or less is absent.
+func optionalID(id int) *int64 {
+	if id <= 0 {
+		return nil
+	}
+	v := int64(id)
+	return &v
+}
+
 // ErrNamespaceRequired is what a write tool answers when it was handed no
 // namespace. It names the tool that answers "where does this belong" instead of
 // only saying what is missing: the client reads this text and can correct itself
@@ -163,6 +173,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("external_key", mcp.Description(render("remember_external_key"))),
 		mcp.WithString("external_refs", mcp.Description(render("remember_external_refs"))),
 		mcp.WithBoolean("supersedes", mcp.Description(render("remember_supersedes"))),
+		mcp.WithNumber("complete_goal", mcp.Description(render("remember_complete_goal"))),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		content := request.GetString("content", "")
 		namespace, err := requiredNamespace(request.GetString("namespace", ""))
@@ -179,6 +190,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		if err != nil {
 			return nil, err
 		}
+		completeGoal := optionalID(request.GetInt("complete_goal", 0))
 		out, err := bc.Brain.RememberWithOutcome(ctx, namespace, content, brain.RememberOptions{
 			OccurredAt:   occurredAt,
 			Importance:   importance,
@@ -186,6 +198,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			ExternalKey:  request.GetString("external_key", ""),
 			ExternalRefs: splitList(request.GetString("external_refs", "")),
 			Supersedes:   request.GetBool("supersedes", false),
+			CompleteGoal: completeGoal,
 		})
 		id, decision := out.ID, out.Decision
 		if errors.Is(err, brain.ErrSocialCloser) {
@@ -208,6 +221,9 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			stored = []string{}
 		}
 		result := map[string]any{"id": id, "tags": stored, "message": "Memory remembered successfully"}
+		if completeGoal != nil {
+			result["goal_completed"] = *completeGoal
+		}
 		if out.SupersededID != 0 {
 			result["superseded"] = out.SupersededID
 			result["facts_ended"] = out.FactsEnded
@@ -1183,6 +1199,34 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
+	mcpServer.AddTool(mcp.NewTool("list_goal_events",
+		mcp.WithDescription(render("list_goal_events_description")),
+		mcp.WithString("namespaces", mcp.Description(render("namespaces_param"))),
+		mcp.WithNumber("goal_id", mcp.Description(render("list_goal_events_id"))),
+		mcp.WithNumber("limit", mcp.Description(render("pagination_limit")), mcp.DefaultNumber(100)),
+		mcp.WithNumber("offset", mcp.Description(render("pagination_offset")), mcp.DefaultNumber(0)),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		nsRaw := request.GetString("namespaces", "/")
+		var namespaces []string
+		for _, ns := range strings.Split(nsRaw, ",") {
+			if ns = strings.TrimSpace(ns); ns != "" {
+				namespaces = append(namespaces, ns)
+			}
+		}
+
+		page := brain.Pagination{
+			Limit:  request.GetInt("limit", 100),
+			Offset: request.GetInt("offset", 0),
+		}
+
+		events, err := bc.Brain.ListGoalEvents(ctx, namespaces, int64(request.GetInt("goal_id", 0)), page)
+		if err != nil {
+			return nil, err
+		}
+		b, _ := json.Marshal(events)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
 	mcpServer.AddTool(mcp.NewTool("list_goals",
 		mcp.WithDescription(render("list_goals_description")),
 		mcp.WithString("namespaces", mcp.Description(render("namespaces_param"))),
@@ -1384,6 +1428,7 @@ var readOnlyTools = map[string]bool{
 	"list_namespaces":        true,
 	"list_tags":              true,
 	"list_goals":             true,
+	"list_goal_events":       true,
 	"list_hypotheses":        true,
 	"list_hypothesis_events": true,
 	"list_contradictions":    true,

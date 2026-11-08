@@ -312,6 +312,10 @@ Optional comma-separated pointers to where this memory came from outside CortexI
 Set true together with external_key to replace the memory that currently holds that key with this new content. The old one is retired and its link to the new one kept, and facts that rested only on the old one are closed, all in one step. Without external_key this is an error.
 {{end}}
 
+{{define "remember_complete_goal"}}
+Optional goal ID to close in the same call. Write down what you finished and pass the goal it belongs to: the goal becomes completed, and this memory is recorded as its evidence, so "why is this done" points at the episode instead of being reconstructed later. The goal must be active and filed in this namespace or in one of its ancestors. Nothing else about the write changes.
+{{end}}
+
 {{define "invalidate_description"}}
 Retire the memory that holds an external_key, when a rejection changes nothing: the statement stops being current and no new content replaces it (for a rejection of "status is proposed", the invalidated state IS the answer). Facts that rested only on that memory are closed. Repeats are safe: an already-invalidated key is answered, not an error. Use remember with supersedes instead when a new content exists; use retract when you are not the key's writer.
 {{end}}
@@ -1217,6 +1221,21 @@ ID of the hypothesis to reject. Find it using list_hypotheses.
 Why this hypothesis was rejected. Must be specific enough to prevent re-proposing the same idea.
 {{end}}
 
+
+{{define "list_goal_events_description"}}
+Lists the goal log — an append-only history of what happened to every goal: created, progress inferred by the consolidator, suggested_complete, contradicted, completed, abandoned.
+
+Each entry answers: what happened, who did it (the token, "consolidator" for the background sweep, or "system"), which status it moved from and to, the reasoning and confidence behind an inference, and the evidence (fact_id for an inference, episode_id for a completion an agent reported while remembering).
+
+CALL THIS WHEN:
+- The user asks why a goal is marked nearly done, or who completed or abandoned it
+- You are about to close a goal with remember's complete_goal and want to see what was already inferred about it
+- A goal looks wrong and you need the trail before correcting it
+{{end}}
+
+{{define "list_goal_events_id"}}
+Only return events for this goal ID. Omit for the whole log.
+{{end}}
 
 {{define "list_goals_description"}}
 Lists goals — intended outcomes that persist across sessions. Goals track what you're trying to achieve, not just what you know.
