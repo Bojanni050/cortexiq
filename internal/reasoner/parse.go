@@ -184,6 +184,125 @@ func repairTruncatedArray(s string) string {
 	return trimmed[:lastComplete] + "]"
 }
 
+// unwrapTopLevelArray accepts the two shapes a model returns for a call that
+// asks for a JSON array: the bare array, and an object that wraps it
+// ({"patterns": [...]}). A model told to answer with "only valid JSON" often
+// reaches for a complete document instead of a bare value.
+//
+// Production hit this on the patterns call: every run failed with "cannot
+// unmarshal object into Go value of type []reasoner.jsonPattern", so no pattern
+// was stored and the checkpoint never advanced. The array under the preferred
+// key wins; otherwise the first array directly inside the object is taken.
+//
+// The scan is textual on purpose. Decoding the object to look inside it would
+// fail on exactly the answers that need repair ("0. 9"), which is when a
+// wrapped array is most likely to arrive; the caller still runs the result
+// through decodeModelJSON, so the repairs keep working. Input that is already
+// an array, or that wraps no array at all, is returned unchanged so a real
+// parse error still surfaces.
+func unwrapTopLevelArray(raw, key string) string {
+	trimmed := strings.TrimSpace(raw)
+	if !strings.HasPrefix(trimmed, "{") {
+		return raw
+	}
+	if arr, ok := arrayAfterKey(trimmed, key); ok {
+		return arr
+	}
+	if arr, ok := firstArrayInObject(trimmed); ok {
+		return arr
+	}
+	return raw
+}
+
+// arrayAfterKey returns the array that follows "key" in an object, or false when
+// the key is absent or its value is not an array.
+func arrayAfterKey(s, key string) (string, bool) {
+	idx := strings.Index(s, `"`+key+`"`)
+	if idx < 0 {
+		return "", false
+	}
+	open := strings.IndexByte(s[idx:], '[')
+	if open < 0 {
+		return "", false
+	}
+	open += idx
+	// An array can only be the value of this key when nothing but a colon sits
+	// between the key and it; a '[1]' deeper inside another value is not ours.
+	if between := strings.TrimSpace(s[idx+len(key)+2 : open]); between != ":" {
+		return "", false
+	}
+	return balancedArray(s, open), true
+}
+
+// firstArrayInObject returns the first array that is a direct member of the
+// object s, or false when it holds none.
+func firstArrayInObject(s string) (string, bool) {
+	depth, inString, escaped := 0, false, false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == 92:
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+		case '[':
+			if depth == 1 {
+				return balancedArray(s, i), true
+			}
+		}
+	}
+	return "", false
+}
+
+// balancedArray returns s[open:] up to and including the bracket that closes the
+// array opened at open, and s[open:] when the answer was cut off. Handing back
+// the unterminated tail lets repairTruncatedArray salvage the complete elements.
+func balancedArray(s string, open int) string {
+	depth, inString, escaped := 0, false, false
+	for i := open; i < len(s); i++ {
+		c := s[i]
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == 92:
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '[', '{':
+			depth++
+		case ']', '}':
+			depth--
+			if depth == 0 {
+				if c == ']' {
+					return s[open : i+1]
+				}
+				return s[open:i]
+			}
+		}
+	}
+	return s[open:]
+}
+
 // firstJSONValue returns the first complete JSON object or array in s, and s
 // itself when it finds none. A model that closes its answer and then keeps
 // talking used to fail with "invalid character after top-level value": the

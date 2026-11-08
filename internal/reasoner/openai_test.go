@@ -73,6 +73,7 @@ func TestPatternPromptAsksForRecurrenceNotSummary(t *testing.T) {
 		"Do not use it as a confidence number",
 		"Every noun in the statement must be traceable",
 		"If nothing recurs, output: []",
+		"Answer with the array itself, not wrapped in an object",
 		"[Fact 1] a",
 		"[Rel 1] a --b--> c",
 	} {

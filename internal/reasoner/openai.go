@@ -542,6 +542,7 @@ Rules:
   they only touch the same subject, 1.0 only when they state it without a single
   exception. Do not use it as a confidence number.
 - Every noun in the statement must be traceable to a cited source.
+- Answer with the array itself, not wrapped in an object.
 - If nothing recurs, output: []`, facts, relationships)
 }
 
@@ -591,7 +592,7 @@ func (o *OpenAI) ReasonPatterns(ctx context.Context, facts []models.Fact, relati
 		if err != nil {
 			return nil, err
 		}
-		raw := extractJSON(output)
+		raw := unwrapTopLevelArray(extractJSON(output), "patterns")
 
 		var jpats []jsonPattern
 		if err := decodeModelJSON(raw, &jpats); err != nil {

@@ -161,3 +161,44 @@ func TestFirstJSONValueLeavesCleanInputAlone(t *testing.T) {
 		}
 	}
 }
+
+// A model that was asked for a bare array answered with a complete document
+// instead: {"patterns": [...]}. Every patterns run in production failed on it,
+// so nothing was stored and the checkpoint never moved.
+func TestUnwrapTopLevelArrayFindsTheWrappedArray(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"bare array is untouched", `[{"pattern": "a"}]`, `[{"pattern": "a"}]`},
+		{"wrapped under the preferred key", `{"patterns": [{"pattern": "a"}]}`, `[{"pattern": "a"}]`},
+		{"wrapped and empty", `{"patterns": []}`, `[]`},
+		{"another key still counts", `{"items": [{"pattern": "a"}]}`, `[{"pattern": "a"}]`},
+		{"preferred key wins", `{"items": [1], "patterns": [2]}`, `[2]`},
+		{"no array at all is left alone", `{"error": "none"}`, `{"error": "none"}`},
+		// A cut-off answer still yields its array tail, so the element salvage
+		// in decodeModelJSON can keep the elements that did arrive.
+		{"truncated wrapper yields the tail", `{"patterns": [{"pattern": "a"}`, `[{"pattern": "a"}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := unwrapTopLevelArray(c.in, "patterns"); got != c.want {
+				t.Fatalf("unwrapTopLevelArray(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// The wrapped shape must survive the whole path, repairs included.
+func TestWrappedPatternsDecodeAfterUnwrap(t *testing.T) {
+	output := "{\"patterns\": [{\"pattern\": \"Every service binds to 127.0.0.1\", \"coherence\": 0. 9, \"source_facts\": [1, 2], \"source_rels\": [3]}]}"
+	raw := unwrapTopLevelArray(extractJSON(output), "patterns")
+	var got []jsonPattern
+	if err := decodeModelJSON(raw, &got); err != nil {
+		t.Fatalf("decodeModelJSON: %v", err)
+	}
+	if len(got) != 1 || got[0].Coherence != 0.9 || len(got[0].SourceFacts) != 2 {
+		t.Errorf("parsed %+v", got)
+	}
+}
