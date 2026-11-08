@@ -873,6 +873,21 @@ Number of results to skip. Default: 0. Use with limit for pagination.
 {{end}}
 
 
+{{define "list_patterns_description"}}
+Lists patterns — regularities the consolidator derived across several facts and relationships in one namespace.
+
+A pattern is not a fact and not a relationship: it is the consolidator's attempt at "what keeps coming back here", built from the source facts and relationships named in `source_fact_ids` and `source_rel_ids`. Its confidence is the weakest source's confidence multiplied by the model's own coherence score, so a high-confidence pattern still rests on the facts behind it — read those first.
+
+CALL THIS WHEN:
+- The user asks what keeps recurring in a project, not for one specific fact
+- You want a step above single facts before answering a broad "what do we know" question
+- You are auditing derived knowledge and need to see (or delete) what the consolidator inferred
+
+DO NOT CALL THIS WHEN:
+- You need a single fact: use query_facts or recall
+- You need a specific connection between two entities: use query_relationships
+{{end}}
+
 {{define "list_contradictions_description"}}
 Lists unresolved contradictions — conflicting facts about the same entity and property.
 

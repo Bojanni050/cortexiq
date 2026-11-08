@@ -1020,6 +1020,30 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
+	mcpServer.AddTool(mcp.NewTool("list_patterns",
+		mcp.WithDescription(render("list_patterns_description")),
+		mcp.WithString("namespaces", mcp.Description(render("namespaces_param"))),
+		mcp.WithNumber("limit", mcp.Description(render("pagination_limit")), mcp.DefaultNumber(50)),
+		mcp.WithNumber("offset", mcp.Description(render("pagination_offset")), mcp.DefaultNumber(0)),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		nsRaw := request.GetString("namespaces", "/")
+		var namespaces []string
+		for _, ns := range strings.Split(nsRaw, ",") {
+			if ns = strings.TrimSpace(ns); ns != "" {
+				namespaces = append(namespaces, ns)
+			}
+		}
+		patterns, err := bc.Brain.QueryPatterns(ctx, namespaces, brain.Pagination{
+			Limit:  request.GetInt("limit", 50),
+			Offset: request.GetInt("offset", 0),
+		})
+		if err != nil {
+			return nil, err
+		}
+		b, _ := json.Marshal(patterns)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
 	mcpServer.AddTool(mcp.NewTool("list_contradictions",
 		mcp.WithDescription(render("list_contradictions_description")),
 		mcp.WithString("namespaces", mcp.Description(render("namespaces_param"))),
@@ -1502,6 +1526,7 @@ var readOnlyTools = map[string]bool{
 	"list_hypotheses":        true,
 	"list_hypothesis_events": true,
 	"list_contradictions":    true,
+	"list_patterns":          true,
 	"list_failures":          true,
 	"list_causal_links":      true,
 	"get_context":            true,

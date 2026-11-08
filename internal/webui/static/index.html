@@ -624,6 +624,7 @@ const icons = {
   hypotheses: '<path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2V17h6v-.3c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z"/>',
   contradictions: '<path d="m13 2-9 12h7l-1 8 9-12h-7z"/>',
   failures: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  patterns: '<path d="M3 12a9 9 0 0 1 15.4-6.4"/><path d="M21 12a9 9 0 0 1-15.4 6.4"/><path d="M7 3v4h4M17 21v-4h-4"/>',
   graph: '<circle cx="6" cy="6" r="2.6"/><circle cx="18" cy="8" r="2.6"/><circle cx="9" cy="18" r="2.6"/><path d="M8.4 6.4l7.1 1.2M7.2 8.3l1.1 7.3M16.6 10.2l-5.7 6.1"/>',
   links: '<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>',
   namespaces: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
@@ -651,6 +652,7 @@ const tabs = [
   ['hypolog', 'Hypothesis log', 'Every hypothesis ever, including rejected and deleted ones, with who moved it and why'],
   ['contradictions', 'Contradictions', 'Facts that disagree with each other'],
   ['failures', 'Failures', 'What went wrong, and what was learned'],
+  ['patterns', 'Patterns', 'Regularities the consolidator derived across facts and relationships'],
   ['links', 'Causal Links', 'Cause and effect between facts'],
   ['namespaces', 'Namespaces', 'How memory is organised'],
   ['runs', 'Runs', 'Recent consolidation runs and what changed'],
@@ -666,7 +668,7 @@ const tabs = [
 // healthy") keeps every tab reachable without a second click.
 const NAV_GROUPS = [
   ['Memory', ['overview', 'episodes', 'facts', 'recall']],
-  ['Knowledge', ['graph', 'mental', 'goals', 'goallog', 'hypotheses', 'hypolog', 'contradictions', 'failures', 'links']],
+  ['Knowledge', ['graph', 'mental', 'goals', 'goallog', 'hypotheses', 'hypolog', 'contradictions', 'failures', 'patterns', 'links']],
   ['System', ['status', 'namespaces', 'runs', 'jobs', 'lifecycle', 'settings', 'metrics', 'stats']],
 ];
 const nav = document.getElementById('nav');
@@ -1129,6 +1131,7 @@ const CTX_TIPS = {
   goallog: ['No row detail', 'An audit log: every row already shows what happened to which goal, on what evidence, and by whom.'],
   contradictions: ['Pick a contradiction', 'Both sides, the facts behind them and the resolution show up here.'],
   failures: ['Pick a failure', 'Why it failed, the lesson and the goal it belonged to show up here.'],
+  patterns: ['Pick a pattern', 'What it rests on, how coherent it is and where it was derived show up here.'],
   links: ['Pick a link', 'Both facts, the confidence and how the link was found show up here.'],
   namespaces: ['Pick a namespace', 'Its description, how much it holds and when it was created show up here.'],
   recall: ['Nothing selected', 'Select a result to inspect the memory behind it.'],
@@ -2801,6 +2804,39 @@ async function jobPayload(id) {
   }
 }
 
+// Patterns are derived across facts and relationships, so a reader has to see
+// what each one rests on. The ids are the trail back: this is a suggestion the
+// consolidator made, not a fact, and the confidence is the weakest source times
+// its own coherence.
+async function renderPatterns() {
+  const score = v => (v == null ? '<span class="muted">—</span>' : Number(v).toFixed(2));
+  const ids = (list, prefix) => (list && list.length)
+    ? list.map(id => `<span class="mono">${prefix}#${id}</span>`).join(' ')
+    : '<span class="muted">—</span>';
+  await listTab('patterns', {
+    path: o => '/patterns' + qs(o),
+    headers: ['Pattern', 'Confidence', 'Coherence', ''],
+    fields: ['id', 'content'],
+    row: p => `<tr class="rowlink" onclick="pickRow('patterns', ${p.id}, this)">
+        <td class="wrap"><span class="mono">#${p.id}</span> ${esc(p.content)}</td>
+        <td class="mono">${score(p.confidence)}</td>
+        <td class="mono">${score(p.coherence_score)}</td>
+        <td class="row-actions"><button class="danger" onclick="event.stopPropagation();del('patterns', ${p.id})">delete</button></td>
+      </tr>`,
+    railTitle: p => 'Pattern #' + p.id,
+    rail: p => `
+      <div class="ctx-section"><div class="ctx-quote lead">${esc(p.content)}</div></div>
+      ${ctxSection('Derived from', metaGrid([
+        ['Confidence', score(p.confidence)],
+        ['Coherence', score(p.coherence_score)],
+        ['Facts', ids(p.source_fact_ids, '#')],
+        ['Relationships', ids(p.source_rel_ids, '#')],
+        ['Namespace', `<span class="mono">${esc(nsSlug(p.namespace_id))}</span>`],
+        ['Created', ts(p.created_at)],
+      ]), '#' + p.id)}`,
+  });
+}
+
 async function renderRuns() {
   const dur = ms => ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : (ms || 0) + 'ms';
   const n = v => v ? String(v) : '<span class="muted">—</span>';
@@ -3356,7 +3392,7 @@ async function saveSchedule() {
 
 const renderers = { overview: renderOverview, graph: renderGraph, episodes: renderEpisodes, recall: renderRecall, reflect: renderReflect, facts: renderFacts,
   goals: renderGoals, goallog: renderGoalLog, mental: renderMentalModels, hypotheses: renderHypotheses, hypolog: renderHypothesisLog, contradictions: renderContradictions,
-  failures: renderFailures, links: renderLinks, namespaces: renderNamespaces, runs: renderRuns, jobs: renderJobs, lifecycle: renderLifecycle,
+  failures: renderFailures, patterns: renderPatterns, links: renderLinks, namespaces: renderNamespaces, runs: renderRuns, jobs: renderJobs, lifecycle: renderLifecycle,
   status: renderStatus, settings: renderSettings, metrics: renderMetrics, stats: renderStats };
 
 async function refresh(opts) {

@@ -71,6 +71,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/namespaces/", h.namespaceItem)
 	api.HandleFunc("/api/v1/episodes", h.episodes)
 	api.HandleFunc("/api/v1/episodes/", h.episodeItem)
+	api.HandleFunc("/api/v1/patterns", h.patterns)
+	api.HandleFunc("/api/v1/patterns/", h.patternItem)
 	api.HandleFunc("/api/v1/facts", h.facts)
 	api.HandleFunc("/api/v1/facts/", h.factItem)
 	api.HandleFunc("/api/v1/goals", h.goals)
@@ -1090,6 +1092,47 @@ func (h *Handler) jobItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, job)
+}
+
+// patterns lists the regularities consolidation extracted. They were written and
+// never read: no route, no tool, no tab. Reading them is how you decide whether
+// they are patterns or just facts written twice.
+func (h *Handler) patterns(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	items, err := h.Brain.QueryPatterns(r.Context(), namespacesParam(r), pagination(r))
+	if !hdl(w, err) {
+		return
+	}
+	n, err := h.Brain.CountPatterns(r.Context(), namespacesParam(r))
+	if !hdl(w, err) {
+		return
+	}
+	total(w, n)
+	writeJSON(w, http.StatusOK, nonNil(items))
+}
+
+// patternItem deletes one pattern. A soft delete: the row stops being listed and
+// the consolidation that produced it is not touched.
+func (h *Handler) patternItem(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	id, _, err := pathID(r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := h.Brain.DeletePattern(r.Context(), id); errors.Is(err, brain.ErrPatternNotFound) {
+		writeErr(w, http.StatusNotFound, err)
+		return
+	} else if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 // rememberNamespace picks the target namespace for a write: the first explicit
