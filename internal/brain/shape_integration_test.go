@@ -168,3 +168,56 @@ func TestIntegrationShapeSweepIgnoresSmallClusters(t *testing.T) {
 		t.Fatalf("want no work for two sources, got %d patterns from %d calls", count, llmCalls)
 	}
 }
+
+// A second opinion must not undo an accepted verdict. The scheduler tick and a
+// manual run judge the same clusters at the same time, and production showed the
+// later rejection overwriting the stored pattern's cursor: a pattern row nobody
+// would ask about again, while the cluster claimed it had been refused.
+func TestIntegrationShapeSweepNeverDowngradesAnAcceptedVerdict(t *testing.T) {
+	e := newEnv(t, nil)
+	shapeFixture(t, e, "alpha", "beta", "gamma")
+
+	if count, _, errs := e.b.consolidateToShapePatterns(e.ctx, e.nsID); count != 1 || len(errs) != 0 {
+		t.Fatalf("first sweep: %d patterns, errors %v", count, errs)
+	}
+
+	var verdict string
+	var wantSeen int
+	var wantMax int64
+	if err := e.b.pool.QueryRow(e.ctx,
+		`SELECT verdict, sources_seen, max_rel_id FROM pattern_clusters WHERE namespace_id = $1`, e.nsID,
+	).Scan(&verdict, &wantSeen, &wantMax); err != nil {
+		t.Fatalf("read cluster cursor: %v", err)
+	}
+	if verdict != "pattern" {
+		t.Fatalf("first sweep did not accept the cluster: %q", verdict)
+	}
+
+	// The competing run read the cluster before the pattern existed and records
+	// its rejection with the cursor it saw then.
+	if err := e.b.recordShapeCluster(e.ctx, e.nsID, &shapeCluster{
+		relationType: "uses_transport",
+		target:       "http-first transport",
+		sources:      []string{"alpha", "beta"},
+		maxRelID:     1,
+	}, "rejected"); err != nil {
+		t.Fatalf("record stale rejection: %v", err)
+	}
+
+	var gotSeen int
+	var gotMax int64
+	if err := e.b.pool.QueryRow(e.ctx,
+		`SELECT verdict, sources_seen, max_rel_id FROM pattern_clusters WHERE namespace_id = $1`, e.nsID,
+	).Scan(&verdict, &gotSeen, &gotMax); err != nil {
+		t.Fatalf("read cluster cursor: %v", err)
+	}
+	if verdict != "pattern" {
+		t.Errorf("an accepted cluster lost its verdict: %q", verdict)
+	}
+	if gotSeen != wantSeen {
+		t.Errorf("sources_seen moved backwards from %d to %d", wantSeen, gotSeen)
+	}
+	if gotMax != wantMax {
+		t.Errorf("max_rel_id moved backwards from %d to %d", wantMax, gotMax)
+	}
+}

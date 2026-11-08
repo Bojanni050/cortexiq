@@ -235,9 +235,17 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (namespace_id, signature) DO UPDATE
 SET relation_type = EXCLUDED.relation_type,
     target        = EXCLUDED.target,
-    sources_seen  = EXCLUDED.sources_seen,
-    max_rel_id    = EXCLUDED.max_rel_id,
-    verdict       = EXCLUDED.verdict,
+    sources_seen  = GREATEST(pattern_clusters.sources_seen, EXCLUDED.sources_seen),
+    max_rel_id    = GREATEST(pattern_clusters.max_rel_id, EXCLUDED.max_rel_id),
+    -- A cluster that already produced a pattern must never be demoted by a second
+    -- opinion. The scheduler and a manual run can judge the same cluster at the
+    -- same time; production showed the later rejection overwriting an accepted
+    -- verdict, so the stored pattern and its cursor disagreed.
+    verdict       = CASE
+                      WHEN pattern_clusters.verdict = 'pattern' AND EXCLUDED.verdict <> 'pattern'
+                      THEN 'pattern'
+                      ELSE EXCLUDED.verdict
+                    END,
     last_run_at   = now()`
 
 // recordShapeCluster advances the cursor for one candidate whether it produced a
