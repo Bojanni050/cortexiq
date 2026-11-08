@@ -900,6 +900,97 @@ func TestIntegrationReflectWithContext(t *testing.T) {
 	}
 }
 
+// A question that names something a regularity is about must reach the answer.
+// This is the whole point of the sweep: a habit that no single memory states.
+func TestIntegrationReflectGroundsOnPatterns(t *testing.T) {
+	e := newEnv(t, nil)
+	e.insertFact(t, "the queue is kafka", nil)
+
+	if _, err := e.b.storePattern(e.ctx, e.nsID, "Services use an HTTP-first transport.",
+		0.6, nil, nil, []string{"cortexiq", "hindsight"}, 1.0); err != nil {
+		t.Fatalf("store pattern: %v", err)
+	}
+
+	e.r.chatAnswer = "Everything talks HTTP first."
+
+	result, err := e.b.Reflect(e.ctx, "how does the cortexiq transport work?", ReflectOptions{
+		Namespaces:       []string{e.ns},
+		Limit:            5,
+		SkipMentalModels: true,
+	})
+	if err != nil {
+		t.Fatalf("Reflect: %v", err)
+	}
+
+	if result.PatternCount != 1 || len(result.Patterns) != 1 {
+		t.Fatalf("want the regularity to reach the answer, got %d", result.PatternCount)
+	}
+	if !result.Patterns[0].FromEntity {
+		t.Error("the question named an entity the regularity covers, want FromEntity")
+	}
+	if result.Patterns[0].Content != "Services use an HTTP-first transport." {
+		t.Errorf("unexpected pattern content %q", result.Patterns[0].Content)
+	}
+
+	found := false
+	for _, s := range result.Sources {
+		if s.Type == "pattern" && s.ID == result.Patterns[0].ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the regularity is missing from the sources: %+v", result.Sources)
+	}
+}
+
+// A vague question must not drag the highest-confidence regularities into every
+// answer: only a shared term earns a place.
+func TestIntegrationReflectLeavesUnrelatedPatternsOut(t *testing.T) {
+	e := newEnv(t, nil)
+	e.insertFact(t, "the database is postgres", nil)
+
+	if _, err := e.b.storePattern(e.ctx, e.nsID, "Services use an HTTP-first transport.",
+		0.6, nil, nil, []string{"cortexiq", "hindsight"}, 1.0); err != nil {
+		t.Fatalf("store pattern: %v", err)
+	}
+
+	result, err := e.b.Reflect(e.ctx, "what is the meaning of life?", ReflectOptions{
+		Namespaces:       []string{e.ns},
+		Limit:            5,
+		SkipMentalModels: true,
+		SkipHypotheses:   true,
+	})
+	if err != nil {
+		t.Fatalf("Reflect: %v", err)
+	}
+	if result.PatternCount != 0 {
+		t.Errorf("want no regularity for an unrelated question, got %+v", result.Patterns)
+	}
+}
+
+// Callers that need citations to raw memories can drop the derived statements.
+func TestIntegrationReflectSkipsPatternsWhenAsked(t *testing.T) {
+	e := newEnv(t, nil)
+	e.insertFact(t, "the queue is kafka", nil)
+
+	if _, err := e.b.storePattern(e.ctx, e.nsID, "Services use an HTTP-first transport.",
+		0.6, nil, nil, []string{"cortexiq"}, 1.0); err != nil {
+		t.Fatalf("store pattern: %v", err)
+	}
+
+	result, err := e.b.Reflect(e.ctx, "how does cortexiq transport work?", ReflectOptions{
+		Namespaces:       []string{e.ns},
+		SkipPatterns:     true,
+		SkipMentalModels: true,
+	})
+	if err != nil {
+		t.Fatalf("Reflect: %v", err)
+	}
+	if result.PatternCount != 0 {
+		t.Errorf("SkipPatterns should keep them out, got %+v", result.Patterns)
+	}
+}
+
 // Reflect rejects an empty query before touching the database or the LLM.
 func TestIntegrationReflectEmptyQuery(t *testing.T) {
 	e := newEnv(t, nil)

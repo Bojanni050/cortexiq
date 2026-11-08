@@ -804,6 +804,7 @@ func (h *Handler) reflect(w http.ResponseWriter, r *http.Request) {
 		KnownTo          string   `json:"known_to"`
 		MMR              *float64 `json:"mmr"`
 		SkipMentalModels bool     `json:"skip_mental_models"`
+		SkipPatterns     bool     `json:"skip_patterns"`
 		MentalModelTags  []string `json:"mental_model_tags"`
 		// Tags ground the answer only on memories carrying every listed tag;
 		// TagsAny on memories carrying at least one of them. They compose.
@@ -836,6 +837,7 @@ func (h *Handler) reflect(w http.ResponseWriter, r *http.Request) {
 		TagsAny:          body.TagsAny,
 		MMR:              body.MMR,
 		SkipMentalModels: body.SkipMentalModels,
+		SkipPatterns:     body.SkipPatterns,
 		MentalModelTags:  body.MentalModelTags,
 	}
 	if body.AsOf != "" {

@@ -483,6 +483,9 @@ OPEN HYPOTHESES:
 The answer also considers open hypotheses — beliefs the system holds but has not verified — whose subject overlaps with the question or with the recalled memories. Those are not evidence. When the answer leans on one it says so explicitly; when the matter is contested it names the counter-hypothesis; and it names what would settle it. The response carries them separately in `hypotheses` (with `status`, `confidence`, `support_facts` and `support_episodes`) and in `hypothesis_count`, so you can see which assumption the answer was hedging about. A belief whose `support_episodes` is 1 rests on a single conversation: treat that as a hunch, not knowledge.
 
 CALL recall INSTEAD when the user wants to see the raw beliefs behind an answer — hypotheses are listed by list_hypotheses, and their history by list_hypothesis_events.
+
+REGULARITIES:
+The answer also considers regularities the consolidator derived across many memories — "every internet-facing service sits behind Caddy", "these four suppliers handle document chasing". They answer "how does this usually work here", which no single memory states. They are derived, not witnessed: when an answer rests on one it says so. The response carries them in `patterns` and `pattern_count`, apart from the raw sources.
 {{end}}
 
 {{define "reflect_query"}}

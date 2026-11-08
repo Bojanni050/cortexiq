@@ -264,7 +264,7 @@ func (b *Brain) QueryPatterns(ctx context.Context, namespaceSlugs []string, page
 	page = page.Sanitize()
 
 	rows, err := b.pool.Query(ctx,
-		`SELECT id, namespace_id, content, confidence, source_fact_ids, source_rel_ids, coherence_score, created_at, updated_at, deleted_at
+		`SELECT id, namespace_id, content, confidence, source_fact_ids, source_rel_ids, coherence_score, source_entities, created_at, updated_at, deleted_at
 		 FROM patterns WHERE namespace_id = ANY($1) AND deleted_at IS NULL ORDER BY id LIMIT $2 OFFSET $3`,
 		nsIDs, page.Limit, page.Offset,
 	)
@@ -276,7 +276,7 @@ func (b *Brain) QueryPatterns(ctx context.Context, namespaceSlugs []string, page
 	var patterns []models.Pattern
 	for rows.Next() {
 		var p models.Pattern
-		if err := rows.Scan(&p.ID, &p.NamespaceID, &p.Content, &p.Confidence, &p.SourceFactIDs, &p.SourceRelIDs, &p.CoherenceScore, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.NamespaceID, &p.Content, &p.Confidence, &p.SourceFactIDs, &p.SourceRelIDs, &p.CoherenceScore, &p.SourceEntities, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
 			return nil, fmt.Errorf("scan pattern: %w", err)
 		}
 		patterns = append(patterns, p)

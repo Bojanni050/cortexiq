@@ -24,7 +24,11 @@ type ReflectResult struct {
 	// the reason an answer may carry a caveat.
 	Hypotheses      []ReflectHypothesis `json:"hypotheses,omitempty"`
 	HypothesisCount int                 `json:"hypothesis_count"`
-	DurationMs      int64               `json:"duration_ms"`
+	// Patterns are the derived regularities shown to the answer. They are not
+	// evidence, so they are reported apart from Sources' raw memories.
+	Patterns     []ReflectPattern `json:"patterns,omitempty"`
+	PatternCount int              `json:"pattern_count"`
+	DurationMs   int64            `json:"duration_ms"`
 }
 
 // ReflectSource is one memory that contributed to the answer.
@@ -81,6 +85,10 @@ type ReflectOptions struct {
 	// summaries and benchmark runs want settled knowledge only: a hypothesis is
 	// by definition not something to write down as truth.
 	SkipHypotheses bool
+	// SkipPatterns keeps derived regularities out of the synthesis. They are
+	// useful orientation ("this is how it usually works here") but they are not
+	// evidence, so a caller that needs citations to raw memories can drop them.
+	SkipPatterns bool
 }
 
 // reflectSystemPrompt is the system prompt for the reflect synthesis. It tells
@@ -96,6 +104,10 @@ You may also receive OPEN HYPOTHESES: beliefs the system holds but has not verif
 - Never present a hypothesis as an established fact. If your answer rests on one, say so plainly and name what would settle it.
 - A hypothesis with a counter-hypothesis means the system holds the opposing belief too. If both are listed, say the matter is contested instead of picking a side.
 - A belief backed by facts from a single conversation is only as strong as that conversation; say so when it matters.
+
+You may also receive REGULARITIES: statements the memory derived across many separate memories.
+- They describe how things usually are, not what was seen once. Phrase them as a habit ("X tends to…"), never as a single observation.
+- They are derived, not witnessed. If the answer turns on one, prefer a memory that shows the same thing; when only a regularity supports the claim, say it is a pattern rather than a fact.
 
 Rules:
 - Answer ONLY from the input provided below. Never use outside knowledge.
@@ -178,22 +190,45 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 	memoriesText := formatMemoriesForReflect(results)
 	mmText := formatMentalModelsForReflect(mentalModels)
 
+	// One namespace resolution serves the three lookups that follow.
+	nsIDs, nsErr := b.resolveNamespaceIDs(ctx, namespaces)
+
 	// Open beliefs are matched against the same question, but after recall, so
 	// they can be found by the facts they rest on as well as by their wording.
 	// A failure here must not cost the answer: reflect still works without them.
 	var hyps []models.Hypothesis
-	if !opts.SkipHypotheses {
-		nsIDs, err := b.resolveNamespaceIDs(ctx, namespaces)
-		if err == nil {
-			hyp, err := b.matchHypotheses(ctx, nsIDs, query, recalledFactIDs(results), 0)
-			if err != nil {
-				log.Printf("reflect: matching hypotheses failed, answering without them: %v", err)
-			} else {
-				hyps = hyp
-			}
+	if !opts.SkipHypotheses && nsErr == nil {
+		hyp, err := b.matchHypotheses(ctx, nsIDs, query, recalledFactIDs(results), 0)
+		if err != nil {
+			log.Printf("reflect: matching hypotheses failed, answering without them: %v", err)
+		} else {
+			hyps = hyp
 		}
 	}
 	hypText := formatHypothesesForReflect(hyps)
+
+	// Regularities are what the consolidator derived, so they answer "how does
+	// this usually work here" in a way no single memory can. Same rule as the
+	// hypotheses: a failure is logged, not fatal.
+	var patterns []ReflectPattern
+	if !opts.SkipPatterns && nsErr == nil {
+		pat, err := b.matchPatterns(ctx, nsIDs, query, 5)
+		if err != nil {
+			log.Printf("reflect: matching patterns failed, answering without them: %v", err)
+		} else {
+			patterns = pat
+		}
+	}
+	patternText := formatPatternsForReflect(patterns)
+
+	for _, p := range patterns {
+		sources = append(sources, ReflectSource{
+			Type:    "pattern",
+			ID:      p.ID,
+			Content: p.Content,
+			Score:   p.Confidence,
+		})
+	}
 
 	var sb strings.Builder
 	if mmText != "" {
@@ -204,6 +239,11 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 	if hypText != "" {
 		sb.WriteString("## Open Hypotheses (unverified)\n\n")
 		sb.WriteString(hypText)
+		sb.WriteString("\n")
+	}
+	if patternText != "" {
+		sb.WriteString("## Regularities (derived, not observed)\n\n")
+		sb.WriteString(patternText)
 		sb.WriteString("\n")
 	}
 	sb.WriteString("## Memories\n\n")
@@ -241,6 +281,8 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 		MentalModelCount: len(mentalModels),
 		Hypotheses:       toReflectHypotheses(hyps),
 		HypothesisCount:  len(hyps),
+		Patterns:         patterns,
+		PatternCount:     len(patterns),
 		DurationMs:       time.Since(start).Milliseconds(),
 	}, nil
 }

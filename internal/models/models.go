@@ -121,16 +121,17 @@ type Relationship struct {
 
 // Pattern is an abstraction over facts and relationships.
 type Pattern struct {
-	ID             int64      `db:"id"`
-	NamespaceID    int64      `db:"namespace_id"`
-	Content        string     `db:"content"`
-	Confidence     float32    `db:"confidence"`
-	SourceFactIDs  []int64    `db:"source_fact_ids"`
-	SourceRelIDs   []int64    `db:"source_rel_ids"`
-	CoherenceScore float32    `db:"coherence_score"`
-	CreatedAt      time.Time  `db:"created_at"`
-	UpdatedAt      time.Time  `db:"updated_at"`
-	DeletedAt      *time.Time `db:"deleted_at"`
+	ID             int64      `db:"id" json:"id"`
+	NamespaceID    int64      `db:"namespace_id" json:"namespace_id"`
+	Content        string     `db:"content" json:"content"`
+	Confidence     float32    `db:"confidence" json:"confidence"`
+	SourceFactIDs  []int64    `db:"source_fact_ids" json:"source_fact_ids"`
+	SourceRelIDs   []int64    `db:"source_rel_ids" json:"source_rel_ids"`
+	CoherenceScore float32    `db:"coherence_score" json:"coherence_score"`
+	SourceEntities []string   `db:"source_entities" json:"source_entities"`
+	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time  `db:"updated_at" json:"updated_at"`
+	DeletedAt      *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
 }
 
 // Context is the active working state for a namespace.
