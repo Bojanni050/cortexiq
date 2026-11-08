@@ -175,10 +175,10 @@ type jsonRelationship struct {
 }
 
 type jsonPattern struct {
-	Pattern     string  `json:"pattern"`
-	Coherence   float32 `json:"coherence"`
-	SourceFacts []int64 `json:"source_facts"`
-	SourceRels  []int64 `json:"source_rels"`
+	Pattern     string   `json:"pattern"`
+	Coherence   *float32 `json:"coherence"`
+	SourceFacts []int64  `json:"source_facts"`
+	SourceRels  []int64  `json:"source_rels"`
 }
 
 type jsonContradiction struct {
@@ -625,9 +625,18 @@ func (o *OpenAI) ReasonPatterns(ctx context.Context, facts []models.Fact, relati
 				continue
 			}
 
-			coherence := jp.Coherence
-			if coherence <= 0 || coherence > 1.0 {
-				coherence = 0.5
+			// A missing or nonsensical score falls back to the middle. An explicit
+			// 0.0 does not: that is the model saying the sources only share a
+			// subject, which is the definition of "not a recurrence". Turning that
+			// verdict into 0.5 is how a description gets stored as a pattern.
+			coherence := float32(0.5)
+			if jp.Coherence != nil {
+				switch c := *jp.Coherence; {
+				case c <= 0:
+					continue
+				case c <= 1:
+					coherence = c
+				}
 			}
 
 			validated = append(validated, &StructuredPattern{

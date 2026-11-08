@@ -201,7 +201,7 @@ func TestWrappedPatternsDecodeAfterUnwrap(t *testing.T) {
 	if err := decodeModelJSON(raw, &got); err != nil {
 		t.Fatalf("decodeModelJSON: %v", err)
 	}
-	if len(got) != 1 || got[0].Coherence != 0.9 || len(got[0].SourceFacts) != 2 {
+	if len(got) != 1 || got[0].Coherence == nil || *got[0].Coherence != 0.9 || len(got[0].SourceFacts) != 2 {
 		t.Errorf("parsed %+v", got)
 	}
 }

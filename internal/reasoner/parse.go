@@ -211,6 +211,12 @@ func unwrapTopLevelArray(raw, key string) string {
 	if arr, ok := firstArrayInObject(trimmed); ok {
 		return arr
 	}
+	// One candidate sometimes arrives as the element itself rather than as the
+	// array that holds it: {"pattern": ...}. Wrapping it keeps the answer
+	// usable instead of losing it to a shape difference.
+	if strings.Contains(trimmed, `"pattern"`) {
+		return "[" + trimmed + "]"
+	}
 	return raw
 }
 
