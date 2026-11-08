@@ -57,3 +57,50 @@ func TestStructuredPromptSubjectAndSelfContainedRules(t *testing.T) {
 		t.Error("self-contained rule must be present without a subject too")
 	}
 }
+
+// The pattern prompt is the only thing that separates "a regularity that recurs"
+// from "a tidy summary of what several facts say". The stage used to ask for the
+// second one without meaning to, and the model obliged.
+func TestPatternPromptAsksForRecurrenceNotSummary(t *testing.T) {
+	p := patternPrompt("[Fact 1] a", "[Rel 1] a --b--> c")
+
+	for _, want := range []string{
+		"regularity across separate items",
+		"It is NOT a summary",
+		`"These facts together say X about one system"`,
+		"Cite at least 2 facts AND at least 1 relationship",
+		"coherence is how consistently the cited sources say the same thing",
+		"Do not use it as a confidence number",
+		"Every noun in the statement must be traceable",
+		"If nothing recurs, output: []",
+		"[Fact 1] a",
+		"[Rel 1] a --b--> c",
+	} {
+		if !strings.Contains(p, want) {
+			t.Errorf("pattern prompt is missing %q", want)
+		}
+	}
+	if strings.Contains(p, "OR at least 2 items in source_rels") {
+		t.Error("pattern prompt still allows a pattern without facts (OR rule)")
+	}
+}
+
+// A pattern has to rest on a recurrence. One fact with many relationships is a
+// restatement of connected items; many facts and no relationship is a summary.
+func TestPatternSourcesAreEnough(t *testing.T) {
+	cases := []struct {
+		facts, rels int
+		want        bool
+	}{
+		{2, 1, true},
+		{5, 3, true},
+		{1, 9, false},
+		{9, 0, false},
+		{0, 0, false},
+	}
+	for _, c := range cases {
+		if got := patternSourcesAreEnough(c.facts, c.rels); got != c.want {
+			t.Errorf("patternSourcesAreEnough(%d facts, %d rels) = %v, want %v", c.facts, c.rels, got, c.want)
+		}
+	}
+}

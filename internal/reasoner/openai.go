@@ -33,6 +33,23 @@ Rules:
 - Output ONLY valid JSON matching the provided schema.
 - No explanation. No preamble. No markdown. Just the JSON object.`
 
+// patternSystemPrompt is the one call where connecting sources IS the task. The
+// shared systemPrompt forbids generalizing, which is right for extraction and
+// wrong for patterns: it left the model no legal move except merging several
+// facts into one tidy sentence — exactly the descriptive restatements that filled
+// /projects/infra. What survives is grounding: you may connect what is cited, you
+// may not add context, purpose or intent of your own.
+const patternSystemPrompt = `You are a pattern analyst.
+
+Rules:
+- A pattern is a regularity that recurs ACROSS the sources, not a summary of
+  them. Several facts that describe one thing are a description, not a pattern.
+- You may connect cited facts and relationships into one statement.
+- Every noun, entity and action in the statement must be traceable to a cited
+  source. You may NOT add context, purpose, intent, design or consequences.
+- Never guess. If nothing recurs, output an empty list.
+- Output ONLY valid JSON, an array, with no prose and no markdown fences.`
+
 const retryWarning = "Your previous response was invalid or contained invented information. Follow the rules strictly. Output ONLY valid JSON matching the provided schema."
 
 type OpenAI struct {
@@ -489,6 +506,52 @@ func groundRelationships(jrels []jsonRelationship, contents map[int64]string) ma
 
 // --- ReasonPatterns ---
 
+// patternPrompt is kept separate from the call so the rules it states can be
+// tested: this prompt is the only thing standing between "a summary of what the
+// facts say" and "a regularity that recurs", and that distinction was worth
+// getting wrong exactly once.
+func patternPrompt(facts, relationships string) string {
+	return fmt.Sprintf(`Below are facts and relationships from one memory. Find what RECURS in them.
+
+A pattern is a regularity across separate items:
+- something that happens every time a given condition holds,
+- a condition that always produces the same effect,
+- or the same structure showing up in systems that are otherwise unrelated.
+
+It is NOT a summary. "These facts together say X about one system" is a
+description; do not return it, even when it cites many facts.
+
+Good: "Every internet-facing service sits behind Caddy; each backend binds to
+      127.0.0.1 only."
+Bad:  "The gateway uses Caddy for TLS and proxies to five containers."
+
+Facts:
+%s
+
+Relationships:
+%s
+
+Output ONLY a JSON array of objects:
+[{"pattern": "string", "coherence": 0.0, "source_facts": [1,2], "source_rels": [3,4]}]
+
+Rules:
+- Cite at least 2 facts AND at least 1 relationship. Fewer is not a pattern.
+- source_facts IDs must come from the Facts list; source_rels IDs from the
+  Relationships list.
+- coherence is how consistently the cited sources say the same thing: 0.0 when
+  they only touch the same subject, 1.0 only when they state it without a single
+  exception. Do not use it as a confidence number.
+- Every noun in the statement must be traceable to a cited source.
+- If nothing recurs, output: []`, facts, relationships)
+}
+
+// patternSourcesAreEnough reports whether a candidate rests on a recurrence: at
+// least two facts and one relationship. Fewer is a restatement of a single item
+// or of connected entities, which is what the stage must not store.
+func patternSourcesAreEnough(facts, rels int) bool {
+	return facts >= 2 && rels >= 1
+}
+
 func (o *OpenAI) ReasonPatterns(ctx context.Context, facts []models.Fact, relationships []models.Relationship) ([]*StructuredPattern, error) {
 	if len(facts) == 0 {
 		return nil, nil
@@ -504,26 +567,10 @@ func (o *OpenAI) ReasonPatterns(ctx context.Context, facts []models.Fact, relati
 		relLines = append(relLines, fmt.Sprintf("[Rel %d] %s --%s--> %s (confidence: %.2f)", r.ID, r.FromEntity, r.RelationType, r.ToEntity, r.Confidence))
 	}
 
-	prompt := fmt.Sprintf(`Given these facts and relationships, extract patterns.
-
-Facts:
-%s
-
-Relationships:
-%s
-
-Output ONLY a JSON array of objects:
-[{"pattern": "string", "coherence": 0.0, "source_facts": [1,2], "source_rels": [3,4]}]
-
-Rules:
-- A pattern MUST have at least 2 items in source_facts OR at least 2 items in source_rels. Single-source patterns are NOT allowed.
-- source_facts IDs must be from the Facts list above.
-- source_rels IDs must be from the Relationships list above.
-- Do not generalize beyond the evidence. If no pattern meets this threshold, output: []
-- The pattern statement must be directly supported by the referenced sources.`, strings.Join(factLines, "\n"), strings.Join(relLines, "\n"))
+	prompt := patternPrompt(strings.Join(factLines, "\n"), strings.Join(relLines, "\n"))
 
 	msgs := []openai.ChatCompletionMessageParamUnion{
-		openai.SystemMessage(systemPrompt),
+		openai.SystemMessage(patternSystemPrompt),
 		openai.UserMessage(prompt),
 	}
 
@@ -569,7 +616,9 @@ Rules:
 				break
 			}
 
-			if len(validFacts)+len(validRels) < 2 {
+			// The stage enforces the same rule; dropping it here too keeps the
+			// contract visible to the model instead of failing silently later.
+			if !patternSourcesAreEnough(len(validFacts), len(validRels)) {
 				continue
 			}
 
