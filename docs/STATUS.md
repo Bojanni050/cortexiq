@@ -4,23 +4,55 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-10-30, after the `v0.1.16` deploy.
+Last updated: 2026-11-08, after the `v0.1.61` deploy.
 
 ## Build
 
 | | |
 |---|---|
-| Latest release | `v0.1.16`, 2026-10-30 |
-| Release commit | `8f591a1` |
+| Latest release | `v0.1.61`, 2026-11-08 |
+| Release commit | `c83c66b` |
+| Every release | tagged and published; `gh release list` is the authoritative list |
+| Schema | `goose_db_version` reads `58`; migrations are append-only |
 | How to check | `cortexiq version` (works without a database) |
 
 A binary built from a working tree reports `cortexiq dev (built from source)`.
 Release and Docker builds inject the tag, commit and build date; the values live
 in `internal/version`.
 
-Ahead of the next release: nothing named yet.
+This page avoids counts that change on every release (tags, commits, tool totals).
+Where a number appears here, it is a measurement with a date attached.
 
-Consolidation model: since 2026-10-30 production runs `google/gemma-4-31B-it` via DeepInfra
+### Since the 2026-10-30 snapshot
+
+The snapshot that stood here described `v0.1.16`. What changed since, in the order
+it landed:
+
+- **Tags** — `tags_any` is an OR filter next to the AND filter, on recall and on
+  reflect (`TagFilter{All, Any}`). Any tag condition excludes failures and goals,
+  which carry no tags (`v0.1.49`).
+- **Goals** — `goal_events` is an append-only log; the consolidator writes
+  `progress` / `suggested_complete` / `contradicted` events instead of appending
+  text to `goals.notes`, and it still never completes a goal itself. `remember`
+  takes `complete_goal` so an agent can close one write with its evidence
+  (`v0.1.50`).
+- **Async writes** — `remember` accepts `async: true` and a durable `write_jobs`
+  queue drains it (`SKIP LOCKED`, two processes safe). Off by default, because an
+  async caller gets no episode id back (`v0.1.50`).
+- **Patterns** — visible and deletable (`GET/DELETE /api/v1/patterns`, dashboard
+  tab, `list_patterns`), deduplicated in the schema with a generated `content_key`
+  and a unique partial index, and the prompt now asks for recurrence rather than a
+  summary. Three parser defects surfaced only against a live model: an object
+  wrapper, an id-array as the first array, and `coherence: 0.0` being clamped to
+  `0.5` when it means "this is not a recurrence" (`v0.1.56`–`v0.1.61`).
+- **Stall detection** — each stage's checkpoint gets a `stage_changed_at`
+  timestamp, stalled stages show on the Runs tab, and the scheduler retries when
+  episode or relationship work is pending (`v0.1.51`–`v0.1.54`).
+- **Model registry** — provider model metadata is read from Hopscotch's
+  `data[].uniblock` block (capabilities, context window, deprecation) (`v0.1.55`).
+
+
+Consolidation model: since 2026-10-30 production runs `deepinfra/gemma-4-31B-it-turbo` via DeepInfra
 (`CORTEXIQ_REASONER_MODEL` in `.env`, `CORTEXIQ_REASONER_JSON_MODE=false`), replacing
 `mistralai/Mistral-Small-24B-Instruct-2501`. On the same inputs the old model failed to parse 13 of 40
 fact calls and 6 of 20 relation batches, and merged 13 of 48 different fact pairs in the same-fact
@@ -35,18 +67,21 @@ Gemma fails every stage that returns a list. The test is `internal/reasoner/mode
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  `strato-vps`, in `/opt/cortexiq`, running `v0.1.16` (`cortexiq version` inside the
-  container is the source of truth; the binary lives at `/cortexiq` and the image
-  has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
-  Both containers run image `sha256:11dd33cfa7e0…`. Migrations `00038`
+  a single VPS, in `/opt/cortexiq`, currently `v0.1.61` (`cortexiq version` inside
+  the container is the source of truth; the binary lives at `/cortexiq` and the
+  image has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
+  Postgres with pgvector and a local Ollama for embeddings sit beside them and are
+  not replaced on a release. A deploy is: dump the database, bump
+  `CORTEXIQ_IMAGE_TAG` in `.env`, `docker compose pull && docker compose up -d`,
+  then confirm the goose version and the two containers. Migrations `00038`
   (retractions and the purge log) and `00039` (providers and model bindings)
   applied on the 2026-10-26 and 2026-10-27 restarts, and `00040` (hygiene) on
   the 2026-10-27 restart. `00041` applied on the `v0.1.9` restart: it drops
   twelve `hygiene_*` columns and the `hygiene_audit_log` table, so the schema is
   back to what it was before `00040` — verified after the deploy (0 matching
-  columns, table gone, data intact). All of them are idempotent. The `v0.1.10`,
-  `v0.1.11`, `v0.1.12`, `v0.1.13`, `v0.1.14`, `v0.1.15` and `v0.1.16` restarts applied
-  none: they changed the binary only, and `goose_db_version` still reads `41`.
+  columns, table gone, data intact). All of them are idempotent. `00042` through
+  `00058` followed between `v0.1.17` and `v0.1.57`; the releases after that
+  changed the binary only.
 - The MCP server hands its prime directive to a client at connect time, in the
   `initialize` result's `instructions` field (6445 characters on `v0.1.4`). A
   client reads that once per connection, so it has to reconnect after an upgrade
@@ -316,7 +351,7 @@ by score, so the better answer wins regardless of type.
 
 | | |
 |---|---|
-| Test functions | 307 across 57 files |
+| Test functions | 539 across 95 files (2026-11-08) |
 | Unit tests | run everywhere, no database needed |
 | Integration tests | `internal/brain`, need `CORTEXIQ_TEST_DSN`; CI runs them against `pgvector/pgvector:pg16` and fails if any was skipped |
 | Race detector | CI job `race`, `go test -race ./...` — green since its first run on 2026-10-26 |

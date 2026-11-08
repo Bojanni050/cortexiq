@@ -253,27 +253,27 @@ Backups can be scheduled with a systemd timer and pruned automatically; see
 drill. See [`docs/QUALITY_EVALUATION.md`](docs/QUALITY_EVALUATION.md) before
 changing the reasoner model or consolidation settings.
 
-## Atlas Cloud
+## Any OpenAI-compatible provider
 
-> [Atlas Cloud](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=stash) is a full-modal AI inference platform that gives developers a single AI API to access video generation, image generation, and LLM APIs. Instead of managing multiple vendor integrations, you connect once and get unified access to 300+ curated models across all modalities.
->
-> Check out Atlas Cloud's coding plan promotion: [https://www.atlascloud.ai/console/coding-plan](https://www.atlascloud.ai/console/coding-plan)
-
-CortexIQ already supports Atlas Cloud through its OpenAI-compatible API. Set your `.env` like this:
-
-```bash
-CORTEXIQ_OPENAI_API_KEY=your-atlas-cloud-api-key
-CORTEXIQ_OPENAI_BASE_URL=https://api.atlascloud.ai/v1
-CORTEXIQ_EMBEDDING_MODEL=text-embedding-3-small
-CORTEXIQ_REASONER_MODEL=deepseek-ai/DeepSeek-V3-0324
-CORTEXIQ_VECTOR_DIM=1536
-```
-
-Atlas Cloud works well here because CortexIQ only needs:
+CortexIQ needs three things from a provider, and nothing else:
 
 - an embeddings model for vectorization
 - a chat-capable reasoning model for consolidation
 - an OpenAI-compatible base URL and API key
+
+Anything that offers those three works. Set them in `.env`:
+
+```bash
+CORTEXIQ_OPENAI_API_KEY=your-api-key
+CORTEXIQ_OPENAI_BASE_URL=https://your-provider.example/v1
+CORTEXIQ_EMBEDDING_MODEL=text-embedding-3-small
+CORTEXIQ_REASONER_MODEL=your-chat-model
+CORTEXIQ_VECTOR_DIM=1536
+```
+
+To keep embeddings local, leave `CORTEXIQ_OPENAI_BASE_URL` unset and point
+`CORTEXIQ_OLLAMA_URL` at an Ollama instance instead; see
+[`docs/LOCAL_OLLAMA.md`](docs/LOCAL_OLLAMA.md).
 
 See [Getting Started](docs/GETTING_STARTED.md) for a fuller configuration checklist.
 

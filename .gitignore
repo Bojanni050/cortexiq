@@ -31,8 +31,9 @@ Thumbs.db
 coverage.txt
 coverage.html
 *.cover
+
+# Local tooling state
+.code-review-graph/
 nul
 opencode.jsonc
 opencode.jsonc.openchamber.backup
-opencode.jsonc
-opencode.jsonc
