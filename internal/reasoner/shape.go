@@ -28,9 +28,13 @@ same thing happens under the same condition.
 Rules:
 - Use only the sources and statements given. Never add context, purpose, intent
   or design that they do not carry.
-- A target that is a value or a name rather than a behaviour — a number, a date,
-  a path, a file, a component, a function or a constant — is not a regularity.
-  Grouping on it collects facts about one subject, so reject it.
+- Reject when the target is a literal rather than a practice: a number, a date, a
+  URL, a path, a filename, an identifier or a code fragment. Grouping on a
+  literal collects facts about one subject, so reject it.
+- Do not reject a target merely for being a noun. A practice, protocol, tool,
+  place or component that several distinct sources relate to in the same way is a
+  regularity: "every client uses the same transport" and "every service runs on
+  the same host" both count.
 - Reject when the sources are one thing under different names, when the relation
   type only records containment of a single object, or when the sources do not
   actually share the behaviour.

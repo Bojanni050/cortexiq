@@ -60,12 +60,27 @@ func TestShapeSystemPromptKeepsSearchOut(t *testing.T) {
 }
 
 // Production accepted "the archive list column has a minimum width of 240px" and
-// "released on 2026-10-08": a value target is one subject described many times,
+// "released on 2026-10-08": a literal target is one subject described many times,
 // not a behaviour several things share.
-func TestShapeSystemPromptRejectsValueTargets(t *testing.T) {
+func TestShapeSystemPromptRejectsLiteralTargets(t *testing.T) {
 	for _, want := range []string{
-		"A target that is a value or a name rather than a behaviour",
-		"Grouping on it collects facts about one subject, so reject it",
+		"Reject when the target is a literal rather than a practice",
+		"Grouping on a\n  literal collects facts about one subject",
+	} {
+		if !strings.Contains(shapeSystemPrompt, want) {
+			t.Errorf("shapeSystemPrompt is missing %q", want)
+		}
+	}
+}
+
+// The first version of the rule said "a value or a name", and the model started
+// rejecting "http-first transport" and "strato vps" too. Naming what NOT to
+// reject is as important as naming what to reject.
+func TestShapeSystemPromptDoesNotRejectEveryNoun(t *testing.T) {
+	for _, want := range []string{
+		"Do not reject a target merely for being a noun",
+		"every client uses the same transport",
+		"every service runs on",
 	} {
 		if !strings.Contains(shapeSystemPrompt, want) {
 			t.Errorf("shapeSystemPrompt is missing %q", want)
