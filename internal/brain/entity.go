@@ -32,11 +32,28 @@ var entityEmptyNames = map[string]bool{
 	"environment": true, "error": true, "server": true, "mcp": true, "agent": true,
 	"process": true, "task": true, "integration": true,
 	"the": true, "a": true, "an": true,
+	// Stripping the trailing noun of a description leaves an adjective behind.
+	// "known-working setup" became "known-working" and "the self-hosted instance
+	// on a contabo vps" became "self-hosted": still not a name, so not an entity.
+	"self-hosted": true, "known-working": true, "functional": true,
+	"scheduled": true, "separate": true, "duplicate": true, "seven": true,
+	"no longer": true, "relationships": true,
 }
 
 // entityLeadingNoise are prefixes that say how something is run, not what it is.
 var entityLeadingNoise = []string{
 	"npx with ", "npx ", "the ", "a ", "an ", "working ",
+	"separate ", "duplicate ", "functional ", "known-working ", "seven ",
+}
+
+// entityClauseWords mark a sentence rather than a name. The dry run on
+// /projects/infra showed what the trailing-word rule alone leaves behind:
+// "base path of the store using the environment variable …", "configuration
+// known to work", "backup of the previous tailscale serve". An entity name has no
+// clause in it, so these mean the whole name was a description.
+var entityClauseWords = map[string]bool{
+	"of": true, "to": true, "for": true, "in": true, "on": true, "with": true,
+	"using": true, "each": true, "by": true, "at": true, "and": true, "as": true,
 }
 
 // NormalizeEntity returns the canonical spelling of an entity name and whether it
@@ -90,7 +107,30 @@ func NormalizeEntity(name string) (string, bool) {
 	if s == "" || entityEmptyNames[s] {
 		return "", false
 	}
+	if isEntityDescription(s) {
+		return "", false
+	}
 	return s, true
+}
+
+// isEntityDescription reports whether what is left is a clause or a gerund phrase
+// instead of a name. The dry run on production produced both: "backup of the
+// previous tailscale serve" (a clause) and "wrapping mcp-remote" (a gerund left
+// after cutting the trailing "in conhost.exe --headless").
+func isEntityDescription(s string) bool {
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return true
+	}
+	for _, f := range fields[1:] {
+		if entityClauseWords[f] {
+			return true
+		}
+	}
+	if first := fields[0]; len(first) > 5 && strings.HasSuffix(first, "ing") {
+		return true
+	}
+	return false
 }
 
 // EntityRename is one name that folded onto another, with how many rows carried it.

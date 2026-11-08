@@ -36,6 +36,20 @@ func TestNormalizeEntityFoldsNameVariants(t *testing.T) {
 		{"strato.taile3931a.ts.net", "strato.taile3931a.ts.net", true},
 		{"nginx basic auth", "nginx basic auth", true},
 
+		// Leftovers the dry run of 2026-11-08 exposed on /projects/infra: trimming
+		// a trailing noun can leave an adjective, a clause or a gerund behind.
+		{"separate hindsight instance", "hindsight", true},
+		{"duplicate mcp-remote processes", "mcp-remote", true},
+		{"seven slash-commands (mn-ask, mn-search, mn-stats)", "slash-commands", true},
+		{"known-working setup", "", false},
+		{"the self-hosted instance on a contabo vps", "", false},
+		{"backup of the previous tailscale serve configuration", "", false},
+		{"a separate store for each project located in <project>/.opencode", "", false},
+		{"wrapping mcp-remote in conhost.exe --headless", "", false},
+		{"the configuration known to work", "", false},
+		{"no longer in use", "", false},
+		{"relationships in batches of 5", "", false},
+
 		{"the problem", "", false},
 		{"the workload", "", false},
 		{"the app", "", false},
