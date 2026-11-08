@@ -24,6 +24,9 @@ var entityTrimWords = map[string]bool{
 	"task": true, "scheduled": true, "server": true, "mcp": true, "agent": true,
 	// "8443 origin" is a value with a role attached, not a second entity.
 	"origin": true,
+	// A table of entries is still a description: "bare 'url' entries" only
+	// becomes a name once "entries" goes and what is left can be judged.
+	"entries": true, "errors": true,
 }
 
 // entityEmptyNames are what is left once nothing but a description remains: "the
@@ -41,6 +44,8 @@ var entityEmptyNames = map[string]bool{
 	"self-hosted": true, "known-working": true, "functional": true,
 	"scheduled": true, "separate": true, "duplicate": true, "seven": true,
 	"no longer": true, "relationships": true,
+	// An error message is not a thing that appears on either end of an edge.
+	"server disconnected": true, "server disconnected error": true,
 	// A role or a reference is not a thing either. The second dry run left
 	// ":8443 origin" and "bare 'url'" standing as entities.
 	"origin": true, "url": true,
@@ -103,8 +108,17 @@ func NormalizeEntity(name string) (string, bool) {
 			}
 		}
 		s = strings.Trim(strings.TrimSpace(s), ".,;:!?'\"`")
-		// "Hindsight's MCP server" owns the same name as "Hindsight".
+		// "Hindsight's MCP server" owns the same name as "Hindsight". This runs
+		// before the quotes go, or the possessive would lose its apostrophe and
+		// leave "hindsights" — and the possessive sits mid-string, so trimming
+		// the suffix is not enough.
+		s = strings.ReplaceAll(s, "'s ", " ")
+		s = strings.ReplaceAll(s, "\u2019s ", " ")
 		s = strings.TrimSuffix(strings.TrimSpace(s), "'s")
+		// "bare 'url' entries" came out as "url' entries": trimming only sees the
+		// ends of the string, so a quote in the middle survived and turned the
+		// same word into a second entity. A quote is never part of a name.
+		s = strings.NewReplacer("'", "", "\u2019", "", "\"", "", "`", "").Replace(s)
 		if s == before {
 			break
 		}

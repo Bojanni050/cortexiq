@@ -91,3 +91,26 @@ func TestNormalizeEntityKeepsQualifiersThatIdentify(t *testing.T) {
 		t.Fatal("empty")
 	}
 }
+
+// The third dry run left three kinds of noise that only look like names: a quote
+// in the middle of the string, a table of entries, and an error message.
+func TestNormalizeEntityDropsInnerQuotesAndMessages(t *testing.T) {
+	fold := map[string]string{
+		"bare 'url' entries":               "", // the quote goes, "url" is a role, "entries" a table
+		"'--allow-http' flag":              "--allow-http",
+		"'server disconnected' error":      "",
+		"claude_desktop_config.json entry": "claude_desktop_config.json",
+	}
+	for in, want := range fold {
+		got, ok := NormalizeEntity(in)
+		if want == "" {
+			if ok {
+				t.Errorf("NormalizeEntity(%q) = %q, want dropped", in, got)
+			}
+			continue
+		}
+		if !ok || got != want {
+			t.Errorf("NormalizeEntity(%q) = %q, %v; want %q", in, got, ok, want)
+		}
+	}
+}
