@@ -209,10 +209,29 @@ func parseCatalogue(body []byte, deepInfra bool) ([]Model, error) {
 			Context:     firstNonZero(r.MaxContext, r.ContextLength),
 			Deprecated:  r.Deprecated,
 		}
+		if u := r.Uniblock; u != nil {
+			// Fill from Hopscotch's block only where the OpenAI shape said
+			// nothing, so a provider that publishes both wins with its own fields.
+			if m.Context == 0 {
+				m.Context = u.ContextWindow
+			}
+			if m.Description == "" {
+				m.Description = strings.TrimSpace(u.DisplayName)
+			}
+			if m.Kind == "" && len(u.EndpointFamily) > 0 {
+				m.Kind = strings.ReplaceAll(u.EndpointFamily[0], "_", "-")
+			}
+			if u.DeprecatedAt != nil && strings.TrimSpace(*u.DeprecatedAt) != "" {
+				m.Deprecated = true
+			}
+		}
 		if m.Description == "" && r.Name != "" && r.Name != r.ID {
 			m.Description = r.Name
 		}
 		m.Capabilities = capabilities(r.Capabilities)
+		if len(m.Capabilities) == 0 && r.Uniblock != nil {
+			m.Capabilities = capabilities(r.Uniblock.Capabilities)
+		}
 		if p := modelPricing(r.Pricing); p != nil {
 			m.InputPerMTok, m.OutputPerMTok = p[0], p[1]
 		} else if p := uniblockPricing(r.Uniblock); p != nil {
@@ -224,7 +243,12 @@ func parseCatalogue(body []byte, deepInfra bool) ([]Model, error) {
 	return out, nil
 }
 
-// capabilities accepts both a map of booleans (Mistral) and a list of tags.
+// capabilities reads the three shapes providers use: a list of tags, a map of
+// booleans (Mistral), and a map of tri-state strings (Hopscotch sends "yes",
+// "no" and "unknown"). Only a positive answer counts — "unknown" is not support.
+//
+// json_mode becomes "json", because that is the question a reader of this list
+// actually has: can I ask this model for JSON.
 func capabilities(raw json.RawMessage) []string {
 	if len(raw) == 0 {
 		return nil
@@ -233,18 +257,39 @@ func capabilities(raw json.RawMessage) []string {
 	if err := json.Unmarshal(raw, &list); err == nil {
 		return list
 	}
+
+	out := []string{}
 	var flags map[string]bool
-	if err := json.Unmarshal(raw, &flags); err != nil {
+	if err := json.Unmarshal(raw, &flags); err == nil {
+		for name, on := range flags {
+			if on {
+				out = append(out, capabilityName(name))
+			}
+		}
+		sort.Strings(out)
+		return out
+	}
+
+	var states map[string]string
+	if err := json.Unmarshal(raw, &states); err != nil {
 		return nil
 	}
-	out := make([]string, 0, len(flags))
-	for name, on := range flags {
-		if on {
-			out = append(out, strings.ReplaceAll(name, "_", " "))
+	for name, state := range states {
+		switch strings.ToLower(strings.TrimSpace(state)) {
+		case "yes", "true", "supported":
+			out = append(out, capabilityName(name))
 		}
 	}
 	sort.Strings(out)
 	return out
+}
+
+// capabilityName turns the provider's key into the word the dashboard shows.
+func capabilityName(name string) string {
+	if name == "json_mode" {
+		return "json"
+	}
+	return strings.ReplaceAll(name, "_", " ")
 }
 
 // modelPricing reads the few price shapes providers actually send. Unknown
@@ -278,6 +323,18 @@ type uniblockBlock struct {
 	InputRate  float64 `json:"input_rate_thousandths"`
 	OutputRate float64 `json:"output_rate_thousandths"`
 	Currency   string  `json:"currency_code"`
+
+	// The rest of Hopscotch's own catalogue, which is the only place it states
+	// any of this: the OpenAI-shaped part of their response carries an id and
+	// nothing else. Without these a reader picks a model blind — the price was
+	// read here from the start, the capabilities were not.
+	Capabilities   json.RawMessage `json:"capabilities"`
+	ContextWindow  int             `json:"context_window_tokens"`
+	MaxOutput      int             `json:"max_output_tokens"`
+	EndpointFamily []string        `json:"endpoint_families"`
+	ModalitiesIn   []string        `json:"modalities_in"`
+	DeprecatedAt   *string         `json:"deprecated_at"`
+	DisplayName    string          `json:"display_name"`
 }
 
 // uniblockPricing converts that block. A price in another currency is dropped

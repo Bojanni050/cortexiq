@@ -220,3 +220,89 @@ func TestDeepInfraPathMovesToTheHostRoot(t *testing.T) {
 		t.Fatalf("mistral path = %q", other)
 	}
 }
+
+// Hopscotch states everything in its own block beside the OpenAI-shaped entry:
+// capabilities as tri-state strings, a context window, and the price. Reading only
+// the price left the dashboard unable to answer "does this model do JSON".
+func TestParseHopscotchCatalogue(t *testing.T) {
+	body := `{"object":"list","data":[
+	  {"id":"akash/GLM-5.3","object":"model","owned_by":"uniblock",
+	   "uniblock":{"input_rate_thousandths":900,"output_rate_thousandths":4000,"currency_code":"USD",
+	     "display_name":"GLM 5.3","context_window_tokens":1048576,"max_output_tokens":131072,
+	     "endpoint_families":["chat_completions"],"modalities_in":["text"],
+	     "capabilities":{"streaming":"yes","tools":"yes","json_mode":"yes","vision":"unknown","audio":"no"}}},
+	  {"id":"vendor/bare","object":"model",
+	   "uniblock":{"input_rate_thousandths":100,"output_rate_thousandths":200,"currency_code":"USD",
+	     "capabilities":{"json_mode":"no","tools":"unknown"}}}
+	]}`
+	models, err := parseCatalogue([]byte(body), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("models = %d, want 2", len(models))
+	}
+
+	got := models[0]
+	if got.ID != "akash/GLM-5.3" && got.ID != "vendor/bare" {
+		t.Fatalf("unexpected first model %q", got.ID)
+	}
+	byID := map[string]Model{}
+	for _, m := range models {
+		byID[m.ID] = m
+	}
+
+	full := byID["akash/GLM-5.3"]
+	if full.Context != 1048576 {
+		t.Errorf("context = %d, want the uniblock window", full.Context)
+	}
+	if full.Kind != "chat-completions" {
+		t.Errorf("kind = %q, want chat-completions from endpoint_families", full.Kind)
+	}
+	if full.Description != "GLM 5.3" {
+		t.Errorf("description = %q, want the display name", full.Description)
+	}
+	if full.InputPerMTok != 0.9 || full.OutputPerMTok != 4 {
+		t.Errorf("price = %v/%v, want 0.9/4", full.InputPerMTok, full.OutputPerMTok)
+	}
+	// "yes" means supported, "unknown" and "no" mean not shown: a capability
+	// nobody can confirm must not read as a feature.
+	want := []string{"json", "streaming", "tools"}
+	if len(full.Capabilities) != len(want) {
+		t.Fatalf("capabilities = %v, want %v", full.Capabilities, want)
+	}
+	for i := range want {
+		if full.Capabilities[i] != want[i] {
+			t.Errorf("capabilities = %v, want %v", full.Capabilities, want)
+			break
+		}
+	}
+
+	sparse := byID["vendor/bare"]
+	if len(sparse.Capabilities) != 0 {
+		t.Errorf("no/unknown capabilities were reported as features: %v", sparse.Capabilities)
+	}
+}
+
+// A provider that publishes both shapes keeps its own values: the uniblock block
+// is a fallback, not an override.
+func TestParseCatalogueTopLevelWinsOverUniblock(t *testing.T) {
+	body := `{"data":[{"id":"m","context_length":8192,"type":"chat",
+	  "capabilities":{"vision":true},
+	  "uniblock":{"context_window_tokens":1048576,"endpoint_families":["embeddings"],
+	    "capabilities":{"json_mode":"yes"}}}]}`
+	models, err := parseCatalogue([]byte(body), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := models[0]
+	if m.Context != 8192 {
+		t.Errorf("context = %d, want the top-level 8192", m.Context)
+	}
+	if m.Kind != "chat" {
+		t.Errorf("kind = %q, want the top-level chat", m.Kind)
+	}
+	if len(m.Capabilities) != 1 || m.Capabilities[0] != "vision" {
+		t.Errorf("capabilities = %v, want the top-level [vision]", m.Capabilities)
+	}
+}
