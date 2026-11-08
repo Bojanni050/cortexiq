@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/Bojanni050/cortexiq/internal/models"
-	"github.com/Bojanni050/cortexiq/internal/reasoner"
 )
 
 func TestContiguousCheckpoint(t *testing.T) {
@@ -61,43 +60,38 @@ func TestNonNilIDs(t *testing.T) {
 
 // Regression: a pattern that carries fact IDs but no relationship IDs used to
 // reach the database as a nil slice, which pgx sends as NULL, so the NOT NULL
-// source_rel_ids column rejected the insert and the pattern was lost.
-func TestIntegrationPatternWithoutRelsInsertsEmptyArray(t *testing.T) {
+// source_rel_ids column rejected the insert and the pattern was lost. The stage
+// no longer produces such a pattern — it requires at least one relationship — so
+// the case is guarded where the row is written.
+func TestIntegrationStorePatternInsertsEmptyArrayForMissingRels(t *testing.T) {
 	e := newEnv(t, nil)
 	source := e.insertFact(t, "cortexiq consolidates every 5 minutes", nil)
-	e.insertFact(t, "cortexiq stores facts in postgres", nil)
-	e.insertFact(t, "cortexiq uses pgvector for recall", nil)
 
-	e.r.patterns = []*reasoner.StructuredPattern{{
-		Content:        "CortexIQ runs consolidation on Postgres with pgvector recall.",
-		CoherenceScore: 0.7,
-		SourceFactIDs:  []int64{source},
-	}}
-
-	cp := &models.ConsolidationProgress{NamespaceID: e.nsID}
-	count, _, errs := e.b.consolidateToPatterns(e.ctx, e.nsID, cp)
-	if len(errs) != 0 {
-		t.Fatalf("pattern stage errors: %v", errs)
+	inserted, err := e.b.storePattern(e.ctx, e.nsID,
+		"CortexIQ runs consolidation on Postgres.", 0.7, []int64{source}, nil, 0.7)
+	if err != nil {
+		t.Fatalf("storePattern: %v", err)
 	}
-	if count != 1 {
-		t.Fatalf("want 1 pattern, got %d", count)
+	if !inserted {
+		t.Error("the first write of a pattern must report inserted")
 	}
 
-	var factIDs []int64
-	var relsAreEmpty bool
-	err := e.b.pool.QueryRow(e.ctx,
-		`SELECT source_fact_ids, source_rel_ids = '{}'::bigint[]
+	var factIDs, relIDs []int64
+	if err := e.b.pool.QueryRow(e.ctx,
+		`SELECT source_fact_ids, source_rel_ids
 		 FROM patterns WHERE namespace_id = $1 AND deleted_at IS NULL`,
 		e.nsID,
-	).Scan(&factIDs, &relsAreEmpty)
-	if err != nil {
+	).Scan(&factIDs, &relIDs); err != nil {
 		t.Fatalf("read pattern: %v", err)
 	}
 	if len(factIDs) != 1 || factIDs[0] != source {
 		t.Errorf("source_fact_ids = %v, want [%d]", factIDs, source)
 	}
-	if !relsAreEmpty {
+	if relIDs == nil {
 		t.Error("source_rel_ids must be an empty array, not NULL")
+	}
+	if len(relIDs) != 0 {
+		t.Errorf("source_rel_ids = %v, want empty", relIDs)
 	}
 }
 

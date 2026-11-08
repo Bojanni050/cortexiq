@@ -48,6 +48,15 @@ func (b *Brain) DeletePattern(ctx context.Context, id int64) error {
 // It reports whether the row was new, so a run can say "3 new, 4 reinforced"
 // instead of pretending every derivation was an insight.
 func (b *Brain) storePattern(ctx context.Context, nsID int64, content string, confidence float32, factIDs, relIDs []int64, coherence float32) (inserted bool, err error) {
+	// A nil slice reaches the driver as NULL and the id columns are NOT NULL: the
+	// row would be rejected. This is the regression the old stage test guarded,
+	// now guarded where the row is actually written.
+	if factIDs == nil {
+		factIDs = []int64{}
+	}
+	if relIDs == nil {
+		relIDs = []int64{}
+	}
 	var created bool
 	err = b.pool.QueryRow(ctx,
 		`INSERT INTO patterns (namespace_id, content, confidence, source_fact_ids, source_rel_ids, coherence_score)
