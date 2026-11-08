@@ -1105,8 +1105,12 @@ func (b *Brain) consolidateToPatterns(ctx context.Context, nsID int64, cp *model
 		errs = append(errs, fmt.Sprintf("rel rows for patterns: %v", err))
 	}
 
-	if len(rels) == 0 && len(facts) < 3 {
-		// Not enough data for pattern extraction
+	// A pattern is a regularity across facts AND relationships. With fewer than
+	// two facts there is nothing to generalise, and without a relationship the
+	// model can only restate a single fact as if it were an insight — which is
+	// what filled one namespace with 1260 copies of 200 sentences. Both are
+	// needed before asking, so the call is not spent and the checkpoint moves.
+	if len(rels) == 0 || len(facts) < 2 {
 		b.updatePatternCheckpoint(ctx, cp, facts, rels, len(errs) == 0)
 		return
 	}
@@ -1166,12 +1170,14 @@ func (b *Brain) consolidateToPatterns(ctx context.Context, nsID int64, cp *model
 		sourceFactIDs = nonNilIDs(sourceFactIDs)
 		sourceRelIDs = nonNilIDs(sourceRelIDs)
 
-		_, err := b.pool.Exec(ctx,
-			`INSERT INTO patterns (namespace_id, content, confidence, source_fact_ids, source_rel_ids, coherence_score)
-			 VALUES ($1, $2, $3, $4, $5, $6)`,
-			nsID, p.Content, confidence, sourceFactIDs, sourceRelIDs, p.CoherenceScore,
-		)
-		if err != nil {
+		// The same rule the stage gate uses, now per pattern: a statement that
+		// rests on one fact, or on facts without a relationship between them, is
+		// a paraphrase of what we already store.
+		if len(sourceFactIDs) < 2 || len(sourceRelIDs) < 1 {
+			continue
+		}
+
+		if _, err := b.storePattern(ctx, nsID, p.Content, confidence, sourceFactIDs, sourceRelIDs, p.CoherenceScore); err != nil {
 			errs = append(errs, fmt.Sprintf("insert pattern: %v", err))
 			continue
 		}
