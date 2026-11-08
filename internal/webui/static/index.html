@@ -619,6 +619,7 @@ const icons = {
   reflect: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/>',
   facts: '<path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
   goals: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+  goallog: '<path d="M9 6h12M9 12h12M9 18h12"/><path d="m3 6 1.6 1.6L7.5 4.7"/><path d="m3 12 1.6 1.6L7.5 10.7"/><path d="m3 18 1.6 1.6L7.5 16.7"/>',
   mental: '<path d="M12 3a8 8 0 0 0-8 8c0 2.5 1.2 4.7 3 6.2V21h10v-3.8c1.8-1.5 3-3.7 3-6.2a8 8 0 0 0-8-8z"/><path d="M9 12h.01M15 12h.01M9.5 15.5c.7.5 1.6.8 2.5.8s1.8-.3 2.5-.8"/>',
   hypotheses: '<path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2V17h6v-.3c0-.8.4-1.5 1-2A7 7 0 0 0 12 2z"/>',
   contradictions: '<path d="m13 2-9 12h7l-1 8 9-12h-7z"/>',
@@ -643,6 +644,7 @@ const tabs = [
   ['facts', 'Facts', 'Stored facts with confidence'],
   ['graph', 'Graph', 'How entities relate: the knowledge graph (drag, zoom, click for details)'],
   ['goals', 'Goals', 'What the agent is working towards'],
+  ['goallog', 'Goal log', 'Every goal event: who moved it, on what evidence, and what the consolidator inferred'],
   ['mental', 'Mental Models', 'Curated summaries searched first in reflect'],
   ['hypotheses', 'Hypotheses', 'Unverified beliefs waiting for evidence'],
   ['hypolog', 'Hypothesis log', 'Every hypothesis ever, including rejected and deleted ones, with who moved it and why'],
@@ -662,7 +664,7 @@ const tabs = [
 // healthy") keeps every tab reachable without a second click.
 const NAV_GROUPS = [
   ['Memory', ['overview', 'episodes', 'facts', 'recall']],
-  ['Knowledge', ['graph', 'mental', 'goals', 'hypotheses', 'hypolog', 'contradictions', 'failures', 'links']],
+  ['Knowledge', ['graph', 'mental', 'goals', 'goallog', 'hypotheses', 'hypolog', 'contradictions', 'failures', 'links']],
   ['System', ['status', 'namespaces', 'runs', 'lifecycle', 'settings', 'metrics', 'stats']],
 ];
 const nav = document.getElementById('nav');
@@ -1692,6 +1694,13 @@ async function renderFacts() {
   });
 }
 
+// One vocabulary for the two goal views: the badge on a goal's latest event and
+// the row in the log must agree, or the same event reads as two different things.
+const GOAL_EVENT_TONE = {
+  created: 'pending', progress: 'testing', suggested_complete: 'proposed',
+  contradicted: 'rejected', completed: 'confirmed', abandoned: 'abandoned',
+};
+
 async function renderGoals() {
   // Subgoal and failure counts come from the page on screen (plus the failure
   // set fetched in enrich), so they describe what is visible.
@@ -1742,8 +1751,21 @@ async function renderGoals() {
         ['Namespace', `<span class="mono">${esc(nsSlug(g.namespace_id))}</span>`],
         ['Created', ts(g.created_at)],
       ]), '#' + g.id)}
-      ${g.notes ? ctxSection('Notes', `<div class="ctx-quote">${esc(g.notes)}</div>`) : ''}`,
+      ${g.notes ? ctxSection('Notes', `<div class="ctx-quote">${esc(g.notes)}</div>`) : ''}
+      ${g.latest_event ? goalEventSection(g.latest_event) : ''}`,
   });
+}
+// goalEventSection is the last thing the log knows about a goal, shown next to it
+// so "why does it say suggested_complete" needs no tab switch.
+function goalEventSection(ev) {
+  const evidence = ev.fact_id ? `on fact <span class="mono">#${ev.fact_id}</span>` :
+    ev.episode_id ? `evidence <span class="mono">episode #${ev.episode_id}</span>` : '';
+  return ctxSection('Latest event',
+    `<span class="badge ${GOAL_EVENT_TONE[ev.event] || 'pending'}">${esc(ev.event)}</span>
+     <span class="muted">${ts(ev.created_at)} · ${esc(ev.actor)}</span>
+     ${ev.note ? `<div class="ctx-quote">${esc(ev.note)}</div>` : ''}
+     ${ev.confidence != null ? `<div class="muted">confidence <span class="mono">${Number(ev.confidence).toFixed(2)}</span></div>` : ''}
+     ${evidence ? `<div class="muted">${evidence}</div>` : ''}`);
 }
 async function goalDialog() {
   const d = document.getElementById('dlg');
@@ -2678,6 +2700,49 @@ async function renderHypothesisLog() {
     '</div>';
 }
 
+// The goal log answers the question the goal itself cannot: how it got here. It
+// is the read side of the same events the consolidator writes and the completion
+// that remember can trigger, so a suggestion can never be mistaken for a fact.
+async function renderGoalLog() {
+  const events = await apiList('/goal-events' + nsQS('&limit=200'));
+  const num = v => Number(v).toFixed(2);
+  const move = ev => (ev.status_from || ev.status_to)
+    ? `<span class="mono">${esc((ev.status_from || '—') + ' → ' + (ev.status_to || '—'))}</span>`
+    : '<span class="muted">—</span>';
+  const why = ev => {
+    const bits = [];
+    if (ev.fact_id) bits.push('fact #' + ev.fact_id);
+    if (ev.episode_id) bits.push('episode #' + ev.episode_id);
+    const head = ev.note ? `<span class="wrap">${esc(ev.note)}</span>` : '';
+    const tail = bits.length ? `<div class="muted">${esc(bits.join(' · '))}</div>` : '';
+    return head + tail || '<span class="muted">—</span>';
+  };
+  document.getElementById('content').innerHTML =
+    `<div class="card"><h3>Goal log</h3>
+      <p class="muted" style="margin:0 0 12px">
+        Newest first, up to 200. Creating a goal writes the first entry; after that the log records
+        what the consolidator inferred (<b>progress</b>, <b>suggested_complete</b>,
+        <b>contradicted</b>) and who actually moved the goal (<b>completed</b>, <b>abandoned</b>).
+        The consolidator only suggests — it never completes a goal itself. An inference points at the
+        fact it rested on; a completion points at the episode that closed it. The actor is the token
+        that made the change, <b>consolidator</b> for the background sweep, or <b>system</b>.
+      </p>` +
+      (events.length ? table(['When', 'Event', 'Goal', 'State', 'Confidence', 'Note', 'By'],
+        events.map(ev => `<tr>
+          <td class="muted">${ts(ev.created_at)}</td>
+          <td><span class="badge ${GOAL_EVENT_TONE[ev.event] || 'pending'}">${esc(ev.event)}</span></td>
+          <td><span class="mono">#${ev.goal_id}</span> <span class="wrap">${esc(ev.goal_content)}</span></td>
+          <td>${move(ev)}</td>
+          <td>${ev.confidence == null ? '<span class="muted">—</span>' : `<span class="mono">${num(ev.confidence)}</span>`}</td>
+          <td>${why(ev)}</td>
+          <td class="mono">${esc(ev.actor)}</td>
+        </tr>`))
+        : `<p class="muted">No goal events yet. That means there are no goals in this namespace:
+           creating one writes the first entry, and the consolidator only reports on goals that
+           already exist.</p>`) +
+    '</div>';
+}
+
 async function renderRuns() {
   const dur = ms => ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : (ms || 0) + 'ms';
   const n = v => v ? String(v) : '<span class="muted">—</span>';
@@ -3208,7 +3273,7 @@ async function saveSchedule() {
 }
 
 const renderers = { overview: renderOverview, graph: renderGraph, episodes: renderEpisodes, recall: renderRecall, reflect: renderReflect, facts: renderFacts,
-  goals: renderGoals, mental: renderMentalModels, hypotheses: renderHypotheses, hypolog: renderHypothesisLog, contradictions: renderContradictions,
+  goals: renderGoals, goallog: renderGoalLog, mental: renderMentalModels, hypotheses: renderHypotheses, hypolog: renderHypothesisLog, contradictions: renderContradictions,
   failures: renderFailures, links: renderLinks, namespaces: renderNamespaces, runs: renderRuns, lifecycle: renderLifecycle,
   status: renderStatus, settings: renderSettings, metrics: renderMetrics, stats: renderStats };
 
