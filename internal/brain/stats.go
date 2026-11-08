@@ -33,6 +33,14 @@ var statsCountTables = []string{
 	"embedding_cache",
 }
 
+// statsCountFilter narrows the count of a table whose rows go stale without
+// being deleted. A context whose expires_at has passed is no longer the
+// namespace's working focus, but nothing removes the row, so counting bare rows
+// would report a focus that no longer exists.
+var statsCountFilter = map[string]string{
+	"contexts": "expires_at > now()",
+}
+
 // entryTables hold actual stored memories; their rows make up EntryCount.
 var entryTables = map[string]bool{
 	"facts": true, "episodes": true, "patterns": true, "relationships": true,
@@ -110,7 +118,11 @@ func (b *Brain) tableCounts(ctx context.Context) (map[string]int64, error) {
 		if i > 0 {
 			q.WriteString(" UNION ALL ")
 		}
-		fmt.Fprintf(&q, "SELECT '%s' AS name, count(*) AS n FROM %s", name, name)
+		where := ""
+		if filter, ok := statsCountFilter[name]; ok {
+			where = " WHERE " + filter
+		}
+		fmt.Fprintf(&q, "SELECT '%s' AS name, count(*) AS n FROM %s%s", name, name, where)
 	}
 
 	rows, err := b.pool.Query(ctx, q.String())
