@@ -234,8 +234,11 @@ func arrayAfterKey(s, key string) (string, bool) {
 	return balancedArray(s, open), true
 }
 
-// firstArrayInObject returns the first array that is a direct member of the
-// object s, or false when it holds none.
+// firstArrayInObject returns the first array of objects that is a direct member
+// of the object s, or false when it holds none. An array of scalars is skipped
+// on purpose: a model that answers with an object also tends to list the ids it
+// used ([2605, 2606, 2607]), and taking that array as the answer produced
+// "cannot unmarshal number into Go value of type reasoner.jsonPattern".
 func firstArrayInObject(s string) (string, bool) {
 	depth, inString, escaped := 0, false, false
 	for i := 0; i < len(s); i++ {
@@ -259,12 +262,28 @@ func firstArrayInObject(s string) (string, bool) {
 		case '}':
 			depth--
 		case '[':
-			if depth == 1 {
+			if depth == 1 && arrayHoldsObjects(s, i) {
 				return balancedArray(s, i), true
 			}
 		}
 	}
 	return "", false
+}
+
+// arrayHoldsObjects reports whether the array opened at open is empty or starts
+// with an object.
+func arrayHoldsObjects(s string, open int) bool {
+	for i := open + 1; i < len(s); i++ {
+		switch s[i] {
+		case ' ', '\t', '\n', '\r':
+			continue
+		case '{', ']':
+			return true
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // balancedArray returns s[open:] up to and including the bracket that closes the

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"unicode"
@@ -586,13 +587,14 @@ func (o *OpenAI) ReasonPatterns(ctx context.Context, facts []models.Fact, relati
 
 	var result []*StructuredPattern
 	var valErr error
+	var raw string
 
 	for attempt := 0; attempt < 2; attempt++ {
 		output, err := o.chat(ctx, "patterns", msgs)
 		if err != nil {
 			return nil, err
 		}
-		raw := unwrapTopLevelArray(extractJSON(output), "patterns")
+		raw = unwrapTopLevelArray(extractJSON(output), "patterns")
 
 		var jpats []jsonPattern
 		if err := decodeModelJSON(raw, &jpats); err != nil {
@@ -648,6 +650,11 @@ func (o *OpenAI) ReasonPatterns(ctx context.Context, facts []models.Fact, relati
 	}
 
 	if valErr != nil {
+		// Without the shape of the answer a parse failure is undiagnosable from
+		// the log: the error names a byte offset, not what the model produced.
+		// Two production rounds were spent guessing it. Keep it bounded so a
+		// single bad answer cannot flood the log with memory contents.
+		log.Printf("reason patterns: unreadable answer, %d bytes: %.240s", len(raw), raw)
 		return nil, valErr
 	}
 

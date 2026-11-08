@@ -180,6 +180,9 @@ func TestUnwrapTopLevelArrayFindsTheWrappedArray(t *testing.T) {
 		// A cut-off answer still yields its array tail, so the element salvage
 		// in decodeModelJSON can keep the elements that did arrive.
 		{"truncated wrapper yields the tail", `{"patterns": [{"pattern": "a"}`, `[{"pattern": "a"}`},
+		// Production: the answer carried an ids array next to the empty result.
+		{"an ids array is not the answer", `{"source_facts": [2605, 2606], "patterns": []}`, `[]`},
+		{"only an ids array means no answer", `{"source_facts": [2605]}`, `{"source_facts": [2605]}`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
