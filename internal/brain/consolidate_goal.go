@@ -79,16 +79,18 @@ func (b *Brain) consolidateGoalProgress(ctx context.Context, nsID int64, cp *mod
 	// The newest entry per goal decides whether this run has anything new to say.
 	// The same conclusion drawn from the same facts is not a new observation, and
 	// writing it again would add one row per run to a log nobody could read.
-	if err := b.attachLatestEvents(ctx, goals); err != nil {
+	goalIDs := make([]int64, 0, len(goals))
+	for _, g := range goals {
+		goalIDs = append(goalIDs, g.ID)
+	}
+	previous, err := b.latestGoalEvents(ctx, goalIDs)
+	if err != nil {
 		errs = append(errs, fmt.Sprintf("latest goal events: %v", err))
+		previous = map[int64]models.GoalEvent{}
 	}
 	known := make(map[int64]bool, len(goals))
-	previous := make(map[int64]models.GoalEvent, len(goals))
 	for i := range goals {
 		known[goals[i].ID] = true
-		if goals[i].LatestEvent != nil {
-			previous[goals[i].ID] = *goals[i].LatestEvent
-		}
 	}
 
 	for _, a := range assessments {

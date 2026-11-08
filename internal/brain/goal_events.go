@@ -121,16 +121,18 @@ func (b *Brain) CountGoalEvents(ctx context.Context, namespaceSlugs []string, go
 	return b.countWhere(ctx, "goal_events", where, args...)
 }
 
-// attachLatestEvents fills Goal.LatestEvent for a batch with one query, so a goal
-// list costs one extra round trip instead of one per goal. A goal without
-// history keeps a nil event.
-func (b *Brain) attachLatestEvents(ctx context.Context, goals []models.Goal) error {
-	if len(goals) == 0 {
-		return nil
-	}
-	ids := make([]int64, 0, len(goals))
-	for _, g := range goals {
-		ids = append(ids, g.ID)
+// latestGoalEvents returns the newest entry per goal with one query, so a list
+// costs one extra round trip instead of one per goal. A goal without history is
+// simply absent from the map.
+//
+// It returns the map instead of filling Goal values in place because a caller
+// holding a single goal would pass a one-element slice literal, and writing
+// through that slice header reaches a copy — the visible bug was a goal that
+// carried no event right after its own completion.
+func (b *Brain) latestGoalEvents(ctx context.Context, ids []int64) (map[int64]models.GoalEvent, error) {
+	latest := make(map[int64]models.GoalEvent, len(ids))
+	if len(ids) == 0 {
+		return latest, nil
 	}
 
 	rows, err := b.pool.Query(ctx,
@@ -143,29 +145,48 @@ func (b *Brain) attachLatestEvents(ctx context.Context, goals []models.Goal) err
 		ids,
 	)
 	if err != nil {
-		return fmt.Errorf("fetch latest goal events: %w", err)
+		return nil, fmt.Errorf("fetch latest goal events: %w", err)
 	}
 	defer rows.Close()
 
-	latest := make(map[int64]models.GoalEvent, len(goals))
 	for rows.Next() {
 		var e models.GoalEvent
 		if err := rows.Scan(&e.GoalID, &e.ID, &e.NamespaceID, &e.Event, &e.Actor,
 			&e.StatusFrom, &e.StatusTo, &e.Note, &e.Confidence,
 			&e.FactID, &e.EpisodeID, &e.Detail, &e.CreatedAt); err != nil {
-			return fmt.Errorf("scan latest goal event: %w", err)
+			return nil, fmt.Errorf("scan latest goal event: %w", err)
 		}
 		latest[e.GoalID] = e
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("latest goal event rows: %w", err)
+		return nil, fmt.Errorf("latest goal event rows: %w", err)
 	}
+	return latest, nil
+}
 
+// attachLatestEvents fills Goal.LatestEvent for a batch of goals the caller owns.
+func (b *Brain) attachLatestEvents(ctx context.Context, goals []models.Goal) error {
+	if len(goals) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(goals))
+	for _, g := range goals {
+		ids = append(ids, g.ID)
+	}
+	latest, err := b.latestGoalEvents(ctx, ids)
+	if err != nil {
+		return err
+	}
 	for i := range goals {
-		if e, ok := latest[goals[i].ID]; ok {
-			ev := e
-			goals[i].LatestEvent = &ev
-		}
+		setLatestEvent(&goals[i], latest)
 	}
 	return nil
+}
+
+// setLatestEvent copies the newest entry onto one goal, if there is one.
+func setLatestEvent(g *models.Goal, latest map[int64]models.GoalEvent) {
+	if e, ok := latest[g.ID]; ok {
+		ev := e
+		g.LatestEvent = &ev
+	}
 }

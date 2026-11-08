@@ -156,9 +156,11 @@ func (b *Brain) GetGoal(ctx context.Context, id int64) (*models.Goal, error) {
 		}
 		return nil, fmt.Errorf("get goal: %w", err)
 	}
-	if err := b.attachLatestEvents(ctx, []models.Goal{g}); err != nil {
+	latest, err := b.latestGoalEvents(ctx, []int64{g.ID})
+	if err != nil {
 		return nil, err
 	}
+	setLatestEvent(&g, latest)
 	return &g, nil
 }
 
@@ -261,8 +263,10 @@ func (b *Brain) CompleteGoalWithEvidence(ctx context.Context, id int64, notes st
 		}
 	}
 
-	if err := b.attachLatestEvents(ctx, []models.Goal{g}); err != nil {
-		return &g, nil
+	// The event list is decoration on a completed goal; a failure to read it must
+	// not report the completion itself as failed.
+	if latest, err := b.latestGoalEvents(ctx, []int64{g.ID}); err == nil {
+		setLatestEvent(&g, latest)
 	}
 	return &g, nil
 }
@@ -348,8 +352,8 @@ func (b *Brain) AbandonGoal(ctx context.Context, id int64, notes string) (*model
 	}); err != nil {
 		return &g, err
 	}
-	if err := b.attachLatestEvents(ctx, []models.Goal{g}); err != nil {
-		return &g, nil
+	if latest, err := b.latestGoalEvents(ctx, []int64{g.ID}); err == nil {
+		setLatestEvent(&g, latest)
 	}
 	return &g, nil
 }
