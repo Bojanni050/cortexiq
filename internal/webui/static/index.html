@@ -628,6 +628,7 @@ const icons = {
   links: '<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>',
   namespaces: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   runs: '<path d="M3 12a9 9 0 1 0 2.6-6.4"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/>',
+  jobs: '<path d="M3 5h11M3 10h11M3 15h7"/><path d="m16 13 4 4-4 4"/><path d="M20 17h-6"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   metrics: '<path d="M4 19V5M4 19h16"/><path d="m7 15 3-4 3 2 5-7"/>',
   lifecycle: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/>',
@@ -653,6 +654,7 @@ const tabs = [
   ['links', 'Causal Links', 'Cause and effect between facts'],
   ['namespaces', 'Namespaces', 'How memory is organised'],
   ['runs', 'Runs', 'Recent consolidation runs and what changed'],
+  ['jobs', 'Write queue', 'Deferred writes: what is waiting, what landed, and what was refused'],
   ['lifecycle', 'Lifecycle', 'What was retracted and what was purged, newest first'],
   ['status', 'Status', 'Is this server healthy: build, uptime, database and consolidator'],
   ['settings', 'Settings', 'When new memories are consolidated into facts'],
@@ -665,7 +667,7 @@ const tabs = [
 const NAV_GROUPS = [
   ['Memory', ['overview', 'episodes', 'facts', 'recall']],
   ['Knowledge', ['graph', 'mental', 'goals', 'goallog', 'hypotheses', 'hypolog', 'contradictions', 'failures', 'links']],
-  ['System', ['status', 'namespaces', 'runs', 'lifecycle', 'settings', 'metrics', 'stats']],
+  ['System', ['status', 'namespaces', 'runs', 'jobs', 'lifecycle', 'settings', 'metrics', 'stats']],
 ];
 const nav = document.getElementById('nav');
 NAV_GROUPS.forEach(([group, ids]) => {
@@ -1132,6 +1134,7 @@ const CTX_TIPS = {
   recall: ['Nothing selected', 'Select a result to inspect the memory behind it.'],
   graph: ['Nothing selected', 'Click a node or an edge in the graph to inspect it.'],
   runs: ['No row detail', 'One row per consolidation run; the counts are in the middle column.'],
+  jobs: ['Pick a job', 'What the write asked for, how many attempts it took, and what it became.'],
   lifecycle: ['No row detail', 'An audit log: every row already shows what happened, to what, and why.'],
   settings: ['No row detail', 'Settings apply to the whole installation; the controls live in the middle column.'],
   metrics: ['No row detail', 'A summary view; the numbers are in the middle column.'],
@@ -2744,6 +2747,60 @@ async function renderGoalLog() {
     '</div>';
 }
 
+// A deferred write has five endings, and "failed" must not look like "refused":
+// one is a bug or a broken dependency, the other is the gates doing their job.
+const JOB_TONE = { queued: 'proposed', running: 'testing', done: 'confirmed', skipped: 'pending', failed: 'rejected' };
+
+async function renderJobs() {
+  const what = j => j.error ? `<span class="wrap">${esc(j.error)}</span>` : '<span class="muted">—</span>';
+  await listTab('jobs', {
+    path: o => '/jobs' + qs(o),
+    headers: ['When', 'State', 'Namespace', 'By', 'What happened'],
+    fields: ['state', 'namespace', 'actor', 'error'],
+    above: `<p class="muted" style="margin:0 0 12px">
+      Deferred writes, newest first. <b>queued</b> is a promise the server has not kept yet — it survives a
+      restart. <b>skipped</b> means the gates refused it (noise, a social closer), which is an answer, not a
+      fault. <b>failed</b> carries the reason; a transient one is retried up to three times before it lands
+      there. A queue that keeps growing means no worker is running: check the server log for "write worker".
+    </p>`,
+    row: (j, L) => `<tr class="rowlink" onclick="pickRow('jobs', ${j.id}, this)">
+        <td class="muted">${ts(j.created_at)}</td>
+        <td><span class="badge ${JOB_TONE[j.state] || 'pending'}">${esc(j.state)}</span>${j.attempts > 1 ? `<div class="muted">${j.attempts} attempts</div>` : ''}</td>
+        <td class="mono">${esc(j.namespace)}</td>
+        <td class="mono">${esc(j.actor)}</td>
+        <td>${what(j)}</td>
+      </tr>`,
+    railTitle: j => 'Job #' + j.id,
+    rail: j => `
+      ${ctxSection('Outcome', `<span class="badge ${JOB_TONE[j.state] || 'pending'}">${esc(j.state)}</span>
+        ${j.error ? `<div class="ctx-quote">${esc(j.error)}</div>` : ''}`)}
+      ${ctxSection('Metadata', metaGrid([
+        ['Namespace', `<span class="mono">${esc(j.namespace)}</span>`],
+        ['By', `<span class="mono">${esc(j.actor)}</span>`],
+        ['Attempts', String(j.attempts)],
+        ['Episode', j.episode_id ? `<span class="mono">#${j.episode_id}</span>` : '<span class="muted">not stored</span>'],
+        ['Created', ts(j.created_at)],
+        ['Started', j.started_at ? ts(j.started_at) : '<span class="muted">—</span>'],
+        ['Finished', j.finished_at ? ts(j.finished_at) : '<span class="muted">—</span>'],
+      ]), '#' + j.id)}
+      ${ctxSection('Payload', `<button onclick="jobPayload(${j.id})">Load the queued write</button>
+        <div id="job-payload-${j.id}" class="muted"></div>`)}`,
+  });
+}
+// The list omits the payload on purpose; one job is cheap to fetch when a reader
+// actually wants to see what a stuck write was going to say.
+async function jobPayload(id) {
+  const el = document.getElementById('job-payload-' + id);
+  if (!el) return;
+  el.textContent = 'loading…';
+  try {
+    const j = await api('/jobs/' + id);
+    el.innerHTML = `<pre class="wrap">${esc(JSON.stringify(j.payload, null, 2))}</pre>`;
+  } catch (e) {
+    el.textContent = e.message;
+  }
+}
+
 async function renderRuns() {
   const dur = ms => ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : (ms || 0) + 'ms';
   const n = v => v ? String(v) : '<span class="muted">—</span>';
@@ -3275,7 +3332,7 @@ async function saveSchedule() {
 
 const renderers = { overview: renderOverview, graph: renderGraph, episodes: renderEpisodes, recall: renderRecall, reflect: renderReflect, facts: renderFacts,
   goals: renderGoals, goallog: renderGoalLog, mental: renderMentalModels, hypotheses: renderHypotheses, hypolog: renderHypothesisLog, contradictions: renderContradictions,
-  failures: renderFailures, links: renderLinks, namespaces: renderNamespaces, runs: renderRuns, lifecycle: renderLifecycle,
+  failures: renderFailures, links: renderLinks, namespaces: renderNamespaces, runs: renderRuns, jobs: renderJobs, lifecycle: renderLifecycle,
   status: renderStatus, settings: renderSettings, metrics: renderMetrics, stats: renderStats };
 
 async function refresh(opts) {
