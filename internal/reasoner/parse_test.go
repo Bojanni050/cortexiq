@@ -131,3 +131,33 @@ func TestRepairTruncatedArrayLeavesCompleteInputAlone(t *testing.T) {
 		}
 	}
 }
+
+// The model closed its array, added a fence and then kept thinking out loud. The
+// whole reply used to be handed to encoding/json, which reported the backtick as
+// "invalid character '`' after top-level value" and lost the causal links.
+func TestExtractJSONStopsAtTheEndOfTheValue(t *testing.T) {
+	output := "```json\n[{\"id\": 3104, \"confidence\": 0.9}]\n```\n\nWait, I noticed in my internal check that something is off."
+	if got := extractJSON(output); got != `[{"id": 3104, "confidence": 0.9}]` {
+		t.Fatalf("extractJSON = %q", got)
+	}
+
+	var got []struct {
+		ID         int64   `json:"id"`
+		Confidence float64 `json:"confidence"`
+	}
+	if err := decodeModelJSON(extractJSON(output), &got); err != nil {
+		t.Fatalf("decodeModelJSON: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != 3104 {
+		t.Errorf("parsed %+v", got)
+	}
+}
+
+// A complete answer without commentary must come through untouched.
+func TestFirstJSONValueLeavesCleanInputAlone(t *testing.T) {
+	for _, in := range []string{`[{"a": 1}]`, `{"a": [1, 2]}`} {
+		if got := firstJSONValue(in); got != in {
+			t.Errorf("firstJSONValue(%q) = %q", in, got)
+		}
+	}
+}

@@ -183,3 +183,48 @@ func repairTruncatedArray(s string) string {
 	}
 	return trimmed[:lastComplete] + "]"
 }
+
+// firstJSONValue returns the first complete JSON object or array in s, and s
+// itself when it finds none. A model that closes its answer and then keeps
+// talking used to fail with "invalid character after top-level value": the
+// extraction returned the whole reply, closing fence and commentary included.
+func firstJSONValue(s string) string {
+	start := -1
+	for i := 0; i < len(s); i++ {
+		if s[i] == '[' || s[i] == '{' {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return s
+	}
+
+	depth, inString, escaped := 0, false, false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == 92: // backslash
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '[', '{':
+			depth++
+		case ']', '}':
+			depth--
+			if depth == 0 {
+				return s[start : i+1]
+			}
+		}
+	}
+	return s
+}

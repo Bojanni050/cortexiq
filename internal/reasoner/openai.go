@@ -1528,7 +1528,9 @@ func extractJSON(s string) string {
 	trimmed = strings.TrimSpace(trimmed)
 
 	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
-		return repairJSONStrings(trimmed)
+		// Take the first complete value: a model that closes its answer and then
+		// keeps talking must not turn into a parse error about the prose.
+		return repairJSONStrings(firstJSONValue(trimmed))
 	}
 
 	return repairJSONStrings(s)
