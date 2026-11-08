@@ -290,9 +290,11 @@ func (b *Brain) SaveConsolidationProgress(ctx context.Context, cp models.Consoli
 			last_goal_progress_fact_id = $7, last_failure_id = $8, last_failure_episode_id = $9, last_hypothesis_fact_id = $10, last_hypothesis_proposal_fact_id = $11,
 			last_causal_fact_id = $12, last_decay_run = $13, last_run = $14, updated_at = $15,
 			stage_changed_at = consolidation_progress.stage_changed_at || jsonb_strip_nulls(jsonb_build_object(
-			  'episodes',      CASE WHEN consolidation_progress.last_episode_id      IS DISTINCT FROM $2  THEN to_jsonb($15::timestamptz) END,
-			  'facts',         CASE WHEN consolidation_progress.last_fact_id         IS DISTINCT FROM $3  THEN to_jsonb($15::timestamptz) END,
-			  'relationships', CASE WHEN consolidation_progress.last_relationship_id IS DISTINCT FROM $4  THEN to_jsonb($15::timestamptz) END,
+			  'episodes',      CASE WHEN consolidation_progress.last_episode_id IS DISTINCT FROM $2 THEN to_jsonb($15::timestamptz) END,
+			  -- The relationships stage consumes new facts and advances last_fact_id;
+			  -- last_relationship_id is a column nothing has written since the stage
+			  -- was introduced, so keying on it would report every namespace as stuck.
+			  'relationships', CASE WHEN consolidation_progress.last_fact_id    IS DISTINCT FROM $3 THEN to_jsonb($15::timestamptz) END,
 			  'patterns',      CASE WHEN consolidation_progress.last_pattern_fact_id IS DISTINCT FROM $5
 			                         OR consolidation_progress.last_pattern_rel_id  IS DISTINCT FROM $6  THEN to_jsonb($15::timestamptz) END,
 			  'goals',         CASE WHEN consolidation_progress.last_goal_progress_fact_id IS DISTINCT FROM $7 THEN to_jsonb($15::timestamptz) END,

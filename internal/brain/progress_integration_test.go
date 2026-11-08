@@ -38,10 +38,10 @@ func TestIntegrationSaveProgressMarksOnlyChangedStages(t *testing.T) {
 	}
 
 	first := stamps()
-	if _, ok := first["facts"]; !ok {
+	if _, ok := first["relationships"]; !ok {
 		t.Fatalf("a moved checkpoint was not stamped: %v", first)
 	}
-	if _, ok := first["relationships"]; ok {
+	if _, ok := first["patterns"]; ok {
 		t.Errorf("an unchanged stage was stamped: %v", first)
 	}
 
@@ -51,20 +51,20 @@ func TestIntegrationSaveProgressMarksOnlyChangedStages(t *testing.T) {
 	if err := e.b.SaveConsolidationProgress(e.ctx, cp); err != nil {
 		t.Fatalf("second SaveConsolidationProgress: %v", err)
 	}
-	if second := stamps(); second["facts"] != first["facts"] {
-		t.Errorf("an unchanged checkpoint was restamped: %q -> %q", first["facts"], second["facts"])
+	if second := stamps(); second["relationships"] != first["relationships"] {
+		t.Errorf("an unchanged checkpoint was restamped: %q -> %q", first["relationships"], second["relationships"])
 	}
 
-	cp.LastRelationshipID = 7
+	cp.LastPatternFactID = 9
 	if err := e.b.SaveConsolidationProgress(e.ctx, cp); err != nil {
 		t.Fatalf("third SaveConsolidationProgress: %v", err)
 	}
 	third := stamps()
-	if _, ok := third["relationships"]; !ok {
+	if _, ok := third["patterns"]; !ok {
 		t.Errorf("a newly moved stage was not stamped: %v", third)
 	}
-	if third["facts"] != first["facts"] {
-		t.Errorf("the untouched stage moved: %q -> %q", first["facts"], third["facts"])
+	if third["relationships"] != first["relationships"] {
+		t.Errorf("the untouched stage moved: %q -> %q", first["relationships"], third["relationships"])
 	}
 }
 
@@ -98,7 +98,7 @@ func TestIntegrationStageStallsNeedWaitingWork(t *testing.T) {
 	if _, err := e.b.pool.Exec(e.ctx,
 		`UPDATE consolidation_progress
 		    SET stage_changed_at = jsonb_build_object('relationships', to_jsonb(now() - interval '6 hours')),
-		        last_relationship_id = $2
+		        last_fact_id = $2
 		  WHERE namespace_id = $1`, e.nsID, fact-1,
 	); err != nil {
 		t.Fatalf("backdate checkpoint: %v", err)
