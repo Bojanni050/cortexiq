@@ -21,23 +21,36 @@ type ReflectPattern struct {
 	FromEntity bool `json:"from_entity"`
 }
 
-// patternMatchSQL ranks patterns by two signals: whether the question names an
-// entity the regularity covers, and whether its wording shares a term with the
-// question. Confidence times coherence breaks the tie, so two equally relevant
-// regularities are ordered by how well they are supported.
+// patternMatchSQL ranks patterns by how much of the question they answer, not by
+// whether they share a single word with it. Matching the terms as one
+// disjunction was wrong: a common word like "use" matched almost every pattern,
+// and the tiebreak on confidence then put the oldest, best-scored rows on top —
+// a question about the http-first transport returned five regularities about
+// Tailscale.
 //
-// The entity text is searched as one document rather than compared per entry:
-// an entity is often several words ("hindsight mcp setup") and a question names
-// one of them.
+// So each term is scored on its own and the two signals are added: a pattern
+// survives when it shares at least two terms with the question in total, counted
+// over its own wording and the entities it covers. One shared word is not
+// evidence of relevance, and a single entity hit must not outrank a pattern that
+// matches the question four times over — that is how a question about the
+// http-first transport returned five regularities about Tailscale.
 const patternMatchSQL = `
-SELECT p.id, p.content, p.confidence, p.coherence_score,
-       to_tsvector('simple', array_to_string(p.source_entities, ' ')) @@ to_tsquery('simple', $2) AS entity_hit
-FROM patterns p
-WHERE p.namespace_id = ANY($1)
-  AND p.deleted_at IS NULL
-  AND (to_tsvector('simple', array_to_string(p.source_entities, ' ')) @@ to_tsquery('simple', $2)
-       OR to_tsvector('simple', p.content) @@ to_tsquery('simple', $2))
-ORDER BY entity_hit DESC, (p.confidence * p.coherence_score) DESC
+SELECT id, content, confidence, coherence_score, entity_hits > 0 AS entity_hit
+FROM (
+  SELECT p.id, p.content, p.confidence, p.coherence_score,
+         (SELECT count(*) FROM unnest($2::text[]) AS t
+           WHERE to_tsvector('simple', array_to_string(p.source_entities, ' '))
+                 @@ to_tsquery('simple', t)) AS entity_hits,
+         (SELECT count(*) FROM unnest($2::text[]) AS t
+           WHERE to_tsvector('simple', p.content)
+                 @@ to_tsquery('simple', t)) AS content_hits
+  FROM patterns p
+  WHERE p.namespace_id = ANY($1)
+    AND p.deleted_at IS NULL
+) m
+WHERE entity_hits + content_hits >= 2
+ORDER BY (entity_hits + content_hits) DESC,
+         (confidence * coherence_score) DESC
 LIMIT $3`
 
 // matchPatterns finds the regularities worth showing for a question. It returns
@@ -52,7 +65,7 @@ func (b *Brain) matchPatterns(ctx context.Context, nsIDs []int64, query string, 
 		return nil, nil
 	}
 
-	rows, err := b.pool.Query(ctx, patternMatchSQL, nsIDs, strings.Join(terms, " | "), limit)
+	rows, err := b.pool.Query(ctx, patternMatchSQL, nsIDs, terms, limit)
 	if err != nil {
 		return nil, fmt.Errorf("match patterns: %w", err)
 	}
@@ -78,6 +91,7 @@ var stopWords = map[string]bool{
 	"why": true, "who": true, "when": true, "where": true, "which": true,
 	"our": true, "you": true, "does": true, "did": true, "has": true,
 	"have": true, "had": true, "but": true, "not": true, "all": true,
+	"use": true, "uses": true, "used": true, "using": true,
 	"wat": true, "hoe": true, "waar": true, "wanneer": true, "welke": true,
 	"die": true, "dat": true, "een": true, "van": true, "het": true,
 	"zijn": true, "wordt": true, "worden": true, "naar": true, "voor": true,

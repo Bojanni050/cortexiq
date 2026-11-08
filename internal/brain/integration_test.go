@@ -968,6 +968,40 @@ func TestIntegrationReflectLeavesUnrelatedPatternsOut(t *testing.T) {
 	}
 }
 
+// One shared word is not evidence of relevance. A pattern that only mentions the
+// subject in passing must stay out, while the one that also shares the topic term
+// comes in.
+func TestIntegrationReflectIgnoresASingleSharedWord(t *testing.T) {
+	e := newEnv(t, nil)
+	e.insertFact(t, "the queue is kafka", nil)
+
+	if _, err := e.b.storePattern(e.ctx, e.nsID, "Services use an HTTP-first transport.",
+		0.6, nil, nil, []string{"cortexiq", "hindsight"}, 1.0); err != nil {
+		t.Fatalf("store the relevant pattern: %v", err)
+	}
+	// Shares exactly one term with the question ("cortexiq") and nothing else.
+	if _, err := e.b.storePattern(e.ctx, e.nsID, "The cortexiq deployment is nightly.",
+		0.95, nil, nil, []string{"deploy"}, 1.0); err != nil {
+		t.Fatalf("store the passing mention: %v", err)
+	}
+
+	result, err := e.b.Reflect(e.ctx, "how does the cortexiq transport work?", ReflectOptions{
+		Namespaces:       []string{e.ns},
+		Limit:            5,
+		SkipMentalModels: true,
+		SkipHypotheses:   true,
+	})
+	if err != nil {
+		t.Fatalf("Reflect: %v", err)
+	}
+	if result.PatternCount != 1 {
+		t.Fatalf("want only the matching regularity, got %+v", result.Patterns)
+	}
+	if result.Patterns[0].Content != "Services use an HTTP-first transport." {
+		t.Errorf("unexpected pattern %q", result.Patterns[0].Content)
+	}
+}
+
 // Callers that need citations to raw memories can drop the derived statements.
 func TestIntegrationReflectSkipsPatternsWhenAsked(t *testing.T) {
 	e := newEnv(t, nil)
