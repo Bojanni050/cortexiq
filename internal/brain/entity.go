@@ -203,10 +203,10 @@ func (b *Brain) CanonicalizeEntities(ctx context.Context, namespaceIDs []int64, 
 	for _, nsID := range namespaceIDs {
 		rows, err := b.pool.Query(ctx,
 			`SELECT name FROM (
-			   SELECT DISTINCT lower(btrim(from_entity)) AS name FROM relationships
+			   SELECT DISTINCT btrim(from_entity) AS name FROM relationships
 			    WHERE namespace_id = $1 AND deleted_at IS NULL
 			   UNION
-			   SELECT DISTINCT lower(btrim(to_entity)) FROM relationships
+			   SELECT DISTINCT btrim(to_entity) FROM relationships
 			    WHERE namespace_id = $1 AND deleted_at IS NULL
 			 ) e ORDER BY name`, nsID)
 		if err != nil {
@@ -228,9 +228,16 @@ func (b *Brain) CanonicalizeEntities(ctx context.Context, namespaceIDs []int64, 
 
 		for _, name := range names {
 			report.Entities++
+			// The list holds the spellings as stored, but every rewrite matches
+			// case-insensitively, so the key is the folded form. Comparing the
+			// canonical name against the raw one is what makes "Hindsight" and
+			// "hindsight" two entities forever: the earlier version lowercased the
+			// list first, so a capitalised variant could never differ from its
+			// canonical form and was reported as nothing to do.
+			key := strings.ToLower(strings.TrimSpace(name))
 			canonical, keep := NormalizeEntity(name)
 			if !keep {
-				n, err := b.entityRows(ctx, nsID, name, dryRun, "", true)
+				n, err := b.entityRows(ctx, nsID, key, dryRun, "", true)
 				if err != nil {
 					return nil, err
 				}
@@ -242,7 +249,7 @@ func (b *Brain) CanonicalizeEntities(ctx context.Context, namespaceIDs []int64, 
 			if canonical == name {
 				continue
 			}
-			n, err := b.entityRows(ctx, nsID, name, dryRun, canonical, false)
+			n, err := b.entityRows(ctx, nsID, key, dryRun, canonical, false)
 			if err != nil {
 				return nil, err
 			}

@@ -130,6 +130,20 @@ func (b *Brain) consolidateToShapePatterns(ctx context.Context, nsID int64) (cou
 			return
 		}
 
+		// A candidate the model leaves out is recorded as a rejection below, so a
+		// short answer and a considered "no" end up identical in the cursor. Say
+		// which one it was while the answer is still in hand: production showed
+		// eight candidates judged in two calls with every cluster rejected and no
+		// way to tell whether the model had spoken or stayed quiet.
+		accepted := 0
+		for _, st := range statements {
+			if st != nil && st.Statement != "" && st.Coherence > 0 {
+				accepted++
+			}
+		}
+		log.Printf("shape sweep: namespace %d, %d candidates, %d statements back, %d accepted",
+			nsID, len(batch), len(statements), accepted)
+
 		for i, c := range batch {
 			var st *reasoner.ShapeStatement
 			if i < len(statements) {

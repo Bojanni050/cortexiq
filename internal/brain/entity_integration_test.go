@@ -154,3 +154,43 @@ func TestIntegrationCanonicalizeEntitiesFoldsAndDrops(t *testing.T) {
 		t.Errorf("want the canonical spelling, got %q", from)
 	}
 }
+
+// A capitalised spelling is the same entity. The query used to lowercase the name
+// list before comparing it with the canonical form, so "Hindsight" could never
+// differ from "hindsight" and was reported as nothing to do — which left one
+// product standing as two sources for every cluster it appeared in.
+func TestIntegrationCanonicalizeEntitiesFoldsCapitalisation(t *testing.T) {
+	e := newEnv(t, nil)
+	for _, name := range []string{"Hindsight", "hindsight"} {
+		if _, err := e.b.pool.Exec(e.ctx,
+			`INSERT INTO relationships (namespace_id, from_entity, relation_type, to_entity, confidence)
+			 VALUES ($1, $2, 'broke', 'mcp-remote', 0.8)`, e.nsID, name); err != nil {
+			t.Fatalf("insert %s: %v", name, err)
+		}
+	}
+
+	report, err := e.b.CanonicalizeEntities(e.ctx, []int64{e.nsID}, false)
+	if err != nil {
+		t.Fatalf("canonicalize: %v", err)
+	}
+	if report.Changed != 1 {
+		t.Errorf("want the capitalised spelling renamed once, got %d", report.Changed)
+	}
+	if report.Duplicates != 1 {
+		t.Errorf("want the two identical rows folded into one, removed %d", report.Duplicates)
+	}
+
+	var rows int
+	var from string
+	if err := e.b.pool.QueryRow(e.ctx,
+		`SELECT count(*), min(from_entity) FROM relationships WHERE namespace_id = $1 AND deleted_at IS NULL`,
+		e.nsID).Scan(&rows, &from); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if rows != 1 {
+		t.Fatalf("want one surviving edge, got %d", rows)
+	}
+	if from != "hindsight" {
+		t.Errorf("want the folded spelling, got %q", from)
+	}
+}
