@@ -3,6 +3,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"embed"
 	"fmt"
 	"log"
@@ -59,67 +60,20 @@ func Open(ctx context.Context, dsn string, expectedModel string, vectorDim int) 
 	goose.SetLogger(discardLogger{})
 
 	if err := goose.SetDialect("postgres"); err != nil {
+		pool.Close()
 		return nil, fmt.Errorf("goose.SetDialect: %w", err)
 	}
 
-	if err := goose.Up(sqlDB, "migrations"); err != nil {
-		return nil, fmt.Errorf("goose.Up: %w", err)
-	}
-
-	// Set vector dimensions on columns that use unconstrained `vector` type.
-	vectorColumns := []struct {
-		table  string
-		column string
-	}{
-		{"episodes", "embedding"},
-		{"facts", "embedding"},
-		{"embedding_cache", "embedding"},
-	}
-	for _, vc := range vectorColumns {
-		var currentDim int
-		if err := pool.QueryRow(ctx,
-			"SELECT atttypmod FROM pg_attribute a JOIN pg_class c ON a.attrelid = c.oid WHERE c.relname = $1 AND a.attname = $2",
-			vc.table, vc.column,
-		).Scan(&currentDim); err != nil {
-			pool.Close()
-			return nil, fmt.Errorf("check vector dim %s.%s: %w", vc.table, vc.column, err)
-		}
-		if currentDim == -1 {
-			alterDDL := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE vector(%d)", vc.table, vc.column, vectorDim)
-			if _, err := sqlDB.ExecContext(ctx, alterDDL); err != nil {
-				pool.Close()
-				return nil, fmt.Errorf("alter vector dim %s.%s: %w", vc.table, vc.column, err)
-			}
-		}
-	}
-
-	// Create HNSW indexes for vector columns (idempotent).
-	hnswIndexes := []struct {
-		table  string
-		column string
-	}{
-		{"episodes", "embedding"},
-		{"facts", "embedding"},
-	}
-	for _, idx := range hnswIndexes {
-		indexName := idx.table + "_embedding_hnsw_idx"
-		var exists bool
-		if err := pool.QueryRow(ctx,
-			"SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = $1)", indexName,
-		).Scan(&exists); err != nil {
-			pool.Close()
-			return nil, fmt.Errorf("check hnsw index %s: %w", indexName, err)
-		}
-		if !exists {
-			ddl := fmt.Sprintf(
-				"CREATE INDEX %s ON %s USING hnsw (%s vector_cosine_ops)",
-				indexName, idx.table, idx.column,
-			)
-			if _, err := sqlDB.ExecContext(ctx, ddl); err != nil {
-				pool.Close()
-				return nil, fmt.Errorf("create hnsw index %s: %w", indexName, err)
-			}
-		}
+	// The MCP server and the dashboard are separate processes on the same
+	// database and start together. Everything below is check-then-create, so two
+	// of them running it at once collide ("relation already exists"); the loser
+	// then crashes and only the restart policy brings it back. One at a time, and
+	// the second finds nothing left to do.
+	if err := withSchemaLock(ctx, pool, func() error {
+		return setupSchema(ctx, pool, sqlDB, vectorDim)
+	}); err != nil {
+		pool.Close()
+		return nil, err
 	}
 
 	// Validate dimension lock: vector dimension must match expected or be empty.
@@ -143,6 +97,111 @@ const (
 	connectRetryInitial = 1 * time.Second
 	connectRetryMax     = 10 * time.Second
 )
+
+const (
+	// schemaLockKey names the advisory lock that serialises schema setup. It is
+	// database-wide, so it only ever contends with another CortexIQ on the same
+	// database, and any fixed number would do; this one is "cortexiq" read as a
+	// base-36 number so it is recognisable in pg_locks.
+	schemaLockKey int64 = 994294737458
+
+	// schemaLockWait bounds how long a starting process waits for another one
+	// that is migrating. Migrations here take well under a second; this is long
+	// enough for a large index build and short enough that a stuck holder shows
+	// up as a start-up error instead of a hang.
+	schemaLockWait = 5 * time.Minute
+)
+
+// withSchemaLock runs fn while holding the schema advisory lock. The lock is
+// session-level, so it is taken and released on one dedicated connection; fn does
+// its work on other connections, which is fine because the lock is only a token.
+// If the process dies the connection drops and Postgres releases the lock itself.
+func withSchemaLock(ctx context.Context, pool *pgxpool.Pool, fn func() error) error {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire connection for the schema lock: %w", err)
+	}
+	defer conn.Release()
+
+	waitCtx, cancel := context.WithTimeout(ctx, schemaLockWait)
+	defer cancel()
+	if _, err := conn.Exec(waitCtx, "SELECT pg_advisory_lock($1)", schemaLockKey); err != nil {
+		// A cancelled wait can leave the request half-delivered, so the lock may or
+		// may not have been taken. Closing the session settles it either way.
+		_ = conn.Conn().Close(context.WithoutCancel(ctx))
+		return fmt.Errorf("wait for the schema lock (another instance may be migrating): %w", err)
+	}
+	defer func() {
+		if _, err := conn.Exec(context.WithoutCancel(ctx), "SELECT pg_advisory_unlock($1)", schemaLockKey); err != nil {
+			// Do not hand a connection that may still hold the lock back to the pool.
+			_ = conn.Conn().Close(context.WithoutCancel(ctx))
+		}
+	}()
+
+	return fn()
+}
+
+// setupSchema brings the schema up to date: goose migrations, the vector
+// dimension on columns that were created unconstrained, and the HNSW indexes.
+// Callers hold the schema lock.
+func setupSchema(ctx context.Context, pool *pgxpool.Pool, sqlDB *sql.DB, vectorDim int) error {
+	if err := goose.Up(sqlDB, "migrations"); err != nil {
+		return fmt.Errorf("goose.Up: %w", err)
+	}
+
+	// Set vector dimensions on columns that use unconstrained `vector` type.
+	vectorColumns := []struct {
+		table  string
+		column string
+	}{
+		{"episodes", "embedding"},
+		{"facts", "embedding"},
+		{"embedding_cache", "embedding"},
+	}
+	for _, vc := range vectorColumns {
+		var currentDim int
+		if err := pool.QueryRow(ctx,
+			"SELECT atttypmod FROM pg_attribute a JOIN pg_class c ON a.attrelid = c.oid WHERE c.relname = $1 AND a.attname = $2",
+			vc.table, vc.column,
+		).Scan(&currentDim); err != nil {
+			return fmt.Errorf("check vector dim %s.%s: %w", vc.table, vc.column, err)
+		}
+		if currentDim == -1 {
+			alterDDL := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE vector(%d)", vc.table, vc.column, vectorDim)
+			if _, err := sqlDB.ExecContext(ctx, alterDDL); err != nil {
+				return fmt.Errorf("alter vector dim %s.%s: %w", vc.table, vc.column, err)
+			}
+		}
+	}
+
+	// Create HNSW indexes for vector columns (idempotent).
+	hnswIndexes := []struct {
+		table  string
+		column string
+	}{
+		{"episodes", "embedding"},
+		{"facts", "embedding"},
+	}
+	for _, idx := range hnswIndexes {
+		indexName := idx.table + "_embedding_hnsw_idx"
+		var exists bool
+		if err := pool.QueryRow(ctx,
+			"SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = $1)", indexName,
+		).Scan(&exists); err != nil {
+			return fmt.Errorf("check hnsw index %s: %w", indexName, err)
+		}
+		if !exists {
+			ddl := fmt.Sprintf(
+				"CREATE INDEX %s ON %s USING hnsw (%s vector_cosine_ops)",
+				indexName, idx.table, idx.column,
+			)
+			if _, err := sqlDB.ExecContext(ctx, ddl); err != nil {
+				return fmt.Errorf("create hnsw index %s: %w", indexName, err)
+			}
+		}
+	}
+	return nil
+}
 
 // pingWithRetry calls ping until it succeeds, the window elapses or ctx is
 // cancelled, doubling the wait between attempts up to max. It returns the last
