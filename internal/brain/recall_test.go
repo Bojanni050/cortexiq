@@ -474,6 +474,22 @@ func TestRerankWithoutRerankerIsANoop(t *testing.T) {
 	}
 }
 
+// bootstrap wires the reranker as Config{Reranker: reranker.NewHTTP(url, key, model)}
+// and leaves the model empty when none is configured. That value must read as "off":
+// it used to be a nil *HTTP inside a non-nil interface, so the nil check missed it
+// and the first recall with two or more candidates crashed on a nil receiver.
+func TestRerankWithTheUnconfiguredConstructorResultIsANoop(t *testing.T) {
+	b := &Brain{config: Config{Reranker: reranker.NewHTTP("http://reranker.invalid", "key", "")}}
+	if b.config.Reranker != nil {
+		t.Fatal("an empty model must leave Config.Reranker truly nil, not a typed nil")
+	}
+	rs := []RecallResult{{ID: 1, Score: 0.9}, {ID: 2, Score: 0.8}}
+	got := b.rerank(context.Background(), "q", rs)
+	if len(got) != 2 || got[0].ID != 1 || got[1].ID != 2 {
+		t.Errorf("rerank = %+v, want unchanged", got)
+	}
+}
+
 func TestRerankReordersByCrossEncoderScore(t *testing.T) {
 	f := &fakeReranker{scores: map[int]float32{0: 0.1, 1: 0.9}}
 	b := &Brain{config: Config{Reranker: f}}

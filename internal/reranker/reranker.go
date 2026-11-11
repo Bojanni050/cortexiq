@@ -47,7 +47,12 @@ type HTTP struct {
 
 // NewHTTP builds a reranker for a Cohere-compatible endpoint. An empty model
 // returns nil: the caller treats a nil reranker as "off".
-func NewHTTP(baseURL, apiKey, model string) *HTTP {
+//
+// It returns the interface and not *HTTP on purpose. A nil *HTTP stored in a
+// Reranker is a non-nil interface, so the "Reranker == nil" check that means
+// "off" would pass it as configured and the first Rerank call would dereference
+// a nil receiver. Returning the interface makes that state unrepresentable.
+func NewHTTP(baseURL, apiKey, model string) Reranker {
 	if model == "" {
 		return nil
 	}
