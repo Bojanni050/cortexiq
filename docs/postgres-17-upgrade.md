@@ -10,6 +10,37 @@ Expect downtime for the length of one dump, one restore and the index builds.
 On a database of this size that is minutes, not hours; measure it in the
 rehearsal below instead of trusting that sentence.
 
+## Status: production database upgraded on 2026-11-11
+
+The database was moved to PostgreSQL 17 with the application left at 0.1.73. The
+BM25 migration (00061) ships with the next release, so the two risks were taken one
+at a time. What differed from the plan below:
+
+- No release existed yet, so the image was built on the VPS from `deploy/postgres`
+  (same Dockerfile as CI and the rehearsal) and tagged `cortexiq-postgres:17-bm25`.
+  `docker-compose.prod.yml` on the VPS points at that local tag, with a copy of the
+  old file as `docker-compose.prod.yml.bak-pre-pg17`. The Dockerfile stays in
+  `/opt/cortexiq/deploy/postgres/`; if the image is ever pruned, rebuild it with
+  `docker build -t cortexiq-postgres:17-bm25 deploy/postgres` before recreating the
+  container, or compose cannot start it.
+- Downtime was about 70 seconds (app stopped 19:14:37 UTC, back around 19:15:45).
+- The image was smoke-tested in a throwaway container first. A verified dump was
+  taken with the app stopped; `pg_restore` took 2 s with exit code 0.
+- Row counts before and after were identical: 2,944 facts, 742 episodes, 9,034
+  relationships, 2,900 patterns, goose 60. HNSW and GIN indexes were back, `ANALYZE`
+  was run, health and readiness returned 200 and the logs showed no errors.
+- The daily backup script was run once against PostgreSQL 17 and verified.
+- The old PostgreSQL 16 volume `cortexiq_postgres_data` (192 MB) is untouched.
+
+Still to do: cut a release (the postgres image job has never run) and deploy it by
+bumping `CORTEXIQ_IMAGE_TAG`; migration 00061 then runs on startup and the database
+is already ready for it. Optionally switch the compose file to the published
+`ghcr.io/bojanni050/cortexiq-postgres:<tag>` image at the same time.
+
+Rollback to the old database while the PG16 volume exists: stop the stack, restore
+`docker-compose.prod.yml.bak-pre-pg17`, `docker compose up -d`. Anything written
+after 19:15 UTC exists only in the new volume.
+
 ## What changes
 
 - `postgres` image: `pgvector/pgvector:pg16` becomes
