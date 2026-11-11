@@ -234,4 +234,36 @@ var knownRelationTypes = map[string]string{
 	"verifies":          "validates",
 	"sets":              "writes",
 	"updated":           "writes",
+
+	// 2026-11-09: families that carry three or more sources and were still NULL, so
+	// their cluster identity depended on what the model happened to suggest. A word
+	// that names the object ("editor", "package manager") folds into the predicate it
+	// belongs to, because the object is already to_entity.
+	"used":                        "uses",
+	"used_as":                     "uses",
+	"uses_editor":                 "uses",
+	"uses_as_editor":              "uses",
+	"uses_for_editing":            "uses",
+	"uses_package_manager":        "uses",
+	"uses_as_package_manager":     "uses",
+	"uses_for_package_management": "uses",
+	"uses_transport":              "uses",
+	"uses_flag":                   "uses",
+	"uses_via":                    "uses",
+	"broke":                       "affects",
+	"broken":                      "affects",
+	"involved":                    "affects",
+	"implements":                  "implements",
+	"implemented_via":             "implements",
+	"include":                     "contains",
+	"had":                         "has",
+	"stored_in":                   "part_of",
+	"defined_in":                  "part_of",
+	"documented_in":               "part_of",
+	"taken_from":                  "derived_from",
+	"built_on":                    "depends_on",
+	"sent_to":                     "sends",
+	"deployed":                    "runs_on",
+	"running":                     "runs_on",
+	"runs":                        "runs_on",
 }

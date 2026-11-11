@@ -13,6 +13,12 @@ func normalizeRelationType(s string) string {
 	return relationTypeSeparators.ReplaceAllString(strings.ToLower(strings.TrimSpace(s)), "_")
 }
 
+// NormalizeRelationType is the one definition of predicate identity, exported so
+// the store and the sweep cannot drift from the extractor: three normalisations
+// for one concept is two too many, and a store that folds "pushed to" while the
+// sweep keeps it apart produces two clusters for one fact.
+func NormalizeRelationType(s string) string { return normalizeRelationType(s) }
+
 var relationVocabularySet = func() map[string]bool {
 	m := make(map[string]bool, len(RelationVocabulary))
 	for _, v := range RelationVocabulary {

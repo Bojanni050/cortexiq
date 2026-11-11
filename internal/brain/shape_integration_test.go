@@ -307,3 +307,60 @@ func TestIntegrationShapeSweepNeverDowngradesAnAcceptedVerdict(t *testing.T) {
 		t.Errorf("max_rel_id moved backwards from %d to %d", wantMax, gotMax)
 	}
 }
+
+// Re-judging a cluster whose pattern already exists can only add a second wording,
+// and a stored wording never changes. So the sweep must recognise a covered cluster
+// without spending a call, which makes a re-judge harmless instead of merely careful.
+func TestIntegrationShapeSweepSkipsClustersALivePatternAlreadyCovers(t *testing.T) {
+	e := newEnv(t, nil)
+	factIDs := shapeFixture(t, e, "alpha", "beta", "gamma")
+
+	rows, err := e.b.pool.Query(e.ctx,
+		`SELECT id FROM relationships WHERE namespace_id = $1 AND deleted_at IS NULL`, e.nsID)
+	if err != nil {
+		t.Fatalf("read edges: %v", err)
+	}
+	var relIDs []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("scan edge: %v", err)
+		}
+		relIDs = append(relIDs, id)
+	}
+	rows.Close()
+	if len(relIDs) != 3 {
+		t.Fatalf("want 3 edges from the fixture, got %d", len(relIDs))
+	}
+
+	if _, err := e.b.storePattern(e.ctx, e.nsID, "Services use an HTTP-first transport.",
+		0.7, factIDs, relIDs, []string{"alpha", "beta", "gamma"}, 1.0); err != nil {
+		t.Fatalf("store the covering pattern: %v", err)
+	}
+
+	count, llmCalls, errs := e.b.consolidateToShapePatterns(e.ctx, e.nsID)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if count != 0 || llmCalls != 0 {
+		t.Fatalf("a covered cluster is not a question, got %d patterns from %d calls", count, llmCalls)
+	}
+
+	var verdict string
+	if err := e.b.pool.QueryRow(e.ctx,
+		`SELECT verdict FROM pattern_clusters WHERE namespace_id = $1`, e.nsID).Scan(&verdict); err != nil {
+		t.Fatalf("read cluster cursor: %v", err)
+	}
+	if verdict != "pattern" {
+		t.Errorf("want verdict pattern, got %q", verdict)
+	}
+
+	var live int
+	if err := e.b.pool.QueryRow(e.ctx,
+		`SELECT count(*) FROM patterns WHERE namespace_id = $1 AND deleted_at IS NULL`, e.nsID).Scan(&live); err != nil {
+		t.Fatalf("count patterns: %v", err)
+	}
+	if live != 1 {
+		t.Errorf("want the one pattern to stay alone, got %d", live)
+	}
+}

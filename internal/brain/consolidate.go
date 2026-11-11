@@ -978,10 +978,12 @@ func (b *Brain) storeRelationship(ctx context.Context, nsID, factID int64, rel *
 		return false, nil
 	}
 
-	// Rows without a canonical_type are compared by their lowercased relation_type.
+	// Rows without a canonical_type are compared by their normalised
+	// relation_type: "pushed to" and "pushed_to" are one predicate, and three
+	// different normalisations in this codebase is two too many.
 	key := rel.CanonicalType
 	if key == "" {
-		key = strings.ToLower(strings.TrimSpace(rel.RelationType))
+		key = reasoner.NormalizeRelationType(rel.RelationType)
 	}
 
 	var id int64
@@ -989,7 +991,7 @@ func (b *Brain) storeRelationship(ctx context.Context, nsID, factID int64, rel *
 	err := b.pool.QueryRow(ctx,
 		`SELECT id, confidence FROM relationships
 		 WHERE namespace_id = $1 AND lower(from_entity) = lower($2) AND lower(to_entity) = lower($3)
-		   AND COALESCE(canonical_type, lower(btrim(relation_type))) = $4
+		   AND COALESCE(canonical_type, lower(regexp_replace(btrim(relation_type), '[[:space:]-]+', '_', 'g'))) = $4
 		   AND deleted_at IS NULL
 		 ORDER BY id LIMIT 1`,
 		nsID, from, to, key,

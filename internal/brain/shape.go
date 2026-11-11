@@ -41,7 +41,8 @@ const (
 // not in the consolidation checkpoint: a cluster is not a position in a stream.
 const shapeClusterSQL = `
 WITH grouped AS (
-    SELECT coalesce(r.canonical_type, r.relation_type) AS rtype,
+    SELECT coalesce(r.canonical_type,
+                    lower(regexp_replace(btrim(r.relation_type), '[[:space:]-]+', '_', 'g'))) AS rtype,
            lower(r.to_entity)                          AS target,
            count(DISTINCT r.from_entity)               AS sources,
            max(r.id)                                   AS max_rel_id,
@@ -111,6 +112,35 @@ func (b *Brain) consolidateToShapePatterns(ctx context.Context, nsID int64) (cou
 			end = len(clusters)
 		}
 		batch := clusters[start:end]
+
+		// A cluster that a live pattern already covers is not a question: asking
+		// costs a call, and a second yes would only add a paraphrase of a wording
+		// that is already fixed. Mark it judged and move on.
+		var covered int
+		pending := batch[:0]
+		for _, c := range batch {
+			known, err := b.findShapeMatch(ctx, nsID, c.target, c.sources)
+			if err != nil {
+				errs = append(errs, fmt.Sprintf("check existing shape: %v", err))
+				return
+			}
+			if known != 0 {
+				if err := b.recordShapeCluster(ctx, nsID, c, "pattern"); err != nil {
+					errs = append(errs, fmt.Sprintf("record covered cluster: %v", err))
+					return
+				}
+				covered++
+				continue
+			}
+			pending = append(pending, c)
+		}
+		if covered > 0 {
+			log.Printf("shape sweep: namespace %d, %d clusters already covered by a live pattern", nsID, covered)
+		}
+		batch = pending
+		if len(batch) == 0 {
+			continue
+		}
 
 		candidates := make([]reasoner.ShapeCandidate, len(batch))
 		for i, c := range batch {
@@ -320,46 +350,64 @@ WHERE id = $1`
 //     be wrong: the same four suppliers both chase documents and categorise
 //     receipts, and those are two regularities, not one.
 func (b *Brain) storeShapePattern(ctx context.Context, nsID int64, target, content string, confidence float32, factIDs, relIDs []int64, sources []string, coherence float32) (inserted bool, err error) {
-	if len(sources) > 0 {
-		var (
-			bestID   int64
-			bestSet  []string
-			bestHits int
-		)
-		rows, err := b.pool.Query(ctx, shapeSameTargetSQL, nsID, strings.ToLower(target))
-		if err != nil {
-			return false, fmt.Errorf("find patterns at the same target: %w", err)
-		}
-		for rows.Next() {
-			var (
-				id      int64
-				matched []string
-			)
-			if err := rows.Scan(&id, &matched); err != nil {
-				rows.Close()
-				return false, err
-			}
-			if hits := countOverlap(sources, matched); hits > bestHits {
-				bestID, bestSet, bestHits = id, matched, hits
-			}
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
+	if known, err := b.findShapeMatch(ctx, nsID, target, sources); err != nil {
+		return false, err
+	} else if known != 0 {
+		if err := b.mergeShapePattern(ctx, known, relIDs, factIDs, sources, confidence, coherence); err != nil {
 			return false, err
 		}
-
-		smaller := len(sources)
-		if len(bestSet) < smaller {
-			smaller = len(bestSet)
-		}
-		if bestID != 0 && bestHits*2 >= smaller {
-			if err := b.mergeShapePattern(ctx, bestID, relIDs, factIDs, sources, confidence, coherence); err != nil {
-				return false, err
-			}
-			return false, nil
-		}
+		return false, nil
 	}
 	return b.storePattern(ctx, nsID, content, confidence, factIDs, relIDs, sources, coherence)
+}
+
+// findShapeMatch answers whether a live pattern already says the same thing about
+// the same things: the same target in its own evidence, and at least half of the
+// smaller source set in common. Zero means nothing covers this cluster yet.
+//
+// The sweep asks this before it spends a call. Re-judging a cluster whose pattern
+// already exists can only produce a second wording, and the wording of a row is
+// fixed once it is stored — so the check makes re-judging idempotent instead of
+// merely careful.
+func (b *Brain) findShapeMatch(ctx context.Context, nsID int64, target string, sources []string) (int64, error) {
+	if len(sources) == 0 {
+		return 0, nil
+	}
+	var (
+		bestID   int64
+		bestSet  []string
+		bestHits int
+	)
+	rows, err := b.pool.Query(ctx, shapeSameTargetSQL, nsID, strings.ToLower(target))
+	if err != nil {
+		return 0, fmt.Errorf("find patterns at the same target: %w", err)
+	}
+	for rows.Next() {
+		var (
+			id      int64
+			matched []string
+		)
+		if err := rows.Scan(&id, &matched); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		if hits := countOverlap(sources, matched); hits > bestHits {
+			bestID, bestSet, bestHits = id, matched, hits
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	smaller := len(sources)
+	if len(bestSet) < smaller {
+		smaller = len(bestSet)
+	}
+	if bestID != 0 && bestHits*2 >= smaller {
+		return bestID, nil
+	}
+	return 0, nil
 }
 
 // mergeShapePattern keeps the wording that is already there and adds what the
