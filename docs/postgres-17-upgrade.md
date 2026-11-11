@@ -32,10 +32,28 @@ at a time. What differed from the plan below:
 - The daily backup script was run once against PostgreSQL 17 and verified.
 - The old PostgreSQL 16 volume `cortexiq_postgres_data` (192 MB) is untouched.
 
-Still to do: cut a release (the postgres image job has never run) and deploy it by
-bumping `CORTEXIQ_IMAGE_TAG`; migration 00061 then runs on startup and the database
-is already ready for it. Optionally switch the compose file to the published
-`ghcr.io/bojanni050/cortexiq-postgres:<tag>` image at the same time.
+### BM25 live: release v0.1.74, deployed 2026-11-11
+
+Release v0.1.74 (commit e2182ed) built every job, including `build-postgres-docker`
+for the first time. The application was deployed in about 23 s of downtime (stopped
+19:35:46 UTC, up 19:36:09), with a verified dump (`cortexiq-20261111T193547Z.dump`)
+as the rollback point and `.env.bak-pre0.1.74` beside it. Migration 00061 ran on
+startup: goose 61, `facts_content_bm25` and `episodes_content_bm25` exist, no
+`content_tsv` column is left. Two live recalls returned `match: "hybrid"` with the
+port-8445 facts ranked first, and the BM25 indexes show scans in
+`pg_stat_user_indexes`.
+
+One thing to know: `cortexiq` and `cortexiq-ui` both run the migrations at startup
+and they started together. The main process applied 00061 first; the UI's concurrent
+attempt failed with `relation "facts_content_bm25" already exists` (SQLSTATE 42P07),
+left nothing half-applied because migrations run in a transaction, and the restart
+policy brought it back 0.6 s later. It healed itself, but a slower migration would
+make the overlap longer. A rollback now needs the dump (or the migration's Down),
+because the old application reads the dropped `content_tsv` columns.
+
+Optional, not done: the compose file still points at the locally built
+`cortexiq-postgres:17-bm25`; the published `ghcr.io/bojanni050/cortexiq-postgres:0.1.74`
+can replace it (one more database restart of a few seconds).
 
 Rollback to the old database while the PG16 volume exists: stop the stack, restore
 `docker-compose.prod.yml.bak-pre-pg17`, `docker compose up -d`. Anything written
