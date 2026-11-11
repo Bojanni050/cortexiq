@@ -220,6 +220,16 @@ documents and its identifier questions were already at 1.00. The difference show
 on real data instead (rare terms such as a port number or a model name rank above
 generic words; see walkthrough2.md, 2026-11-11).
 
+Run-to-run variance, measured the same day: the old code gave an identical result in
+5 of 5 runs. The BM25 code is not fully stable. In most runs it gave hit@1 0.78,
+hit@3 1.00, MRR 0.870, but one run in five or so differs by a question (0.75/0.856
+with q22 missed, once 0.81/0.884, once hit@3 0.97). BM25 scores use statistics of
+the whole index, and a deleted row's postings probably stay in the index until
+VACUUM, so the ranking depends slightly on what ran before; that explanation is
+likely, not verified. For a before/after comparison, create a fresh database per run
+and repeat it. In four fresh-database runs q22 was rank 2 every time (a small, real
+regression on this set), q32 improved every time and q35 in three of four.
+
 Every answer is in the top 10 and all but one in the top 3, so the headroom is
 ordering (hit@1), not coverage. All four cross-language misses have the same
 shape: a document in the language of the question outranks the answer in the
