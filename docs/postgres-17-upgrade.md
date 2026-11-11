@@ -44,6 +44,13 @@ cat cortexiq-<timestamp>.dump | docker exec -i pg17-rehearsal \
 # and let it apply migration 00061; time it.
 ```
 
+Rehearsed on 2026-11-11 with the daily dump of that morning (47 MB; 2,944 facts,
+728 episodes, 128 MB, schema at migration 60): `pg_restore` of the PostgreSQL 16
+dump into the PostgreSQL 17 image took 5 s, and `db.Open` (migration 00061, HNSW
+check, dimension lock) took 335 ms. The migration succeeded, both `*_bm25` indexes
+existed and no `content_tsv` column was left. Expect the whole switch to be
+minutes, dominated by pulling the image and starting the containers.
+
 ## 1. Prepare
 
 1. Cut a release so the postgres image exists on GHCR (the release workflow
