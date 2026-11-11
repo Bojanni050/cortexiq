@@ -198,6 +198,28 @@ Baseline 2026-10-18 (bge-m3, hybrid recall, production weights, k=10):
 | confuser | 10 | 0.80 | 0.90 | 1.00 | 0.875 |
 | overall | 36 | 0.75 | 0.97 | 1.00 | 0.850 |
 
+Run 2026-11-11, same set, same embedder (bge-m3 through a local Ollama), hybrid
+recall with the production weights but no reranker, k=10. Before is `ts_rank_cd`
+(commit 2bb9e95), after is BM25 through pg_textsearch (commit 3774ea9):
+
+| kind | n | hit@1 before | after | hit@3 before | after | MRR before | after |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| identifier | 8 | 1.00 | 1.00 | 1.00 | 1.00 | 1.000 | 1.000 |
+| paraphrase | 10 | 0.70 | 0.70 | 1.00 | 1.00 | 0.817 | 0.817 |
+| cross-language | 8 | 0.62 | 0.50 | 1.00 | 1.00 | 0.792 | 0.729 |
+| confuser | 10 | 0.80 | 0.90 | 0.90 | 1.00 | 0.875 | 0.933 |
+| overall | 36 | 0.78 | 0.78 | 0.97 | 1.00 | 0.868 | 0.870 |
+
+33 of 36 questions kept their rank. q32 (2 to 1) and q35 (4 to 3) improved; q22 went
+from 1 to 2. The one regression is a cross-language question whose only shared
+token with the answer is "Bo": with equal term matches BM25 prefers the shorter
+document (length normalisation), and a shorter English sentence outranks the Dutch
+answer. One question is noise on a set this size, so read this as "no regression",
+not as a gain. The set cannot show the benefit BM25 is there for: it has 60
+documents and its identifier questions were already at 1.00. The difference showed
+on real data instead (rare terms such as a port number or a model name rank above
+generic words; see walkthrough2.md, 2026-11-11).
+
 Every answer is in the top 10 and all but one in the top 3, so the headroom is
 ordering (hit@1), not coverage. All four cross-language misses have the same
 shape: a document in the language of the question outranks the answer in the
