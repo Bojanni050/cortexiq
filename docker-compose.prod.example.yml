@@ -56,8 +56,12 @@ x-cortexiq-env: &cortexiq-env
   CORTEXIQ_TRIAGE_LOG: ${CORTEXIQ_TRIAGE_LOG:-false}
 
 services:
+  # PostgreSQL 17 + pgvector + pg_textsearch, published by the release workflow
+  # next to the application image. The data directory of the old PostgreSQL 16
+  # image cannot be opened by this one: see docs/postgres-17-upgrade.md before
+  # switching an existing volume.
   postgres:
-    image: pgvector/pgvector:pg16
+    image: ghcr.io/bojanni050/cortexiq-postgres:${CORTEXIQ_POSTGRES_IMAGE_TAG:?set CORTEXIQ_POSTGRES_IMAGE_TAG to a release tag, for example 0.2.0}
     environment:
       POSTGRES_DB: cortexiq
       POSTGRES_USER: cortexiq

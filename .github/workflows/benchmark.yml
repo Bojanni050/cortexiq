@@ -34,20 +34,6 @@ jobs:
     # The benchmark needs an LLM API key to run reflect and the judge.
     # The secrets context is not allowed in a job-level if, so a guard step
     # below checks for the key and gates the remaining steps on its output.
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: cortexiq
-          POSTGRES_PASSWORD: cortexiq
-          POSTGRES_DB: cortexiq_bench
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U cortexiq -d cortexiq_bench"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - name: Check for LLM API key
         id: guard
@@ -58,6 +44,12 @@ jobs:
       - name: Checkout
         if: steps.guard.outputs.has-key == 'true'
         uses: actions/checkout@v7
+
+      - name: Start Postgres 17 with BM25
+        if: steps.guard.outputs.has-key == 'true'
+        uses: ./.github/actions/postgres-bm25
+        with:
+          database: cortexiq_bench
 
       - name: Set up Go
         if: steps.guard.outputs.has-key == 'true'

@@ -1,0 +1,39 @@
+name: Postgres 17 with BM25
+description: >-
+  Builds deploy/postgres (Postgres 17 + pgvector + pg_textsearch) and runs it on
+  localhost:5432 with user and password "cortexiq". A service container cannot be
+  used for this: the extension has to be preloaded, which needs the image from this
+  repository, and an image that is not published yet cannot be pulled by a service.
+
+inputs:
+  database:
+    description: Database to create on first start.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Build the Postgres image
+      shell: bash
+      run: docker build -t cortexiq-postgres:ci deploy/postgres
+
+    - name: Start Postgres and wait until it takes TCP connections
+      shell: bash
+      env:
+        DB: ${{ inputs.database }}
+      run: |
+        docker run -d --name postgres -p 5432:5432 \
+          -e POSTGRES_USER=cortexiq -e POSTGRES_PASSWORD=cortexiq -e POSTGRES_DB="$DB" \
+          cortexiq-postgres:ci
+        # -h 127.0.0.1 matters: during first-start initialisation the image runs a
+        # temporary server that only listens on a socket, and pg_isready over the
+        # socket would report ready before the real server is up.
+        for _ in $(seq 1 30); do
+          if docker exec postgres pg_isready -h 127.0.0.1 -U cortexiq -d "$DB" >/dev/null 2>&1; then
+            exit 0
+          fi
+          sleep 2
+        done
+        docker logs postgres
+        echo "Postgres did not become ready" >&2
+        exit 1

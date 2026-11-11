@@ -64,7 +64,8 @@ each ships its own license.
 
 | Image | License |
 | --- | --- |
-| pgvector/pgvector:pg16 | PostgreSQL License (PostgreSQL and pgvector) |
+| pgvector/pgvector:pg17-trixie | PostgreSQL License (PostgreSQL and pgvector) |
+| timescale/pg_textsearch | PostgreSQL License |
 | ollama/ollama | MIT |
 
 ## Own files

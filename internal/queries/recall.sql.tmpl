@@ -77,6 +77,21 @@ WHERE deleted_at IS NULL
 ORDER BY embedding <=> {{.Bind .Args.vector}}
 LIMIT {{.Bind .Args.limit}}
 {{end}}
+{{/*
+  Keyword arms use BM25 (pg_textsearch). Three things have to line up or the
+  planner cannot use the index and the query silently becomes a scan:
+    - the document expression must be written exactly as in migration 00061;
+    - the index is named explicitly, because a bound parameter hides the query
+      text from the planner's index inference;
+    - the operator returns a NEGATIVE score (lower is better), so the select list
+      negates it, ORDER BY keeps the raw operator, and the "< 0" guard drops rows
+      that do not match at all. Without the guard a selective filter makes
+      Postgres filter first and then score, and every non-matching row of the
+      namespace comes back with score 0.
+  Args.query is plain terms separated by spaces (see queries.bm25Text); BM25 scores
+  a document on any of them.
+*/}}
+{{define "bm25_doc"}}regexp_replace(content, '[^[:alnum:]]+', ' ', 'g'){{end}}
 {{define "recall_episodes_keyword"}}
 SELECT
     id,
@@ -86,16 +101,16 @@ SELECT
     created_at,
     importance,
     tags,
-    ts_rank_cd(content_tsv, websearch_to_tsquery('simple', {{.Bind .Args.query}})) AS score
+    -({{template "bm25_doc"}} <@> to_bm25query({{.Bind .Args.query}}, 'episodes_content_bm25')) AS score
 FROM episodes
 WHERE deleted_at IS NULL
 {{template "episode_time_filter" .}}
-    AND content_tsv @@ websearch_to_tsquery('simple', {{.Bind .Args.query}})
+    AND {{template "bm25_doc"}} <@> to_bm25query({{.Bind .Args.query}}, 'episodes_content_bm25') < 0
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
 {{end}}
 {{template "tag_filter" .}}
-ORDER BY score DESC, id DESC
+ORDER BY {{template "bm25_doc"}} <@> to_bm25query({{.Bind .Args.query}}, 'episodes_content_bm25'), id DESC
 LIMIT {{.Bind .Args.limit}}
 {{end}}
 {{define "recall_facts_keyword"}}
@@ -107,7 +122,7 @@ SELECT
     created_at,
     importance,
     tags,
-    ts_rank_cd(content_tsv, websearch_to_tsquery('simple', {{.Bind .Args.query}})) AS score
+    -({{template "bm25_doc"}} <@> to_bm25query({{.Bind .Args.query}}, 'facts_content_bm25')) AS score
 FROM facts
 WHERE deleted_at IS NULL
 {{if or .Args.from .Args.to}}
@@ -117,12 +132,12 @@ WHERE deleted_at IS NULL
     AND (valid_until IS NULL OR valid_until > {{if .Args.from}}{{.Bind .Args.from}}{{else}}'-infinity'::timestamptz{{end}})
 {{end}}
 {{template "fact_known_filter" .}}
-    AND content_tsv @@ websearch_to_tsquery('simple', {{.Bind .Args.query}})
+    AND {{template "bm25_doc"}} <@> to_bm25query({{.Bind .Args.query}}, 'facts_content_bm25') < 0
 {{if .Args.namespace_ids}}
     AND namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
 {{end}}
 {{template "tag_filter" .}}
-ORDER BY score DESC, id DESC
+ORDER BY {{template "bm25_doc"}} <@> to_bm25query({{.Bind .Args.query}}, 'facts_content_bm25'), id DESC
 LIMIT {{.Bind .Args.limit}}
 {{end}}
 {{define "graph_matched"}}
@@ -287,7 +302,8 @@ LIMIT {{.Bind .Args.limit}}
 {{/*
   Failures and goals carry no embedding and no stored tsvector: they are few and
   hand-written, so the tsvector is built on the fly (same tokenizer as
-  facts.content_tsv) instead of paying for a migration and an index.
+  the old facts.content_tsv) instead of paying for a migration and an index. They
+  stay on ts_rank_cd: a table this small has no ranking cost to avoid.
 */}}
 {{define "recall_failures_keyword"}}
 SELECT

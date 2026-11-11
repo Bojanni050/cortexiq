@@ -6,6 +6,7 @@ package queries
 import (
 	"embed"
 	"fmt"
+	"strings"
 	"text/template"
 	"time"
 
@@ -96,14 +97,36 @@ func (q *Queries) RecallFactsWindowWithEmbedding(namespaceIDs []int64, vector pg
 	return q.tpl.Execute("recall_facts", args)
 }
 
-// RecallEpisodesKeyword returns SQL + args for episode full-text search.
+// bm25Text turns the websearch-syntax keyword query ("a or b or c", see
+// brain.keywordQuery) into the plain terms BM25 expects ("a b c"). pg_textsearch
+// tokenises the query text with the index's 'simple' configuration, which has no
+// stop words, so a leftover "or" would be searched as a word and match every
+// document that contains it. A term can never be "or" itself: keywordQuery drops
+// it as a stop word.
+func bm25Text(query string) string {
+	fields := strings.Fields(query)
+	terms := fields[:0]
+	for _, f := range fields {
+		if f != "or" {
+			terms = append(terms, f)
+		}
+	}
+	return strings.Join(terms, " ")
+}
+
+// bm25Args is keywordArgs for the BM25 arms: facts and episodes.
+func bm25Args(namespaceIDs []int64, query string, limit int, asOf *time.Time) map[string]any {
+	return keywordArgs(namespaceIDs, bm25Text(query), limit, asOf)
+}
+
+// RecallEpisodesKeyword returns SQL + args for episode keyword (BM25) search.
 // query is a websearch-syntax string (see brain.keywordQuery).
 func (q *Queries) RecallEpisodesKeyword(namespaceIDs []int64, query string, limit int, asOf *time.Time) (string, []any, error) {
 	return q.RecallEpisodesKeywordWindow(namespaceIDs, query, limit, asOf, nil, nil, Known{}, TagFilter{})
 }
 
 func (q *Queries) RecallEpisodesKeywordWindow(namespaceIDs []int64, query string, limit int, asOf, from, to *time.Time, known Known, tags TagFilter) (string, []any, error) {
-	args := keywordArgs(namespaceIDs, query, limit, asOf)
+	args := bm25Args(namespaceIDs, query, limit, asOf)
 	setTagFilter(args, tags)
 	setWindow(args, from, to)
 	setKnown(args, known)
@@ -116,7 +139,7 @@ func (q *Queries) RecallFactsKeyword(namespaceIDs []int64, query string, limit i
 }
 
 func (q *Queries) RecallFactsKeywordWindow(namespaceIDs []int64, query string, limit int, asOf, from, to *time.Time, known Known, tags TagFilter) (string, []any, error) {
-	args := keywordArgs(namespaceIDs, query, limit, asOf)
+	args := bm25Args(namespaceIDs, query, limit, asOf)
 	setTagFilter(args, tags)
 	setWindow(args, from, to)
 	setKnown(args, known)

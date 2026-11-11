@@ -17,24 +17,17 @@ jobs:
   build-test:
     name: Build, vet and test
     runs-on: ubuntu-latest
-    # Real Postgres + pgvector for the integration tests in internal/brain.
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: cortexiq
-          POSTGRES_PASSWORD: cortexiq
-          POSTGRES_DB: cortexiq_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U cortexiq -d cortexiq_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+    # Real Postgres 17 + pgvector + pg_textsearch for the integration tests in
+    # internal/brain, started by the composite action below (it needs the image from
+    # deploy/postgres, so a service container cannot do it).
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Start Postgres 17 with BM25
+        uses: ./.github/actions/postgres-bm25
+        with:
+          database: cortexiq_test
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -99,23 +92,14 @@ jobs:
   race:
     name: Race detector
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: cortexiq
-          POSTGRES_PASSWORD: cortexiq
-          POSTGRES_DB: cortexiq_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U cortexiq -d cortexiq_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Start Postgres 17 with BM25
+        uses: ./.github/actions/postgres-bm25
+        with:
+          database: cortexiq_test
 
       - name: Set up Go
         uses: actions/setup-go@v7

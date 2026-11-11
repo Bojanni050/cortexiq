@@ -9,43 +9,104 @@ import (
 	"github.com/pgvector/pgvector-go"
 )
 
-// The keyword templates bind the query twice (rank + filter) and a variable
-// number of namespace IDs; make sure placeholders and args stay in step.
+// The keyword templates bind the query several times and a variable number of
+// namespace IDs; make sure placeholders and args stay in step. Facts and
+// episodes use BM25 and bind the query three times (score, match guard, order);
+// failures and goals still use ts_rank_cd and bind it twice (rank + filter).
 func TestRecallKeywordTemplatesRender(t *testing.T) {
 	q, err := New()
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 
-	for name, build := range map[string]func([]int64) (string, []any, error){
-		"facts": func(ns []int64) (string, []any, error) { return q.RecallFactsKeyword(ns, "cortexiq or port", 30, nil) },
-		"episodes": func(ns []int64) (string, []any, error) {
+	for name, tc := range map[string]struct {
+		build    func([]int64) (string, []any, error)
+		queryUse int    // how often the query is bound
+		contains string // what proves the right ranker was rendered
+	}{
+		"facts": {func(ns []int64) (string, []any, error) { return q.RecallFactsKeyword(ns, "cortexiq or port", 30, nil) },
+			3, "to_bm25query($1, 'facts_content_bm25')"},
+		"episodes": {func(ns []int64) (string, []any, error) {
 			return q.RecallEpisodesKeyword(ns, "cortexiq or port", 30, nil)
-		},
-		"failures": func(ns []int64) (string, []any, error) {
+		}, 3, "to_bm25query($1, 'episodes_content_bm25')"},
+		"failures": {func(ns []int64) (string, []any, error) {
 			return q.RecallFailuresKeyword(ns, "cortexiq or port", 30, nil)
-		},
-		"goals": func(ns []int64) (string, []any, error) { return q.RecallGoalsKeyword(ns, "cortexiq or port", 30, nil) },
+		}, 2, "websearch_to_tsquery('simple', $1)"},
+		"goals": {func(ns []int64) (string, []any, error) { return q.RecallGoalsKeyword(ns, "cortexiq or port", 30, nil) },
+			2, "websearch_to_tsquery('simple', $1)"},
 	} {
-		sql, args, err := build([]int64{1, 2, 3})
+		sql, args, err := tc.build([]int64{1, 2, 3})
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		// query x2, 3 namespace ids, limit
-		if len(args) != 6 {
-			t.Errorf("%s: got %d args, want 6", name, len(args))
+		// query xN, 3 namespace ids, limit
+		want := tc.queryUse + 3 + 1
+		if len(args) != want {
+			t.Errorf("%s: got %d args, want %d", name, len(args), want)
 		}
-		if !strings.Contains(sql, "websearch_to_tsquery('simple', $1)") || !strings.Contains(sql, "$6") {
+		if !strings.Contains(sql, tc.contains) || !strings.Contains(sql, "$"+strconv.Itoa(want)) {
 			t.Errorf("%s: unexpected SQL:\n%s", name, sql)
 		}
 
-		// Without namespaces: query x2 + limit, and no IN clause.
-		sql, args, err = build(nil)
+		// Without namespaces: query xN + limit, and no IN clause.
+		sql, args, err = tc.build(nil)
 		if err != nil {
 			t.Fatalf("%s (no ns): %v", name, err)
 		}
-		if len(args) != 3 || strings.Contains(sql, "namespace_id IN") {
+		if len(args) != tc.queryUse+1 || strings.Contains(sql, "namespace_id IN") {
 			t.Errorf("%s (no ns): args=%d sql=\n%s", name, len(args), sql)
+		}
+	}
+}
+
+// BM25 reads the query text itself with a configuration that has no stop words,
+// so the "or" that joins websearch terms must not reach it as a word.
+func TestBM25TextDropsTheOperator(t *testing.T) {
+	for in, want := range map[string]string{
+		"":                         "",
+		"cortexiq":                 "cortexiq",
+		"cortexiq or port or 8445": "cortexiq port 8445",
+		"welke or poort or draait": "welke poort draait",
+		"  spaced   or  out  ":     "spaced out",
+		"or":                       "",
+		"order or origin":          "order origin",
+	} {
+		if got := bm25Text(in); got != want {
+			t.Errorf("bm25Text(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The score is negated in the select list (the operator returns lower-is-better),
+// the order keeps the raw operator so the index can serve it, and the match guard
+// keeps non-matching rows out when a selective filter makes Postgres score rows
+// instead of walking the index.
+func TestBM25KeywordShape(t *testing.T) {
+	q, err := New()
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for table, build := range map[string]func() (string, []any, error){
+		"facts":    func() (string, []any, error) { return q.RecallFactsKeyword([]int64{1}, "a or b", 5, nil) },
+		"episodes": func() (string, []any, error) { return q.RecallEpisodesKeyword([]int64{1}, "a or b", 5, nil) },
+	} {
+		sql, args, err := build()
+		if err != nil {
+			t.Fatalf("%s: %v", table, err)
+		}
+		if args[0] != "a b" {
+			t.Errorf("%s: query arg = %q, want plain terms %q", table, args[0], "a b")
+		}
+		doc := "regexp_replace(content, '[^[:alnum:]]+', ' ', 'g')"
+		for _, frag := range []string{
+			"-(" + doc + " <@> to_bm25query(",
+			"AND " + doc + " <@> to_bm25query($",
+			"ORDER BY " + doc + " <@> to_bm25query($",
+			"'" + table + "_content_bm25') < 0",
+		} {
+			if !strings.Contains(sql, frag) {
+				t.Errorf("%s: SQL lacks %q:\n%s", table, frag, sql)
+			}
 		}
 	}
 }
@@ -84,8 +145,8 @@ func TestRecallAsOfTemplatesRender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// query x2, as_of, limit
-	if len(args) != 4 || !strings.Contains(sql, "created_at <=") {
+	// query x3 (BM25 score, guard, order), as_of, limit
+	if len(args) != 5 || !strings.Contains(sql, "created_at <=") {
 		t.Errorf("episodes as-of: args=%d sql=\n%s", len(args), sql)
 	}
 }

@@ -325,6 +325,60 @@ func TestIntegrationKeywordSearchSplitsUrlsAndPaths(t *testing.T) {
 	}
 }
 
+// The BM25 operator returns a score of 0 for a row that shares no term with the
+// query. On a namespace this small Postgres scores rows instead of walking the
+// index, so nothing but the "< 0" guard in the template keeps those rows out.
+// Without it a query that matches nothing would return the whole namespace.
+func TestIntegrationBM25KeywordArmReturnsOnlyMatches(t *testing.T) {
+	e := newEnv(t, nil)
+	hit := e.insertFact(t, "the dashboard listens on port 8445", nil)
+	e.insertFact(t, "bananas are yellow", nil)
+	e.insertFact(t, "a completely unrelated note about music", nil)
+
+	run := func(q string) []RecallResult {
+		t.Helper()
+		sql, args, err := e.b.queries.RecallFactsKeyword([]int64{e.nsID}, q, 10, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := e.b.runRecall(e.ctx, sql, args, "fact")
+		if err != nil {
+			t.Fatalf("keyword query %q: %v", q, err)
+		}
+		return res
+	}
+
+	res := run("port or 8445")
+	if len(res) != 1 || res[0].ID != hit {
+		t.Fatalf("want only the fact that names port 8445, got %+v", res)
+	}
+	if res[0].Score <= 0 {
+		t.Errorf("a BM25 hit must score above zero (the operator's negative score is negated), got %v", res[0].Score)
+	}
+
+	if res := run("zzzunmatched"); len(res) != 0 {
+		t.Errorf("a query that matches nothing must return nothing, got %+v", res)
+	}
+	if res := run("dashboard or bananas"); len(res) != 2 {
+		t.Errorf("any of the terms may match: want 2 facts, got %+v", res)
+	}
+
+	// The episode arm is built from the same pattern; prove its SQL is valid
+	// against the real index even when the namespace holds no episodes.
+	sql, args, err := e.b.queries.RecallEpisodesKeyword([]int64{e.nsID}, "port or 8445", 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := e.b.pool.Query(e.ctx, sql, args...)
+	if err != nil {
+		t.Fatalf("episode keyword query: %v", err)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		t.Fatalf("episode keyword query: %v", err)
+	}
+}
+
 func TestIntegrationRecallDropsIrrelevantResults(t *testing.T) {
 	e := newEnv(t, func(c *Config) { c.MinRecallSimilarity = 0.5 })
 	relevant := e.insertFact(t, "kubernetes cluster upgrade planned", nil)

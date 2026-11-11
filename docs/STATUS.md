@@ -358,7 +358,7 @@ by score, so the better answer wins regardless of type.
 |---|---|
 | Test functions | 539 across 95 files (2026-11-08) |
 | Unit tests | run everywhere, no database needed |
-| Integration tests | `internal/brain`, need `CORTEXIQ_TEST_DSN`; CI runs them against `pgvector/pgvector:pg16` and fails if any was skipped |
+| Integration tests | `internal/brain`, need `CORTEXIQ_TEST_DSN`; CI runs them against the PostgreSQL 17 image built from `deploy/postgres` (pgvector + pg_textsearch) and fails if any was skipped |
 | Race detector | CI job `race`, `go test -race ./...` — green since its first run on 2026-10-26 |
 | Coverage | 43.5% overall, gated by `.github/coverage-baseline.txt` (ratchet, cannot drop) |
 

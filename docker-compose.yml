@@ -1,8 +1,12 @@
 # Modifications copyright (c) 2026 Bojan van der Heide
 services:
   # Database
+  # PostgreSQL 17 + pgvector + pg_textsearch (BM25 keyword recall), built from
+  # deploy/postgres. A data volume created by the old PostgreSQL 16 image cannot
+  # be opened by this one: dump it first (pg_dump) and restore into a fresh volume.
   postgres:
-    image: pgvector/pgvector:pg16
+    build: deploy/postgres
+    image: cortexiq-postgres:dev
     environment:
       POSTGRES_DB: cortexiq
       POSTGRES_USER: cortexiq
