@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -24,20 +25,62 @@ func decodeModelJSON(raw string, v any) error {
 	if err == nil {
 		return nil
 	}
-	if fixed := repairNumberSpacing(raw); fixed != raw {
+	// Both spelling repairs change nothing but how a number is written, so they
+	// are tried together; the result is also what the truncation salvage works on,
+	// so an answer with both defects is still read.
+	base := raw
+	if fixed := repairQuotedNumbers(repairNumberSpacing(raw)); fixed != raw {
 		if retryErr := json.Unmarshal([]byte(fixed), v); retryErr == nil {
 			return nil
 		}
+		base = fixed
 	}
 	// A model that runs out of output tokens stops mid-object. Throwing away the
 	// whole batch because the last element is incomplete loses knowledge that is
 	// already written down, so keep the complete prefix of the array.
-	if salvaged := repairTruncatedArray(raw); salvaged != raw {
+	if salvaged := repairTruncatedArray(base); salvaged != base {
 		if retryErr := json.Unmarshal([]byte(salvaged), v); retryErr == nil {
 			return nil
 		}
 	}
 	return fmt.Errorf("%w (near %q)", err, nearJSONError(raw, err))
+}
+
+// quotedNumber matches a numeric field whose value arrived as a string
+// ("fact_id": "3128"). Only fields that are numbers in every schema we ask for are
+// listed, and only a value that is entirely a number is touched, so text that
+// merely quotes such a key inside a string (it is escaped there) never matches.
+var quotedNumber = regexp.MustCompile(`("(?:fact_id|cause_id|effect_id|goal_id|failure_id|hypothesis_id|confidence|new_confidence|coherence)"\s*:\s*)"(-?\d+(?:\.\d+)?)"`)
+
+// repairQuotedNumbers turns "fact_id": "3128" into "fact_id": 3128. The model's
+// meaning is unambiguous and the alternative is losing the whole batch over a
+// pair of quote marks; any other string value stays an error.
+func repairQuotedNumbers(s string) string {
+	return quotedNumber.ReplaceAllString(s, "${1}${2}")
+}
+
+// parseModelList reads a model's answer to a stage that is asked for a JSON array.
+// Models answer with the array, with one element on its own (members names the
+// fields that identify an element), with the array under a key (key, or any other
+// key that holds an array of objects), or with {} when they found nothing. All of
+// these are read; anything else, such as {"error": "..."} or prose, is a parse
+// error, because the retry and the dashboard's error count depend on it.
+func parseModelList[T any](output, key string, members ...string) ([]T, error) {
+	raw := extractJSON(output)
+	if isEmptyObject(raw) {
+		return nil, nil
+	}
+	var list []T
+	if err := decodeModelJSON(unwrapTopLevelArray(raw, key, members...), &list); err != nil {
+		return nil, fmt.Errorf("parse json: %w", err)
+	}
+	return list, nil
+}
+
+// isEmptyObject reports whether s is {} however it is spaced. For a stage that
+// returns a list, an empty object is the model saying "nothing here", the same as [].
+func isEmptyObject(s string) bool {
+	return strings.Join(strings.Fields(s), "") == "{}"
 }
 
 // repairNumberSpacing removes whitespace inside a numeric literal. A gap between

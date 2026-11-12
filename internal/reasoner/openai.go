@@ -216,6 +216,23 @@ type jsonHypothesisEvidence struct {
 	NewConfidence float32 `json:"new_confidence"`
 }
 
+// The list stages below are asked for a bare JSON array and are read in every
+// shape parseModelList accepts (see there). The member fields name what a single
+// element on its own looks like for that stage; the key is where a wrapped array
+// is expected.
+
+func parseGoalProgress(output string) ([]jsonGoalProgress, error) {
+	return parseModelList[jsonGoalProgress](output, "assessments", "goal_id")
+}
+
+func parseFailurePatterns(output string) ([]jsonFailurePattern, error) {
+	return parseModelList[jsonFailurePattern](output, "patterns", "failure_id", "pattern_fact")
+}
+
+func parseHypothesisEvidence(output string) ([]jsonHypothesisEvidence, error) {
+	return parseModelList[jsonHypothesisEvidence](output, "evidence", "hypothesis_id")
+}
+
 // --- ReasonSameFact ---
 
 func (o *OpenAI) ReasonSameFact(ctx context.Context, existing, candidate string) (bool, error) {
@@ -483,12 +500,7 @@ Rules:
 // produced the same shape again, so the answer is read in whichever shape it
 // arrives. An answer that is none of these still surfaces as a parse error.
 func parseRelationships(output string) ([]jsonRelationship, error) {
-	raw := unwrapTopLevelArray(extractJSON(output), "relationships", "fact_id")
-	var jrels []jsonRelationship
-	if err := decodeModelJSON(raw, &jrels); err != nil {
-		return nil, fmt.Errorf("parse json: %w", err)
-	}
-	return jrels, nil
+	return parseModelList[jsonRelationship](output, "relationships", "fact_id")
 }
 
 // groundRelationships keeps only well-formed relationships that are attributed to a
@@ -764,12 +776,7 @@ Rules:
 // into Go value of type []reasoner.jsonCausalLink" cost the whole batch each time.
 // Anything that is none of these is still a parse error.
 func parseCausalLinks(output string) ([]jsonCausalLink, error) {
-	raw := unwrapTopLevelArray(extractJSON(output), "causal_links", "cause_id")
-	var jlinks []jsonCausalLink
-	if err := decodeModelJSON(raw, &jlinks); err != nil {
-		return nil, fmt.Errorf("parse json: %w", err)
-	}
-	return jlinks, nil
+	return parseModelList[jsonCausalLink](output, "causal_links", "cause_id")
 }
 
 func (o *OpenAI) ReasonCausalLinks(ctx context.Context, facts []models.Fact) ([]*StructuredCausalLink, error) {
@@ -925,11 +932,10 @@ Rules:
 		if err != nil {
 			return nil, err
 		}
-		raw := extractJSON(output)
 
-		var jassess []jsonGoalProgress
-		if err := decodeModelJSON(raw, &jassess); err != nil {
-			valErr = fmt.Errorf("parse json: %w", err)
+		jassess, err := parseGoalProgress(output)
+		if err != nil {
+			valErr = err
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
 		}
@@ -1041,11 +1047,10 @@ Rules for pattern extraction (higher-order):
 		if err != nil {
 			return nil, err
 		}
-		raw := extractJSON(output)
 
-		var jpatterns []jsonFailurePattern
-		if err := decodeModelJSON(raw, &jpatterns); err != nil {
-			valErr = fmt.Errorf("parse json: %w", err)
+		jpatterns, err := parseFailurePatterns(output)
+		if err != nil {
+			valErr = err
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
 		}
@@ -1175,11 +1180,10 @@ Rules:
 		if err != nil {
 			return nil, err
 		}
-		raw := extractJSON(output)
 
-		var jevidence []jsonHypothesisEvidence
-		if err := decodeModelJSON(raw, &jevidence); err != nil {
-			valErr = fmt.Errorf("parse json: %w", err)
+		jevidence, err := parseHypothesisEvidence(output)
+		if err != nil {
+			valErr = err
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
 		}

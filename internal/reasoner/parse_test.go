@@ -202,6 +202,120 @@ func TestParseCausalLinksStillRejectsWhatIsNotAnAnswer(t *testing.T) {
 	}
 }
 
+// Production, 2026-11-12, after the relationships and causal-links fixes: the
+// hypothesis-evidence stage failed the same way ({"hypothesis_id": 171, ...} on its
+// own), because every list stage asked for "a bare JSON array" is answered in
+// whatever shape the model prefers. They all share parseModelList, so the shapes are
+// pinned for each stage; the answers are modelled on the ones the dashboard quoted.
+func TestEveryListStageReadsTheShapesModelsReallyReturn(t *testing.T) {
+	stages := []struct {
+		name  string
+		parse func(string) (int, error) // number of elements read
+		one   string                    // one element on its own
+		array string                    // the same element in a bare array
+		wrap  string                    // the same element under the expected key
+	}{
+		{"relationships",
+			func(s string) (int, error) { l, e := parseRelationships(s); return len(l), e },
+			`{"fact_id": 3124, "from": "Papertrail", "relation_type": "opens", "to": "a file"}`,
+			`[{"fact_id": 3124, "from": "Papertrail", "relation_type": "opens", "to": "a file"}]`,
+			`{"relationships": [{"fact_id": 3124, "from": "Papertrail", "relation_type": "opens", "to": "a file"}]}`},
+		{"causal links",
+			func(s string) (int, error) { l, e := parseCausalLinks(s); return len(l), e },
+			`{"cause_id": 1, "effect_id": 2, "confidence": 0.9}`,
+			`[{"cause_id": 1, "effect_id": 2, "confidence": 0.9}]`,
+			`{"causal_links": [{"cause_id": 1, "effect_id": 2, "confidence": 0.9}]}`},
+		{"hypothesis evidence",
+			func(s string) (int, error) { l, e := parseHypothesisEvidence(s); return len(l), e },
+			`{"hypothesis_id": 171, "verdict": "supports", "confidence": 0.8, "reasoning": "The fact states that Papertrail opens double-clicked .md files"}`,
+			`[{"hypothesis_id": 171, "verdict": "supports", "confidence": 0.8, "reasoning": "r"}]`,
+			`{"evidence": [{"hypothesis_id": 171, "verdict": "supports", "confidence": 0.8, "reasoning": "r"}]}`},
+		{"goal progress",
+			func(s string) (int, error) { l, e := parseGoalProgress(s); return len(l), e },
+			`{"goal_id": 5, "assessment": "progress", "note": "n", "confidence": 0.7}`,
+			`[{"goal_id": 5, "assessment": "progress", "note": "n", "confidence": 0.7}]`,
+			`{"assessments": [{"goal_id": 5, "assessment": "progress", "note": "n", "confidence": 0.7}]}`},
+		{"failure patterns",
+			func(s string) (int, error) { l, e := parseFailurePatterns(s); return len(l), e },
+			`{"type": "repetition", "failure_id": 9, "evidence": "e", "pattern_fact": "p", "confidence": 0.6}`,
+			`[{"type": "repetition", "failure_id": 9, "evidence": "e", "pattern_fact": "p", "confidence": 0.6}]`,
+			`{"patterns": [{"type": "repetition", "failure_id": 9, "evidence": "e", "pattern_fact": "p", "confidence": 0.6}]}`},
+	}
+	for _, st := range stages {
+		t.Run(st.name, func(t *testing.T) {
+			for label, in := range map[string]string{
+				"bare array":        st.array,
+				"one element":       st.one,
+				"under the key":     st.wrap,
+				"in a code fence":   "```json\n" + st.one + "\n```",
+				"empty array":       `[]`,
+				"empty object":      "{ }",
+				"empty under a key": `{"anything": []}`,
+			} {
+				n, err := st.parse(in)
+				if err != nil {
+					t.Errorf("%s: %v", label, err)
+					continue
+				}
+				want := 1
+				if label == "empty array" || label == "empty object" || label == "empty under a key" {
+					want = 0
+				}
+				if n != want {
+					t.Errorf("%s: read %d elements, want %d", label, n, want)
+				}
+			}
+			// None of these is an answer, and the retry depends on them staying errors.
+			for label, in := range map[string]string{
+				"nothing":        ``,
+				"prose":          `I could not find anything relevant in these facts.`,
+				"an error note":  `{"error": "The previous response was invalid because it contained a placeholder. Please run the extraction again."}`,
+				"unrelated keys": `{"summary": "none", "note": 3}`,
+			} {
+				if n, err := st.parse(in); err == nil && n > 0 {
+					t.Errorf("%s: read %d elements from something that is not an answer", label, n)
+				}
+			}
+		})
+	}
+}
+
+// "fact_id": "3128" (a number in quotes) cost a whole batch in production. Only the
+// fields that are numbers in every schema are repaired, and only when the whole
+// value is a number.
+func TestRepairQuotedNumbers(t *testing.T) {
+	for in, want := range map[string]string{
+		`{"fact_id": "3128"}`: `{"fact_id": 3128}`,
+		`[{"cause_id":"1","effect_id": "2" ,"confidence": "0.9"}]`: `[{"cause_id":1,"effect_id": 2 ,"confidence": 0.9}]`,
+		`{"hypothesis_id": "171", "new_confidence": "-0.5"}`:       `{"hypothesis_id": 171, "new_confidence": -0.5}`,
+		// Left alone: a real number, a non-numeric string, a field that is text, and a
+		// key that is only quoted inside a string value (escaped there).
+		`{"fact_id": 3128}`:                         `{"fact_id": 3128}`,
+		`{"confidence": "high"}`:                    `{"confidence": "high"}`,
+		`{"note": "12"}`:                            `{"note": "12"}`,
+		`{"note": "see \"fact_id\": \"12\" above"}`: `{"note": "see \"fact_id\": \"12\" above"}`,
+		`{"fact_id": "12abc"}`:                      `{"fact_id": "12abc"}`,
+	} {
+		if got := repairQuotedNumbers(in); got != want {
+			t.Errorf("repairQuotedNumbers(%s)\n got %s\nwant %s", in, got, want)
+		}
+	}
+}
+
+func TestDecodeModelJSONReadsQuotedNumbersAndStillSalvagesATruncatedArray(t *testing.T) {
+	var got []jsonRelationship
+	// Three defects in one answer: a quoted id, a space inside an unquoted number,
+	// and a second element cut off mid-string.
+	raw := `[{"fact_id": "3028", "from": "a", "relation_type": "uses", "to": "b", "confidence": 0. 9},
+  {"fact_id": "3031", "from": "c", "relation_type": "uses", "to": "d`
+	if err := decodeModelJSON(raw, &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 1 || got[0].FactID != 3028 || got[0].Confidence != 0.9 {
+		t.Errorf("got %+v, want only the complete first element with id 3028 and confidence 0.9", got)
+	}
+}
+
 // What is not a relationship answer at all must still be an error: the retry and
 // the dashboard's error count depend on it.
 func TestParseRelationshipsStillRejectsWhatIsNotAnAnswer(t *testing.T) {
