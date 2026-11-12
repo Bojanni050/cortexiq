@@ -757,6 +757,21 @@ Rules:
 
 // --- ReasonCausalLinks ---
 
+// parseCausalLinks reads the model's answer to ReasonCausalLinks. Like the
+// relationships stage, the prompt asks for a bare array and the model sometimes
+// answers with one link on its own ({"cause_id": 1, "effect_id": 2, ...}) or
+// with the array under a key ({"causal_links": [...]}); "cannot unmarshal object
+// into Go value of type []reasoner.jsonCausalLink" cost the whole batch each time.
+// Anything that is none of these is still a parse error.
+func parseCausalLinks(output string) ([]jsonCausalLink, error) {
+	raw := unwrapTopLevelArray(extractJSON(output), "causal_links", "cause_id")
+	var jlinks []jsonCausalLink
+	if err := decodeModelJSON(raw, &jlinks); err != nil {
+		return nil, fmt.Errorf("parse json: %w", err)
+	}
+	return jlinks, nil
+}
+
 func (o *OpenAI) ReasonCausalLinks(ctx context.Context, facts []models.Fact) ([]*StructuredCausalLink, error) {
 	if len(facts) < 2 {
 		return nil, nil
@@ -802,11 +817,10 @@ Rules:
 		if err != nil {
 			return nil, err
 		}
-		raw := extractJSON(output)
 
-		var jlinks []jsonCausalLink
-		if err := decodeModelJSON(raw, &jlinks); err != nil {
-			valErr = fmt.Errorf("parse json: %w", err)
+		jlinks, err := parseCausalLinks(output)
+		if err != nil {
+			valErr = err
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
 		}

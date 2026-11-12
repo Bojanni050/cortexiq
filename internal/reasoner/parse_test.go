@@ -155,6 +155,53 @@ func TestParseRelationshipsAcceptsTheShapesModelsReallyReturn(t *testing.T) {
 	}
 }
 
+// Production, 2026-11-12: the causal-links stage showed the same failure as the
+// relationships stage ("cannot unmarshal object into Go value of type
+// []reasoner.jsonCausalLink") once the model started answering with an object.
+func TestParseCausalLinksAcceptsTheShapesModelsReallyReturn(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want [][2]int64 // cause, effect
+	}{
+		{"bare array, as asked", `[{"cause_id": 1, "effect_id": 2, "confidence": 0.9}]`, [][2]int64{{1, 2}}},
+		{"one link on its own", `{"cause_id": 3127, "effect_id": 3128, "confidence": 0.8}`, [][2]int64{{3127, 3128}}},
+		{"array under the expected key", "{\n  \"causal_links\": [\n    {\"cause_id\": 1, \"effect_id\": 2, \"confidence\": 0.9},\n    {\"cause_id\": 2, \"effect_id\": 3, \"confidence\": 0.7}\n  ]\n}", [][2]int64{{1, 2}, {2, 3}}},
+		{"array under another key", `{"links": [{"cause_id": 4, "effect_id": 5, "confidence": 0.6}]}`, [][2]int64{{4, 5}}},
+		{"in a code fence", "```json\n{\"cause_id\": 6, \"effect_id\": 7, \"confidence\": 0.9}\n```", [][2]int64{{6, 7}}},
+		{"nothing found, bare", `[]`, nil},
+		{"nothing found, under a key", `{"causal_links": []}`, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := parseCausalLinks(c.in)
+			if err != nil {
+				t.Fatalf("parseCausalLinks: %v", err)
+			}
+			if len(got) != len(c.want) {
+				t.Fatalf("got %d links, want %d: %+v", len(got), len(c.want), got)
+			}
+			for i, w := range c.want {
+				if got[i].CauseID != w[0] || got[i].EffectID != w[1] {
+					t.Errorf("link %d = %d -> %d, want %d -> %d", i, got[i].CauseID, got[i].EffectID, w[0], w[1])
+				}
+			}
+		})
+	}
+}
+
+func TestParseCausalLinksStillRejectsWhatIsNotAnAnswer(t *testing.T) {
+	for _, in := range []string{
+		``,
+		`There are no causal relationships between these facts.`,
+		`{"summary": "none", "note": 3}`,
+	} {
+		if got, err := parseCausalLinks(in); err == nil && len(got) > 0 {
+			t.Errorf("parseCausalLinks(%q) returned %+v, want an error or nothing", in, got)
+		}
+	}
+}
+
 // What is not a relationship answer at all must still be an error: the retry and
 // the dashboard's error count depend on it.
 func TestParseRelationshipsStillRejectsWhatIsNotAnAnswer(t *testing.T) {
