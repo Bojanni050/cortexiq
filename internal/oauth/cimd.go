@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -326,12 +327,57 @@ func validateRedirectURI(raw string) error {
 }
 
 // redirectAllowed reports whether uri is registered for the client. Exact string
-// matching is the only safe comparison (RFC 6749 §3.1.2.3).
+// matching is the safe default (RFC 6749 §3.1.2.3); the one exception is the
+// loopback port, see loopbackPortMatch.
 func redirectAllowed(client Client, uri string) bool {
 	for _, registered := range client.RedirectURIs {
-		if registered == uri {
+		if registered == uri || loopbackPortMatch(registered, uri) {
 			return true
 		}
 	}
 	return false
+}
+
+// loopbackPortMatch implements RFC 8252 §7.3. A native app that listens on the
+// loopback interface asks the operating system for a free port at the moment it
+// signs in, so it cannot know the port in advance and registers the URI without
+// one ("http://127.0.0.1/callback"). The server must then accept any port. This is
+// what OpenCode does: its metadata lists http://127.0.0.1/callback and it signs in
+// with http://127.0.0.1:<random>/callback, which exact matching rejected.
+//
+// It is deliberately narrow. Only a registration that is plain http on a loopback
+// host and names no port can float; everything else, including a loopback URI
+// registered with a port, still has to match exactly. Host, path and query must be
+// identical, and "localhost" does not stand in for "127.0.0.1" or the other way
+// round. The authorization code is bound to the full URI that was requested
+// (token.go compares it exactly), so the port is not a way to redirect a code
+// somewhere the client did not ask for: only a process on this same machine can
+// listen there.
+func loopbackPortMatch(registered, requested string) bool {
+	reg, err := url.Parse(registered)
+	if err != nil {
+		return false
+	}
+	req, err := url.Parse(requested)
+	if err != nil {
+		return false
+	}
+	if reg.Scheme != "http" || req.Scheme != "http" {
+		return false
+	}
+	if !isLoopbackHost(reg.Hostname()) || reg.Port() != "" {
+		return false
+	}
+	if req.Hostname() != reg.Hostname() || req.User != nil || req.Fragment != "" {
+		return false
+	}
+	port, err := strconv.Atoi(req.Port())
+	if err != nil || port < 1 || port > 65535 {
+		return false
+	}
+	return req.Path == reg.Path && req.RawQuery == reg.RawQuery
+}
+
+func isLoopbackHost(host string) bool {
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }

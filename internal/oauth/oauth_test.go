@@ -130,6 +130,74 @@ func TestRedirectAllowed(t *testing.T) {
 	}
 }
 
+// OpenCode's own client metadata (https://opencode.ai/oauth/opencode/client.json)
+// registers these three URIs without a port and signs in on a free one it gets from
+// the operating system. Exact matching rejected that with "The redirect URI is not
+// registered for this client." (RFC 8252 §7.3 says any loopback port must be allowed).
+func TestRedirectAllowedAcceptsAnyLoopbackPortForAPortlessRegistration(t *testing.T) {
+	opencode := Client{RedirectURIs: []string{
+		"http://127.0.0.1/callback",
+		"http://localhost/callback",
+		"http://127.0.0.1/mcp/oauth/callback",
+	}}
+	for _, uri := range []string{
+		"http://127.0.0.1:53437/callback", // the request in the bug report
+		"http://127.0.0.1:1/callback",
+		"http://127.0.0.1:65535/callback",
+		"http://localhost:8765/callback",
+		"http://127.0.0.1:53437/mcp/oauth/callback",
+		"http://127.0.0.1/callback", // exact, without a port
+	} {
+		if !redirectAllowed(opencode, uri) {
+			t.Errorf("redirectAllowed(%q) = false, want true", uri)
+		}
+	}
+
+	v6 := Client{RedirectURIs: []string{"http://[::1]/cb"}}
+	if !redirectAllowed(v6, "http://[::1]:49152/cb") {
+		t.Error("an IPv6 loopback registration without a port should accept any port")
+	}
+}
+
+// The port is the only thing that floats. Every other difference, and every URI
+// that is not a plain loopback http registration without a port, stays exact.
+func TestRedirectAllowedKeepsLoopbackMatchingNarrow(t *testing.T) {
+	portless := Client{RedirectURIs: []string{"http://127.0.0.1/callback"}}
+	for name, uri := range map[string]string{
+		"another path":               "http://127.0.0.1:53437/other",
+		"a longer path":              "http://127.0.0.1:53437/callback/x",
+		"a trailing slash":           "http://127.0.0.1:53437/callback/",
+		"another query":              "http://127.0.0.1:53437/callback?x=1",
+		"localhost for 127.0.0.1":    "http://localhost:53437/callback",
+		"another host":               "http://evil.example.com:53437/callback",
+		"a host that starts with it": "http://127.0.0.1.evil.com:53437/callback",
+		"userinfo hiding the host":   "http://127.0.0.1:53437@evil.com/callback",
+		"https instead of http":      "https://127.0.0.1:53437/callback",
+		"port zero":                  "http://127.0.0.1:0/callback",
+		"port out of range":          "http://127.0.0.1:70000/callback",
+		"a fragment":                 "http://127.0.0.1:53437/callback#x",
+		"an empty uri":               "",
+	} {
+		if redirectAllowed(portless, uri) {
+			t.Errorf("%s: redirectAllowed(%q) = true, want false", name, uri)
+		}
+	}
+
+	// A registration that names a port, or is not loopback, does not float.
+	withPort := Client{RedirectURIs: []string{"http://127.0.0.1:8080/cb"}}
+	if redirectAllowed(withPort, "http://127.0.0.1:9090/cb") {
+		t.Error("a registration with an explicit port must match that port exactly")
+	}
+	remote := Client{RedirectURIs: []string{"https://example.com/cb"}}
+	if redirectAllowed(remote, "https://example.com:8443/cb") {
+		t.Error("a non-loopback registration must not accept another port")
+	}
+	remoteHTTP := Client{RedirectURIs: []string{"http://example.com/cb"}}
+	if redirectAllowed(remoteHTTP, "http://example.com:8080/cb") {
+		t.Error("plain http on a non-loopback host must not float")
+	}
+}
+
 func TestSessionSigner(t *testing.T) {
 	s := newSessionSigner("", "admin-password")
 	now := time.Now()
