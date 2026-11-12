@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -55,14 +56,6 @@ func Open(ctx context.Context, dsn string, expectedModel string, vectorDim int) 
 	connConfig := pool.Config().ConnConfig
 	sqlDB := stdlib.OpenDB(*connConfig)
 	defer sqlDB.Close()
-
-	goose.SetBaseFS(embedMigrations)
-	goose.SetLogger(discardLogger{})
-
-	if err := goose.SetDialect("postgres"); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("goose.SetDialect: %w", err)
-	}
 
 	// The MCP server and the dashboard are separate processes on the same
 	// database and start together. Everything below is check-then-create, so two
@@ -141,10 +134,27 @@ func withSchemaLock(ctx context.Context, pool *pgxpool.Pool, fn func() error) er
 	return fn()
 }
 
+// gooseMu guards goose's package-level state (base file system, logger and
+// dialect). The advisory lock orders two callers in time, but it is a database
+// round trip and gives Go no happens-before edge, so two Opens in one process
+// (as the tests do, and as a future embedder might) still race on those
+// variables. The mutex is what makes that safe, and it is only ever taken while
+// holding the advisory lock, so the two cannot deadlock.
+var gooseMu sync.Mutex
+
 // setupSchema brings the schema up to date: goose migrations, the vector
 // dimension on columns that were created unconstrained, and the HNSW indexes.
 // Callers hold the schema lock.
 func setupSchema(ctx context.Context, pool *pgxpool.Pool, sqlDB *sql.DB, vectorDim int) error {
+	gooseMu.Lock()
+	defer gooseMu.Unlock()
+
+	goose.SetBaseFS(embedMigrations)
+	goose.SetLogger(discardLogger{})
+	if err := goose.SetDialect("postgres"); err != nil {
+		return fmt.Errorf("goose.SetDialect: %w", err)
+	}
+
 	if err := goose.Up(sqlDB, "migrations"); err != nil {
 		return fmt.Errorf("goose.Up: %w", err)
 	}
