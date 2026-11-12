@@ -463,15 +463,32 @@ Rules:
 			return nil, err
 		}
 
-		var jrels []jsonRelationship
-		if err := decodeModelJSON(extractJSON(output), &jrels); err != nil {
-			valErr = fmt.Errorf("parse json: %w", err)
+		jrels, err := parseRelationships(output)
+		if err != nil {
+			valErr = err
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
 		}
 		return groundRelationships(jrels, contents), nil
 	}
 	return nil, valErr
+}
+
+// parseRelationships reads the model's answer to ReasonRelationshipsBatch. The
+// prompt asks for a bare JSON array, and models regularly answer with something
+// else that means the same: one relationship on its own ({"fact_id": 3124, ...})
+// when a single one was found, or the array under a key ({"relationships": [...]}).
+// Both used to fail with "cannot unmarshal object into Go value of type
+// []reasoner.jsonRelationship" and cost the whole batch, and a retry usually
+// produced the same shape again, so the answer is read in whichever shape it
+// arrives. An answer that is none of these still surfaces as a parse error.
+func parseRelationships(output string) ([]jsonRelationship, error) {
+	raw := unwrapTopLevelArray(extractJSON(output), "relationships", "fact_id")
+	var jrels []jsonRelationship
+	if err := decodeModelJSON(raw, &jrels); err != nil {
+		return nil, fmt.Errorf("parse json: %w", err)
+	}
+	return jrels, nil
 }
 
 // groundRelationships keeps only well-formed relationships that are attributed to a

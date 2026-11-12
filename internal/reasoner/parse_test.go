@@ -108,6 +108,80 @@ func TestStructParsersAcceptTheSpaceInsideNumber(t *testing.T) {
 	}
 }
 
+// Production, 2026-11-12: every failing run on the dashboard (/projects/papertrail,
+// /hermes, /clients/white-vision, /projects/chronicle) was "cannot unmarshal object
+// into Go value of type []reasoner.jsonRelationship". The model answered with one of
+// the shapes below instead of a bare array, and the whole batch of relationships
+// was lost. The cases are modelled on the answers those errors quote.
+func TestParseRelationshipsAcceptsTheShapesModelsReallyReturn(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want []int64 // fact ids, in order
+	}{
+		{"bare array, as asked",
+			`[{"fact_id": 3124, "from": "Papertrail", "relation_type": "opens", "canonical_type": "opens", "to": "double-clicked .md file", "confidence": 0.9}]`,
+			[]int64{3124}},
+		{"one relationship on its own",
+			`{"fact_id": 3124, "from": "Papertrail", "relation_type": "opens", "canonical_type": "opens", "to": "double-clicked .md file", "confidence": 0.9}`,
+			[]int64{3124}},
+		{"array under a key, pretty printed",
+			"{\n  \"relationships\": [\n    {\n      \"fact_id\": 3125,\n      \"from\": \"CortexIQ OAuth login\",\n      \"relation_type\": \"completes\",\n      \"to\": \"consent screen\",\n      \"confidence\": 0.9\n    }\n  ]\n}",
+			[]int64{3125}},
+		{"array under a key, two elements",
+			`{"relationships": [{"fact_id": 1, "from": "a", "relation_type": "uses", "to": "b"}, {"fact_id": 2, "from": "c", "relation_type": "uses", "to": "d"}]}`,
+			[]int64{1, 2}},
+		{"in a code fence",
+			"```json\n{\"fact_id\": 3128, \"from\": \"Google Tag Manager tag 68\", \"relation_type\": \"named\", \"canonical_type\": null, \"to\": \"Ads - W\"}\n```",
+			[]int64{3128}},
+		{"nothing found, bare", `[]`, nil},
+		{"nothing found, under a key", `{"relationships": []}`, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := parseRelationships(c.in)
+			if err != nil {
+				t.Fatalf("parseRelationships: %v", err)
+			}
+			if len(got) != len(c.want) {
+				t.Fatalf("got %d relationships, want %d: %+v", len(got), len(c.want), got)
+			}
+			for i, id := range c.want {
+				if got[i].FactID != id {
+					t.Errorf("relationship %d has fact_id %d, want %d", i, got[i].FactID, id)
+				}
+			}
+		})
+	}
+}
+
+// What is not a relationship answer at all must still be an error: the retry and
+// the dashboard's error count depend on it.
+func TestParseRelationshipsStillRejectsWhatIsNotAnAnswer(t *testing.T) {
+	for _, in := range []string{
+		``,
+		`I could not find any relationships in these facts.`,
+		`{"summary": "no relationships", "note": 3}`,
+	} {
+		if got, err := parseRelationships(in); err == nil && len(got) > 0 {
+			t.Errorf("parseRelationships(%q) returned %+v, want an error or nothing", in, got)
+		}
+	}
+}
+
+// The single-object answer must also survive grounding: it is only worth
+// accepting if what comes out is the relationship the model meant.
+func TestSingleObjectAnswerIsGroundedLikeAnyOther(t *testing.T) {
+	jrels, err := parseRelationships(`{"fact_id": 3124, "from": "Papertrail", "relation_type": "opens", "canonical_type": "opens", "to": "double-clicked .md file", "confidence": 0.9}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := groundRelationships(jrels, map[int64]string{3124: "Papertrail opens a double-clicked .md file as a note."})
+	if len(got[3124]) != 1 || got[3124][0].FromEntity != "Papertrail" {
+		t.Errorf("grounded = %+v, want the one Papertrail relationship", got)
+	}
+}
+
 // A model that runs out of output tokens stops mid-object. Losing the whole batch
 // because the last element is incomplete throws away relationships that were
 // already written out in full.
