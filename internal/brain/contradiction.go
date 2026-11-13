@@ -15,17 +15,23 @@ import (
 var ErrContradictionNotFound = fmt.Errorf("brain: contradiction not found")
 
 // DetectContradictions checks a newly inserted fact against existing facts
-// with the same (entity, property) in the same namespace.
+// with the same (entity, property) in the same namespace. "Same" ignores capitals
+// and surrounding spaces: the extractor quotes names as it finds them, so
+// "CortexIQ" and "cortexiq" arrive as two spellings of one entity, and an exact
+// match let two facts about it contradict each other unnoticed. The stored
+// spelling is left alone; only the lookup folds it (index facts_entity_property_ci).
 // Returns the number of contradictions detected and auto-resolved.
 func (b *Brain) DetectContradictions(ctx context.Context, nsID int64, fact *models.Fact) (detected, autoResolved int, err error) {
-	if fact.Entity == nil || fact.Property == nil || *fact.Entity == "" || *fact.Property == "" {
+	if fact.Entity == nil || fact.Property == nil || strings.TrimSpace(*fact.Entity) == "" || strings.TrimSpace(*fact.Property) == "" {
 		return 0, 0, nil
 	}
 
 	rows, err := b.pool.Query(ctx,
 		`SELECT id, content, value, confidence FROM facts
-		 WHERE namespace_id = $1 AND entity = $2 AND property = $3
-		 AND id != $4 AND deleted_at IS NULL AND valid_until IS NULL`,
+		 WHERE namespace_id = $1
+		   AND entity IS NOT NULL AND property IS NOT NULL
+		   AND lower(btrim(entity)) = lower(btrim($2)) AND lower(btrim(property)) = lower(btrim($3))
+		   AND id != $4 AND deleted_at IS NULL AND valid_until IS NULL`,
 		nsID, *fact.Entity, *fact.Property, fact.ID,
 	)
 	if err != nil {

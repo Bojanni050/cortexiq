@@ -267,15 +267,18 @@ func buildCleanup(factCounts, relCounts map[string]int, limit int) *Cleanup {
 		c.Duplicates = c.Duplicates[:limit]
 	}
 
-	// An island is an entity with facts whose spelling, ignoring capitals, appears
-	// in no relation. Capitals are ignored because the graph folds them too.
+	// An island is an entity with facts that no relation mentions. "Mentions" means
+	// the same entity under the rule the system itself writes relations with: a fact
+	// about "Hermes agent" and a relation about "hermes" are one entity, because
+	// NormalizeEntity folds both to "hermes". Comparing raw spellings would call it
+	// an island once the relations are normalised and the facts are not.
 	inRelation := map[string]bool{}
 	for n := range relCounts {
-		inRelation[entityKey(n)] = true
+		inRelation[identityKey(n)] = true
 	}
 	byKey := map[string]*Island{}
 	for n, v := range factCounts {
-		k := entityKey(n)
+		k := identityKey(n)
 		if inRelation[k] {
 			continue
 		}
@@ -313,6 +316,16 @@ func buildCleanup(factCounts, relCounts map[string]int, limit int) *Cleanup {
 	}
 	c.Totals.FactEntities, c.Totals.RelationEntities = len(factKeys), len(relKeys)
 	return c
+}
+
+// identityKey is the entity a name stands for under the system's own rule
+// (NormalizeEntity). A name that rule rejects as a description keeps its folded
+// spelling, so it is still compared with itself.
+func identityKey(name string) string {
+	if canonical, ok := NormalizeEntity(name); ok {
+		return canonical
+	}
+	return entityKey(name)
 }
 
 // cleanupKey is what makes two spellings the same entity: capitals, punctuation,

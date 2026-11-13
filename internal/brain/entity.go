@@ -133,6 +133,20 @@ func NormalizeEntity(name string) (string, bool) {
 	return s, true
 }
 
+// placeholderRelationTypes are the words a model writes when it has no relation to
+// state. Production held 16 edges whose type was the literal text "null".
+var placeholderRelationTypes = map[string]bool{
+	"null": true, "none": true, "nil": true, "n/a": true, "unknown": true, "undefined": true,
+}
+
+// IsPlaceholderRelationType reports whether a relation type is such a placeholder
+// instead of a predicate. An empty type counts too.
+func IsPlaceholderRelationType(t string) bool {
+	k := strings.ToLower(strings.TrimSpace(t))
+	k = strings.Trim(k, ".,;:!?'\"`")
+	return k == "" || placeholderRelationTypes[k]
+}
+
 // hasLetter reports whether a name contains a letter at all. The second dry run
 // left ":8443" and "8443 origin" standing: a port, a version or a count is a value
 // an edge mentions, never the thing an edge connects.
@@ -159,10 +173,22 @@ func isEntityDescription(s string) bool {
 			return true
 		}
 	}
-	if first := fields[0]; len(first) > 5 && strings.HasSuffix(first, "ing") {
+	// A gerund marks a description ("wrapping mcp-remote", or a bare "dragging"), but
+	// a token built like an identifier is a name even when it ends in -ing: the
+	// project "poyo-v6-uitbreiding" (the Dutch noun uitbreiding) carried 68 relations
+	// the dry run on production wanted to drop. A hyphen, digit, dot or underscore is
+	// what sets such a name apart from a plain verb form; a plain "mapping" or
+	// "reading" on its own still names nothing.
+	if first := fields[0]; len(first) > 5 && strings.HasSuffix(first, "ing") && (len(fields) > 1 || !looksLikeIdentifier(first)) {
 		return true
 	}
 	return false
+}
+
+// looksLikeIdentifier reports whether a token is built like a project, file or
+// package name: it holds a hyphen, a digit, a dot or an underscore.
+func looksLikeIdentifier(s string) bool {
+	return strings.ContainsAny(s, "-._0123456789")
 }
 
 // EntityRename is one name that folded onto another, with how many rows carried it.

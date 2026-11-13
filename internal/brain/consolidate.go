@@ -977,6 +977,12 @@ func (b *Brain) storeRelationship(ctx context.Context, nsID, factID int64, rel *
 		// the graph honest; the fact itself is still there to be recalled.
 		return false, nil
 	}
+	// A model that has nothing to say sometimes answers with the word for it. A
+	// relation whose type is "null" says nothing either, and it would sit in the
+	// graph as a real edge.
+	if IsPlaceholderRelationType(rel.RelationType) {
+		return false, nil
+	}
 
 	// Rows without a canonical_type are compared by their normalised
 	// relation_type: "pushed to" and "pushed_to" are one predicate, and three

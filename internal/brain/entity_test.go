@@ -114,3 +114,43 @@ func TestNormalizeEntityDropsInnerQuotesAndMessages(t *testing.T) {
 		}
 	}
 }
+
+func TestIsPlaceholderRelationType(t *testing.T) {
+	placeholders := []string{"null", "NULL", " none ", "nil", "n/a", "N/A", "unknown", "undefined", "", "  ", "'null'", "null."}
+	for _, s := range placeholders {
+		if !IsPlaceholderRelationType(s) {
+			t.Errorf("%q says nothing, it must count as a placeholder", s)
+		}
+	}
+	// Real predicates must pass, including ones that merely contain a placeholder word.
+	predicates := []string{"uses", "stored_in", "pushed to", "is_unknown_to", "no_longer_in_use", "nullifies", "none_of", "runs"}
+	for _, s := range predicates {
+		if IsPlaceholderRelationType(s) {
+			t.Errorf("%q is a real predicate, it must not count as a placeholder", s)
+		}
+	}
+}
+
+// A word ending in -ing is a description when it is a plain verb form, and a name
+// when it is built like an identifier. The dry run on production wanted to drop the
+// project "PoYo-v6-uitbreiding" (68 relations) because uitbreiding ends in -ing.
+func TestNormalizeEntityGerundRuleSparesIdentifiers(t *testing.T) {
+	kept := map[string]string{
+		"PoYo-v6-uitbreiding":     "poyo-v6-uitbreiding",
+		"The PoYo-v6-uitbreiding": "poyo-v6-uitbreiding",
+		"chrome.scripting":        "chrome.scripting",
+		"macro-bevestiging":       "macro-bevestiging",
+		"llm_bindings-binding":    "llm_bindings-binding",
+	}
+	for in, want := range kept {
+		if got, ok := NormalizeEntity(in); !ok || got != want {
+			t.Errorf("NormalizeEntity(%q) = %q, %v; want %q, true", in, got, ok, want)
+		}
+	}
+	dropped := []string{"dragging", "mapping", "reading", "packaging", "wrapping mcp-remote", "wrapping poyo-v6"}
+	for _, in := range dropped {
+		if got, ok := NormalizeEntity(in); ok {
+			t.Errorf("NormalizeEntity(%q) = %q, true; a bare verb form or a gerund phrase names nothing", in, got)
+		}
+	}
+}

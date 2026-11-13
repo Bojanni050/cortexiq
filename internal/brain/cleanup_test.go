@@ -102,6 +102,24 @@ func TestBuildCleanupIslands(t *testing.T) {
 	}
 }
 
+// Relations are stored in the system's normal form, facts are not. A fact about
+// "Hermes agent" and a relation about "hermes" are one entity, not an island.
+func TestBuildCleanupIslandsUseTheSystemsOwnNormalisation(t *testing.T) {
+	c := buildCleanup(
+		map[string]int{
+			"Hermes agent":                      317, // normalises to "hermes"
+			"The Hermes agent (hermes/default)": 5,   // also "hermes"
+			"Hindsight MCP setup":               3,   // normalises to "hindsight"
+			"Chronicle-db":                      6,   // related to nothing
+		},
+		map[string]int{"hermes": 54, "hindsight": 142},
+		100)
+
+	if c.IslandTotal != 1 || c.Islands[0].Entity != "Chronicle-db" {
+		t.Errorf("only Chronicle-db is unrelated, got %+v", c.Islands)
+	}
+}
+
 func TestBuildCleanupLimitsListsButNotTotals(t *testing.T) {
 	facts := map[string]int{}
 	for i := 0; i < 30; i++ {
