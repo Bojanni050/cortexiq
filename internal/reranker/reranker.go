@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -57,7 +58,9 @@ func NewHTTP(baseURL, apiKey, model string) Reranker {
 		return nil
 	}
 	return &HTTP{
-		baseURL: baseURL,
+		// A base URL that ends in a slash ("https://api.jina.ai/v1/") would give
+		// ".../v1//rerank", which Jina answers with 404 "Invalid endpoint".
+		baseURL: strings.TrimRight(baseURL, "/"),
 		apiKey:  apiKey,
 		model:   model,
 		client:  &http.Client{Timeout: 10 * time.Second},

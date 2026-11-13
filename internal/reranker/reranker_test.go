@@ -81,3 +81,24 @@ func TestRerankSurfacesHTTPError(t *testing.T) {
 		t.Error("want error on 404")
 	}
 }
+
+// A base URL with a trailing slash, as written in the production .env, must not
+// produce "//rerank": Jina answers that with 404 "Invalid endpoint", and recall
+// then falls back to the fused order without anyone noticing.
+func TestRerankTrailingSlashInBaseURL(t *testing.T) {
+	var path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		_, _ = w.Write([]byte(`{"results":[{"index":0,"relevance_score":0.5}]}`))
+	}))
+	defer srv.Close()
+	for _, base := range []string{srv.URL, srv.URL + "/", srv.URL + "//"} {
+		path = ""
+		if _, err := NewHTTP(base, "", "m").Rerank(context.Background(), "q", []Candidate{{Content: "a"}}); err != nil {
+			t.Fatalf("base %q: %v", base, err)
+		}
+		if path != "/rerank" {
+			t.Errorf("base %q requested %q, want /rerank", base, path)
+		}
+	}
+}
