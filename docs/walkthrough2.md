@@ -733,3 +733,9 @@ voor de regel dat er na 1000 regels een nieuw walkthrough-bestand komt.
 - Findings: Visuele test met een mock-server (nep-graph en nep-feiten, scratchpad, niets in de repo). Node- en pijl-hover tonen de feiten correct, de kaart verdwijnt bij wegbewegen. De kaart werd onderaan afgekapt: de graph-box kan hoger zijn dan het venster, en de plaatsing rekende met de boxhoogte.
 - Conclusions: Alleen het zichtbare deel van de box telt, en als er onder de cursor geen ruimte is hoort de kaart erboven, zodat de gehoverde node zichtbaar blijft.
 - Actions: `placeGraphTip` in internal/webui/static/index.html gebruikt `min(box.clientHeight, innerHeight - boxTop)` en klapt boven de cursor; opnieuw getest (node onderaan: kaart boven de cursor, volledig zichtbaar); go test ./internal/webui groen. Niet getest tegen echte data of op een telefoonbreedte.
+
+## 2026-11-13 (v0.1.78 uitgerold: graph hover-kaart)
+
+- Findings: Hover-kaart in de graph-tab stond op main maar nog niet in productie.
+- Conclusions: Pure dashboardwijziging zonder migraties; vaste uitrolprocedure.
+- Actions: `.env.bak-pre0.1.78`, image gepulld terwijl productie draaide, cortexiq+cortexiq-ui gestopt, verified dump `cortexiq-20261113T003612Z.dump`, `CORTEXIQ_IMAGE_TAG=0.1.78`, `up -d`; healthz/readyz 200, 0 restarts, geen errors in logs; validated (hover-kaart met echte data nog niet bekeken).
