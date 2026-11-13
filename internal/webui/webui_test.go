@@ -116,6 +116,26 @@ func TestTimelineRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestCleanupRejectsBadInput(t *testing.T) {
+	mux := http.NewServeMux()
+	(&Handler{}).Register(mux)
+
+	for _, q := range []string{"banana", "0", "-0.5", "1.5"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/cleanup?min_confidence="+q, nil))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("min_confidence=%s = %d, want 400", q, rec.Code)
+		}
+	}
+	for _, m := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(m, "/api/v1/cleanup", nil))
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s /cleanup = %d, want 405", m, rec.Code)
+		}
+	}
+}
+
 func TestPathID(t *testing.T) {
 	tests := []struct {
 		path       string

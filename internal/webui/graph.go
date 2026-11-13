@@ -63,6 +63,30 @@ func (h *Handler) timeline(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tl)
 }
 
+// cleanup reports where the memory is untidy, for the Clean-up tab. Read only.
+// Query: namespaces, min_confidence (relations below it are weak, default 0.8),
+// limit (rows per list).
+func (h *Handler) cleanup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	opts := brain.CleanupOptions{Limit: intQuery(r, "limit")}
+	if s := r.URL.Query().Get("min_confidence"); s != "" {
+		f, err := strconv.ParseFloat(s, 32)
+		if err != nil || f <= 0 || f > 1 {
+			writeErr(w, http.StatusBadRequest, errors.New("min_confidence must be a number above 0 and at most 1"))
+			return
+		}
+		opts.MinConfidence = float32(f)
+	}
+	c, err := h.Brain.Cleanup(r.Context(), namespacesParam(r), opts)
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
+}
+
 // serveVendor serves the bundled third-party scripts (Cytoscape.js and its layout)
 // from the embedded filesystem, so the dashboard works without internet access.
 func (h *Handler) serveVendor(w http.ResponseWriter, r *http.Request) {

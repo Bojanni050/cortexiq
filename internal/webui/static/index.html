@@ -507,6 +507,21 @@ dialog .err { color: var(--red); }
 .tl-wrap circle.td { fill: var(--accent); fill-opacity: .8; }
 .tl-wrap circle.tf { fill: var(--dim); fill-opacity: .16; }
 .tl-wrap circle.tc { fill: none; stroke: var(--red); stroke-width: 1.2; }
+.cl-note { max-width: 72ch; margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.cl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 14px 0 18px; }
+.cl-tile { padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.cl-tile .k { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--dim); }
+.cl-tile .v { font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
+.cl-tile .s { font-size: 12px; color: var(--muted); }
+.cl-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.cl-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 10px 0; border-top: 1px solid var(--border); }
+.cl-kind { padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); cursor: help; }
+.cl-kind.c { color: var(--accent); }
+.cl-kind.q { color: var(--red); border-color: var(--red); }
+.cl-v { padding: 2px 8px; border-radius: 6px; background: var(--hover); font-size: 12.5px; }
+.cl-v small { margin-left: 6px; color: var(--muted); }
+.cl-fact { max-width: 420px; }
+.card .none { padding: 8px 0; color: var(--dim); font-size: 13px; }
 .tl-legend { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 10px; font-size: 12px; color: var(--muted); }
 .tl-legend i { display: inline-block; width: 9px; height: 9px; margin-right: 6px; border-radius: 50%; vertical-align: -1px; }
 .tl-legend i.l { background: var(--accent); }
@@ -681,6 +696,7 @@ const icons = {
   lifecycle: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/>',
   status: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   timeline: '<path d="M3 6h10M3 12h18M3 18h14"/><circle cx="17" cy="6" r="1.6"/><circle cx="8" cy="18" r="1.6"/>',
+  cleanup: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/>',
   stats: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
 };
 const svg = k => `<svg viewBox="0 0 24 24">${icons[k]}</svg>`;
@@ -693,6 +709,7 @@ const tabs = [
   ['facts', 'Facts', 'Stored facts with confidence'],
   ['graph', 'Graph', 'How entities relate: the knowledge graph (drag, zoom, click for details)'],
   ['timeline', 'Timeline', 'When facts were learned and replaced, per entity; drag the cursor to see what was true on a day'],
+  ['cleanup', 'Clean-up', 'Where the memory is untidy: names spelled several ways, entities without relations, weak and unnormalised relations'],
   ['goals', 'Goals', 'What the agent is working towards'],
   ['goallog', 'Goal log', 'Every goal event: who moved it, on what evidence, and what the consolidator inferred'],
   ['mental', 'Mental Models', 'Curated summaries searched first in reflect'],
@@ -716,7 +733,7 @@ const tabs = [
 // healthy") keeps every tab reachable without a second click.
 const NAV_GROUPS = [
   ['Memory', ['overview', 'episodes', 'facts', 'recall']],
-  ['Knowledge', ['graph', 'timeline', 'mental', 'goals', 'goallog', 'hypotheses', 'hypolog', 'contradictions', 'failures', 'patterns', 'links']],
+  ['Knowledge', ['graph', 'timeline', 'cleanup', 'mental', 'goals', 'goallog', 'hypotheses', 'hypolog', 'contradictions', 'failures', 'patterns', 'links']],
   ['System', ['status', 'namespaces', 'runs', 'jobs', 'lifecycle', 'settings', 'metrics', 'stats']],
 ];
 const nav = document.getElementById('nav');
@@ -3605,6 +3622,98 @@ window.addEventListener('resize', () => {
   tlResizeTimer = setTimeout(() => { if (state.tab === 'timeline' && timelineState.data) drawTimeline(); }, 150);
 });
 
+/* ---------- Clean-up tab ----------
+   Read only: where the memory is untidy. Entities spelled several ways, entities no
+   relation connects, weak relations, relation wordings that were never normalised.
+   Nothing here changes data; merging is a decision for a person. */
+const cleanupState = { kind: '', minConf: 0.8, data: null, shown: 25 };
+const CLEANUP_KINDS = {
+  case: ['Capitals', 'c', 'Only capitals differ. The graph already treats these as one entity.'],
+  punctuation: ['Punctuation', '', 'Hyphens, slashes, quotes or stray symbols differ. Almost always the same thing.'],
+  qualifier: ['Check first', 'q', 'One spelling has a "(note)" or a leading "the". Often the same, not always: Foundation and Foundation (Gaia) may be two things.'],
+};
+
+async function renderCleanup() {
+  document.getElementById('content').innerHTML = '<div id="cl-body"><div class="muted" style="padding:20px">Loading…</div></div>';
+  await loadCleanup();
+}
+
+async function loadCleanup() {
+  const data = await api('/cleanup' + nsQS('&limit=200&min_confidence=' + cleanupState.minConf));
+  cleanupState.data = data;
+  drawCleanup();
+}
+
+function cleanupSet(key, value) {
+  cleanupState[key] = value;
+  if (key === 'minConf') { loadCleanup(); return; }
+  cleanupState.shown = 25;
+  drawCleanup();
+}
+
+function drawCleanup() {
+  const d = cleanupState.data, body = document.getElementById('cl-body');
+  if (!d || !body) return;
+  const t = d.totals;
+  const tile = (k, v, s) => `<div class="cl-tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+  const kindCount = { case: 0, punctuation: 0, qualifier: 0 };
+  d.duplicates.forEach(g => { kindCount[g.kind]++; });
+  const groups = d.duplicates.filter(g => !cleanupState.kind || g.kind === cleanupState.kind);
+  const shown = groups.slice(0, cleanupState.shown);
+  const of = (n, total) => n < total ? `showing ${n} of ${total}` : `${total}`;
+
+  const chips = [['', 'All', d.duplicates.length], ...Object.keys(CLEANUP_KINDS).map(k => [k, CLEANUP_KINDS[k][0], kindCount[k]])]
+    .map(([k, label, n]) => `<button class="chip${cleanupState.kind === k ? ' on' : ''}" onclick="cleanupSet('kind','${k}')">${esc(label)} <span class="muted">${n}</span></button>`).join('');
+  const dupHtml = shown.map(g => {
+    const [label, cls, why] = CLEANUP_KINDS[g.kind];
+    return `<div class="cl-group"><span class="cl-kind ${cls}" title="${esc(why)}">${esc(label)}</span>` +
+      g.variants.map(v => `<span class="cl-v">${esc(v.name)}<small>${v.facts} fact${v.facts === 1 ? '' : 's'} · ${v.relations} rel.</small></span>`).join('') + '</div>';
+  }).join('') || '<div class="none">Nothing in this group</div>';
+
+  const islandRows = d.islands.map(i => `<tr><td>${esc(i.entity)}</td><td class="num">${i.facts}</td></tr>`);
+  const weakRows = d.weak.map(w => `<tr><td>${esc(w.from)}</td><td><span class="mono">${esc(w.type)}</span></td><td>${esc(w.to)}</td><td class="num">${pct(w.confidence)}</td>` +
+    `<td class="cl-fact muted"${w.fact_id ? ` data-id="${w.fact_id}">#${w.fact_id}` : '>none'}</td></tr>`);
+  const typeRows = d.unmapped.map(u => `<tr><td><span class="mono">${esc(u.type)}</span></td><td class="num">${u.count}</td>` +
+    `<td class="muted">${u.spellings.length > 1 ? u.spellings.map(esc).join(', ') : ''}</td></tr>`);
+
+  body.innerHTML = `
+    <p class="cl-note">Read only: nothing here changes your data. Spelling cannot find real aliases, such as a person named in full in one place and by first name in another, so those still need your eye.</p>
+    <div class="cl-grid">
+      ${tile('Spelled several ways', d.duplicate_total, 'groups of entity names that look like one')}
+      ${tile('Entities without relations', d.island_total, `of ${t.fact_entities} entities that facts mention`)}
+      ${tile('Weak relations', d.weak_total, `below ${Math.round(t.min_confidence * 100)}% confidence, of ${t.relations}`)}
+      ${tile('Wordings not normalised', t.unmapped_relations, `of ${t.relations} relations, in ${d.unmapped_total} distinct wordings`)}
+    </div>
+
+    <div class="card"><h3>Entities spelled several ways <span class="muted">${cleanupState.kind ? `${groups.length} of the ${d.duplicates.length} most used` : `showing ${d.duplicates.length} of ${d.duplicate_total}`}</span></h3>
+      <div class="card-body"><div class="cl-chips">${chips}</div>${dupHtml}
+      ${groups.length > shown.length ? `<button class="btn" onclick="cleanupState.shown+=25;drawCleanup()">Show ${Math.min(25, groups.length - shown.length)} more</button>` : ''}</div></div>
+
+    <div class="card"><h3>Entities no relation mentions <span class="muted">${of(d.islands.length, d.island_total)}</span></h3>
+      <p class="muted" style="margin:0 0 8px">Facts talk about these, but consolidation found no relation for them yet. Some are fine: new or standalone things.</p>
+      ${table(['Entity', 'Facts'], islandRows)}</div>
+
+    <div class="card"><h3>Weak relations <span class="muted">${of(d.weak.length, d.weak_total)}</span></h3>
+      <div class="toolbar"><label class="muted">Below <select onchange="cleanupSet('minConf',Number(this.value))">
+        ${[0.6, 0.7, 0.8, 0.9].map(v => `<option value="${v}"${cleanupState.minConf === v ? ' selected' : ''}>${Math.round(v * 100)}%</option>`).join('')}</select></label></div>
+      ${table(['From', 'Type', 'To', 'Confidence', 'Source fact'], weakRows)}</div>
+
+    <div class="card"><h3>Relation wordings never normalised <span class="muted">${of(d.unmapped.length, d.unmapped_total)}</span></h3>
+      <p class="muted" style="margin:0 0 8px">Wordings that only differ in punctuation (for example "pushed to" and "pushed_to") count as one.</p>
+      ${table(['Wording', 'Relations', 'Spelled as'], typeRows)}</div>`;
+
+  // Fact texts for the weak relations load on demand, for the first rows only.
+  body.querySelectorAll('.cl-fact[data-id]').forEach((el, i) => {
+    if (i >= 40) return;
+    graphFact(Number(el.dataset.id)).then(f => {
+      if (!f || !el.isConnected) return;
+      el.classList.remove('muted');
+      el.textContent = f.content.length > 140 ? f.content.slice(0, 139) + '…' : f.content;
+      el.title = f.content;
+    });
+  });
+}
+
 function secs(v) {
   if (v < 60) return v + ' seconds';
   if (v < 3600) return (v / 60) + (v === 60 ? ' minute' : ' minutes');
@@ -3840,7 +3949,7 @@ async function saveSchedule() {
   }
 }
 
-const renderers = { overview: renderOverview, graph: renderGraph, timeline: renderTimeline, episodes: renderEpisodes, recall: renderRecall, reflect: renderReflect, facts: renderFacts,
+const renderers = { overview: renderOverview, graph: renderGraph, timeline: renderTimeline, cleanup: renderCleanup, episodes: renderEpisodes, recall: renderRecall, reflect: renderReflect, facts: renderFacts,
   goals: renderGoals, goallog: renderGoalLog, mental: renderMentalModels, hypotheses: renderHypotheses, hypolog: renderHypothesisLog, contradictions: renderContradictions,
   failures: renderFailures, patterns: renderPatterns, links: renderLinks, namespaces: renderNamespaces, runs: renderRuns, jobs: renderJobs, lifecycle: renderLifecycle,
   status: renderStatus, settings: renderSettings, metrics: renderMetrics, stats: renderStats };
