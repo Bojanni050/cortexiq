@@ -82,6 +82,12 @@ var (
 			Help: "Completion tokens reported by reasoner API responses",
 		}, []string{"stage"},
 	)
+	rerankRequests = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "recall_rerank_requests_total",
+			Help: "Cross-encoder rerank requests made by recall; status error means recall fell back to the fused order",
+		}, []string{"status"},
+	)
 )
 
 var reasonerStages = []string{
@@ -106,6 +112,20 @@ func init() {
 		reasonerPromptTokens.WithLabelValues(stage)
 		reasonerCompletionTokens.WithLabelValues(stage)
 	}
+	for _, status := range []string{"success", "error"} {
+		rerankRequests.WithLabelValues(status)
+	}
+}
+
+// RecordRerank counts one rerank request made by recall. A failed request does
+// not fail the recall, which falls back to the fused order, so this counter is
+// the only place a dead reranker (an exhausted account, a bad key) shows up.
+func RecordRerank(success bool) {
+	status := "success"
+	if !success {
+		status = "error"
+	}
+	rerankRequests.WithLabelValues(status).Inc()
 }
 
 // Observation carries the metrics that should be exported for a run.

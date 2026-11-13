@@ -4,6 +4,7 @@ package brain
 import (
 	"context"
 	"fmt"
+	"log"
 	"math"
 	"sort"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/Bojanni050/cortexiq/internal/observability"
 	"github.com/Bojanni050/cortexiq/internal/queries"
 	"github.com/Bojanni050/cortexiq/internal/reranker"
 	"github.com/pgvector/pgvector-go"
@@ -534,7 +536,9 @@ func (b *Brain) rerank(ctx context.Context, query string, rs []RecallResult) []R
 		candidates[i] = reranker.Candidate{Content: rs[i].Content, Fused: rs[i].Score}
 	}
 	scored, err := b.config.Reranker.Rerank(ctx, query, candidates)
+	observability.RecordRerank(err == nil)
 	if err != nil {
+		logRerankFailure(err)
 		return rs
 	}
 	// The cross-encoder sees the query and the candidate together, which
@@ -556,6 +560,30 @@ func (b *Brain) rerank(ctx context.Context, query string, rs []RecallResult) []R
 	}
 	sort.SliceStable(rescored, func(i, j int) bool { return rescored[i].Score > rescored[j].Score })
 	return append(rescored, append(rest, rs[cap:]...)...)
+}
+
+// rerankLogEvery is the shortest time between two logged rerank failures. A dead
+// reranker fails on every recall, and one line per recall would bury the log;
+// the counter recall_rerank_requests_total{status="error"} counts every one.
+const rerankLogEvery = time.Minute
+
+// rerankLastLog is when a rerank failure was last logged, in unix nanoseconds.
+var rerankLastLog atomic.Int64
+
+// logRerankFailure says that recall fell back to the fused order because the
+// reranker failed, at most once per rerankLogEvery. The error text is cut short:
+// it carries the provider's reply.
+func logRerankFailure(err error) {
+	now := time.Now().UnixNano()
+	last := rerankLastLog.Load()
+	if now-last < int64(rerankLogEvery) || !rerankLastLog.CompareAndSwap(last, now) {
+		return
+	}
+	msg := err.Error()
+	if len(msg) > 300 {
+		msg = msg[:300] + "..."
+	}
+	log.Printf("recall: reranker failed, using the fused order instead: %s (logged at most once per %s; see recall_rerank_requests_total)", msg, rerankLogEvery)
 }
 
 // recencyFactor is the multiplier applied to a result's score for a given age:
