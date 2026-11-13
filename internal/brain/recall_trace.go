@@ -39,6 +39,10 @@ type RecallOptions struct {
 	// false forces it off, nil keeps the configuration. The recall evaluation uses
 	// it to compare the same corpus with and without the arm.
 	Graph *bool
+	// GraphRoute overrides the configured graph routing for this call: true runs
+	// the graph arm and weighs it by the question's shape, false keeps the arm as
+	// Graph and the configuration say. nil keeps the configuration.
+	GraphRoute *bool
 	// Route overrides the configured routing for this call, like Graph: true
 	// forces it on, false forces it off, nil keeps the configuration. Routing only
 	// applies when Types is empty.
@@ -81,6 +85,12 @@ type RecallTrace struct {
 	// Graph says the graph arm ran; GraphEntities are the entities the query named.
 	Graph         bool     `json:"graph"`
 	GraphEntities []string `json:"graph_entities,omitempty"`
+	// GraphRoute says the graph arm's weight came from the question's shape;
+	// GraphRelational is how the question was profiled and GraphWeight the weight
+	// the arm then counted with.
+	GraphRoute      bool    `json:"graph_route,omitempty"`
+	GraphRelational bool    `json:"graph_relational,omitempty"`
+	GraphWeight     float64 `json:"graph_weight,omitempty"`
 	// Routed lists the extra types the query's wording added ("failure", "goal").
 	Routed []string `json:"routed,omitempty"`
 	// Tags is the normalized filter the recall ran with.

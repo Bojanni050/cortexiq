@@ -128,6 +128,13 @@ type Config struct {
 	// It needs HybridRecall (it is fused with the other arms) and is off by default
 	// until it has been measured.
 	GraphRecall bool
+	// GraphRoute runs the graph arm on every recall and weighs it by the shape of
+	// the question (see graphArmWeight): full weight for a relational question,
+	// GraphWeightTopic for a topical one. Needs HybridRecall. Off by default until
+	// measured; it replaces the all-or-nothing GraphRecall switch.
+	GraphRoute            bool
+	GraphWeightTopic      float64
+	GraphWeightRelational float64
 	// RouteRecall widens a recall that names no types with failures and/or goals
 	// when the query's wording points to them (see routeTypes). Off by default
 	// until it has been measured.

@@ -154,6 +154,9 @@ type GraphEvalReport struct {
 	// Without and With are the scores with the arm forced off and on.
 	Without RecallEvalReport `json:"without"`
 	With    RecallEvalReport `json:"with"`
+	// Routed is the third run: the graph arm on for every question, weighted by the
+	// question's shape (GraphRoute), at the weights of the running configuration.
+	Routed RecallEvalReport `json:"routed"`
 	// Changes lists the questions whose rank differs, with both ranks, so a gain
 	// or a regression can be read question by question.
 	Changes []GraphChange `json:"changes,omitempty"`
@@ -166,6 +169,8 @@ type GraphChange struct {
 	Query       string `json:"query"`
 	RankWithout int    `json:"rank_without"`
 	RankWith    int    `json:"rank_with"`
+	// RankRouted is the rank under graph routing; it is only set by EvalGraph.
+	RankRouted int `json:"rank_routed,omitempty"`
 }
 
 // CompareGraphRuns pairs the outcomes of the two runs. It is pure.
@@ -237,10 +242,12 @@ func (b *Brain) EvalGraph(ctx context.Context, facts []GraphFact, rels []GraphRe
 		}
 	}
 
-	run := func(graph bool) (RecallEvalReport, error) {
+	run := func(graph, route bool) (RecallEvalReport, error) {
 		rankings := make([][]string, len(qs))
 		for i, q := range qs {
-			res, err := b.RecallWith(ctx, []string{slug}, q.Query, limit, RecallOptions{Types: []string{"fact"}, Graph: &graph})
+			// Graph and GraphRoute are both set on every call, so the run does not
+			// depend on what the server's configuration says.
+			res, err := b.RecallWith(ctx, []string{slug}, q.Query, limit, RecallOptions{Types: []string{"fact"}, Graph: &graph, GraphRoute: &route})
 			if err != nil {
 				return RecallEvalReport{}, fmt.Errorf("recall %s: %w", q.ID, err)
 			}
@@ -255,16 +262,36 @@ func (b *Brain) EvalGraph(ctx context.Context, facts []GraphFact, rels []GraphRe
 		return rep, nil
 	}
 
-	without, err := run(false)
+	without, err := run(false, false)
 	if err != nil {
 		return GraphEvalReport{}, err
 	}
-	with, err := run(true)
+	with, err := run(true, false)
 	if err != nil {
 		return GraphEvalReport{}, err
+	}
+	routed, err := run(false, true)
+	if err != nil {
+		return GraphEvalReport{}, err
+	}
+	changes := CompareGraphRuns(without, with)
+	// A question also counts as moved when only the routed run moved it.
+	routedByID := map[string]QueryOutcome{}
+	for _, o := range routed.Outcomes {
+		routedByID[o.ID] = o
+	}
+	seen := map[string]bool{}
+	for i := range changes {
+		seen[changes[i].ID] = true
+		changes[i].RankRouted = routedByID[changes[i].ID].Rank
+	}
+	for _, o := range without.Outcomes {
+		if r := routedByID[o.ID]; r.Rank != o.Rank && !seen[o.ID] {
+			changes = append(changes, GraphChange{ID: o.ID, Kind: o.Kind, Query: o.Query, RankWithout: o.Rank, RankWith: o.Rank, RankRouted: r.Rank})
+		}
 	}
 	return GraphEvalReport{
 		Model: b.embedder.Model(), Limit: limit, Facts: len(facts), Rels: len(rels),
-		Without: without, With: with, Changes: CompareGraphRuns(without, with),
+		Without: without, With: with, Routed: routed, Changes: changes,
 	}, nil
 }

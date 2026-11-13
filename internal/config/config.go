@@ -152,6 +152,13 @@ type Config struct {
 	// names and about its direct neighbours in the relationship graph, fused with
 	// the vector and keyword arms. Requires HybridRecall. Off until measured.
 	GraphRecall bool `env:"CORTEXIQ_GRAPH_RECALL" envDefault:"false"`
+	// GraphRoute runs the graph arm on every recall and weighs it by the shape of
+	// the question instead of switching it on or off: GraphWeightRelational for a
+	// question that names two entities or asks how things connect, GraphWeightTopic
+	// for the rest. Requires HybridRecall. Off until measured with `eval graph`.
+	GraphRoute            bool    `env:"CORTEXIQ_GRAPH_ROUTE" envDefault:"false"`
+	GraphWeightTopic      float64 `env:"CORTEXIQ_GRAPH_WEIGHT_TOPIC" envDefault:"0.4"`
+	GraphWeightRelational float64 `env:"CORTEXIQ_GRAPH_WEIGHT_RELATIONAL" envDefault:"1"`
 	// RouteRecall lets recall look at failures and goals too when no types are
 	// given and the query's wording points to them ("what did we try that failed",
 	// "what is the goal"). It only ever widens a recall. Off until measured.

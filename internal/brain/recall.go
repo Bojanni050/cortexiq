@@ -179,7 +179,15 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 	if opts.Graph != nil {
 		graphOn = *opts.Graph
 	}
-	graph := graphOn && b.config.HybridRecall
+	// Graph routing runs the graph arm on every recall and lets the question's
+	// shape set how much it counts (see graphArmWeight), instead of switching it
+	// on or off for the whole deployment.
+	graphRoute := b.config.GraphRoute
+	if opts.GraphRoute != nil {
+		graphRoute = *opts.GraphRoute
+	}
+	graph := (graphOn || graphRoute) && b.config.HybridRecall
+	graphRoute = graphRoute && graph
 	if err := validateContent(query); err != nil {
 		return nil, err
 	}
@@ -301,6 +309,19 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 		tr.MMRLambda = mmrLambda
 	}
 
+	// Arm weights for the fusion. Without graph routing there are none, and every
+	// arm counts as 1, the behaviour of an un-routed graph arm.
+	var armWeights map[string]float64
+	if graphRoute {
+		entities := b.matchedEntities(ctx, nsIDs, query)
+		relational := isRelational(query, len(entities))
+		w := b.config.graphArmWeight(relational)
+		armWeights = map[string]float64{"graph": w}
+		if tr != nil {
+			tr.GraphRoute, tr.GraphRelational, tr.GraphWeight = true, relational, w
+		}
+	}
+
 	var results []RecallResult
 
 	// Search facts first (higher quality, consolidated)
@@ -364,7 +385,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			if temporal {
 				scaleArms++
 			}
-			results = fuseArms(arms, scaleArms, candidates, minSimilarity)
+			results = fuseArmsWeighted(arms, armWeights, scaleArms, candidates, minSimilarity)
 		} else {
 			results = fuse(factVec, factKw, candidates, kwQuery != "", minSimilarity)
 		}
@@ -744,6 +765,21 @@ type rankedArm struct {
 // of them) becomes 1. It is a property of the configuration, not of the query,
 // so a score means the same thing whether or not an arm found anything.
 func fuseArms(arms []rankedArm, scaleArms, limit int, minSimilarity float32) []RecallResult {
+	return fuseArmsWeighted(arms, nil, scaleArms, limit, minSimilarity)
+}
+
+// fuseArmsWeighted is fuseArms with a weight per arm name. An arm that is not in
+// weights, or has a weight of zero or less, counts as 1, so nil weights give
+// exactly the unweighted fusion. A weight below 1 lets an arm help rank a result
+// without counting as much as the others, which is how the graph arm stays out of
+// the way of a topical question.
+func fuseArmsWeighted(arms []rankedArm, weights map[string]float64, scaleArms, limit int, minSimilarity float32) []RecallResult {
+	weightOf := func(name string) float64 {
+		if w := weights[name]; w > 0 {
+			return w
+		}
+		return 1
+	}
 	type entry struct {
 		res   RecallResult
 		score float64
@@ -755,7 +791,13 @@ func fuseArms(arms []rankedArm, scaleArms, limit int, minSimilarity float32) []R
 	entries := make(map[int64]*entry, size)
 	var order []int64
 
+	// scale is the weight a result would collect by ranking first in every arm it
+	// could rank first in. With all weights at 1 it equals scaleArms, so unweighted
+	// scores do not change. An arm that scaleArms counts but arms lacks (episodes
+	// have no graph arm) counts with weight 1.
+	scale := float64(scaleArms - len(arms))
 	for _, arm := range arms {
+		scale += weightOf(arm.name)
 		for rank, r := range arm.results {
 			e, ok := entries[r.ID]
 			if !ok {
@@ -763,7 +805,7 @@ func fuseArms(arms []rankedArm, scaleArms, limit int, minSimilarity float32) []R
 				entries[r.ID] = e
 				order = append(order, r.ID)
 			}
-			e.score += 1.0 / float64(rrfK()+rank+1)
+			e.score += weightOf(arm.name) / float64(rrfK()+rank+1)
 			switch {
 			case e.res.Match == "":
 				e.res.Match = arm.name
@@ -784,7 +826,7 @@ func fuseArms(arms []rankedArm, scaleArms, limit int, minSimilarity float32) []R
 		}
 	}
 
-	best := float64(scaleArms) / float64(rrfK()+1)
+	best := scale / float64(rrfK()+1)
 	out := make([]RecallResult, 0, len(order))
 	for _, id := range order {
 		e := entries[id]
