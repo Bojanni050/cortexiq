@@ -721,3 +721,9 @@ voor de regel dat er na 1000 regels een nieuw walkthrough-bestand komt.
 - Findings: OpenCode kon MCP niet autoriseren omdat de redirect-URI met ephemere poort niet exact overeenkwam met de poortloze registratie.
 - Conclusions: Release v0.1.77 bevat de RFC 8252 §7.3-fix (88f9d3b); uitrol met de vaste procedure.
 - Actions: `.env.bak-pre0.1.77`, image gepulld terwijl productie draaide, cortexiq+cortexiq-ui gestopt, verified dump `cortexiq-20261112T161906Z.dump`, `CORTEXIQ_IMAGE_TAG=0.1.77`, `up -d`; healthz/readyz 200, 0 restarts, geen errors in logs; validated (echte OpenCode-autorisatie nog door gebruiker te testen).
+
+## 2026-11-13 (Graph: hover-kaart met onderliggende feiten)
+
+- Findings: De graph-tab toont entiteiten en relaties; de inhoud (de feiten erachter) zag je pas na een klik. Hindsight toont feiten als nodes met tekst, datum en tags bij het zweven en leest daardoor als geheugen.
+- Conclusions: Eerst de goedkope richting: een hover-kaart, zonder de relatieweergave te veranderen. Geen backend-wijziging nodig, want `/api/v1/facts/{id}` levert al content, datum, tags en confidence en elke edge draagt `fact_id`. Een aparte feiten-weergave is bewust uitgesteld.
+- Actions: internal/webui/static/index.html: `.gtip` CSS, `#g-tip` element, `showGraphTip`/`hideGraphTip`/`graphFact`. Edge-hover toont de bronfeit; node-hover toont maximaal 3 feiten van de best ondersteunde relaties (gededupliceerd, "+N more"). Feiten worden lazy opgehaald en gecachet; een token negeert late antwoorden; de kaart verdwijnt bij tap, pan, zoom en slepen. Inline JS syntax gecontroleerd en `go test ./internal/webui` groen; visueel in de browser nog niet bekeken. De UX-gates op het bestand melden bestaande bevindingen (hardcodes, native selects, streepjes) buiten deze wijziging.

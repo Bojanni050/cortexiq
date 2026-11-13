@@ -471,6 +471,13 @@ dialog .err { color: var(--red); }
 .pill { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 500; color: var(--fg); background: color-mix(in srgb, var(--c) 22%, transparent); border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); }
 .gkv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: center; margin-top: 12px; font-size: 13px; }
 .gkv span:nth-child(odd) { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.gtip { position: absolute; z-index: 20; width: 340px; max-width: calc(100% - 16px); pointer-events: none; padding: 10px 12px; border: 1px solid var(--border, rgba(127,127,127,.3)); border-radius: 10px; background: var(--panel-2, var(--panel)); color: var(--fg); box-shadow: 0 8px 28px rgba(0,0,0,.35); font-size: 12.5px; line-height: 1.45; }
+.gtip[hidden] { display: none; }
+.gtip h5 { margin: 0 0 6px; font-size: 13px; letter-spacing: -.01em; word-break: break-word; }
+.gtip .tf { padding: 6px 0; border-top: 1px solid var(--border, rgba(127,127,127,.2)); }
+.gtip .tf:first-of-type { border-top: 0; padding-top: 0; }
+.gtip .tm { margin-top: 3px; color: var(--muted); font-size: 11px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.gtip .tt { display: inline-block; padding: 0 6px; border-radius: 999px; background: var(--hover); }
 .gquote { margin-top: 2px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--hover); border-radius: 0 8px 8px 0; color: var(--fg); font-size: 13px; }
 .gsrc { margin-top: 14px; }
 .glegend { position: absolute; left: 12px; bottom: 12px; max-width: calc(100% - 370px); display: flex; flex-wrap: wrap; gap: 6px; }
@@ -2940,6 +2947,7 @@ async function renderGraph() {
     <div class="gwrap">
       <div id="cy"></div>
       <div class="gpanel" id="g-panel" hidden></div>
+      <div class="gtip" id="g-tip" hidden role="tooltip"></div>
       <div class="glegend" id="g-legend"></div>
     </div>`;
   await loadGraphLibs();
@@ -3061,15 +3069,85 @@ function drawGraph(data) {
     const nb = ev.target.closedNeighborhood();
     cy.elements().not(nb).addClass('faded');
     nb.addClass('hl');
+    showGraphTip(ev.target, ev.renderedPosition);
   });
-  cy.on('mouseout', 'node', () => cy.elements().removeClass('faded hl'));
-  cy.on('mouseover', 'edge', ev => ev.target.addClass('hl'));
-  cy.on('mouseout', 'edge', ev => ev.target.removeClass('hl'));
-  cy.on('tap', 'node', ev => showNodePanel(ev.target));
-  cy.on('tap', 'edge', ev => showEdgePanel(ev.target));
+  cy.on('mouseout', 'node', () => { cy.elements().removeClass('faded hl'); hideGraphTip(); });
+  cy.on('mouseover', 'edge', ev => { ev.target.addClass('hl'); showGraphTip(ev.target, ev.renderedPosition); });
+  cy.on('mouseout', 'edge', ev => { ev.target.removeClass('hl'); hideGraphTip(); });
+  cy.on('viewport drag grab', hideGraphTip);
+  cy.on('tap', 'node', ev => { hideGraphTip(); showNodePanel(ev.target); });
+  cy.on('tap', 'edge', ev => { hideGraphTip(); showEdgePanel(ev.target); });
   cy.on('tap', ev => { if (ev.target === cy) closeGraphPanel(); });
   cy.on('dbltap', 'node', ev => { graphFocus(ev.target.data('label')); });
   graphLayout(false);
+}
+
+/* Hover card: the facts behind an entity or a relation, so the graph reads as
+   knowledge and not only as structure. Facts are fetched on first hover and
+   cached; the token drops answers that arrive after the pointer moved on. */
+const graphFactCache = new Map();
+const TIP_FACTS = 3;
+let graphTipToken = 0;
+
+function graphFact(id) {
+  if (!graphFactCache.has(id)) {
+    const p = api('/facts/' + id).catch(() => { graphFactCache.delete(id); return null; });
+    graphFactCache.set(id, p);
+  }
+  return graphFactCache.get(id);
+}
+
+function tipFactHtml(f) {
+  const when = f.created_at ? new Date(f.created_at).toLocaleDateString() : '';
+  const tags = (f.tags || []).slice(0, 4).map(t => `<span class="tt">${esc(t)}</span>`).join('');
+  return `<div class="tf"><div>${esc(f.content)}</div><div class="tm"><span>#${f.id}</span>${when ? `<span>${esc(when)}</span>` : ''}<span>${Math.round((f.confidence || 0) * 100)}%</span>${tags}</div></div>`;
+}
+
+function placeGraphTip(tip, pos) {
+  const box = document.getElementById('cy');
+  if (!box || !pos) return;
+  const w = box.clientWidth, h = box.clientHeight;
+  const tw = tip.offsetWidth || 340, th = tip.offsetHeight || 80;
+  let x = pos.x + 16, y = pos.y + 16;
+  if (x + tw > w - 8) x = Math.max(8, pos.x - tw - 16);
+  if (y + th > h - 8) y = Math.max(8, h - th - 8);
+  tip.style.left = x + 'px';
+  tip.style.top = y + 'px';
+}
+
+function hideGraphTip() {
+  graphTipToken++;
+  const tip = document.getElementById('g-tip');
+  if (tip) tip.hidden = true;
+}
+
+async function showGraphTip(el, pos) {
+  const tip = document.getElementById('g-tip');
+  if (!tip) return;
+  const token = ++graphTipToken;
+  const isNode = el.isNode();
+  let ids, head;
+  if (isNode) {
+    const d = el.data();
+    // Best-supported relations first; one fact can back several, so dedupe.
+    const edges = el.connectedEdges().toArray().sort((a, b) => b.data('count') - a.data('count') || (b.data('conf') || 0) - (a.data('conf') || 0));
+    ids = [...new Set(edges.map(e => e.data('factId')).filter(Boolean))];
+    head = `<h5>${esc(d.label)} <span class="muted">· ${d.degree} relation${d.degree === 1 ? '' : 's'}</span></h5>`;
+  } else {
+    const d = el.data();
+    ids = d.factId ? [d.factId] : [];
+    head = `<h5>${esc(el.source().data('label'))} ${relPill(el)} ${esc(el.target().data('label'))}</h5>`;
+  }
+  const shown = ids.slice(0, TIP_FACTS), more = ids.length - shown.length;
+  tip.innerHTML = head + (shown.length ? '<div class="muted">Loading facts…</div>' : '<div class="muted">No source fact recorded</div>');
+  tip.hidden = false;
+  placeGraphTip(tip, pos);
+  if (!shown.length) return;
+  const facts = (await Promise.all(shown.map(graphFact))).filter(Boolean);
+  if (token !== graphTipToken) return;
+  tip.innerHTML = head + (facts.length ? facts.map(tipFactHtml).join('') : '<div class="muted">Source facts not available</div>') +
+    (more > 0 ? `<div class="tm">+${more} more, click for the full list</div>` : '');
+  placeGraphTip(tip, pos);
 }
 
 function graphLayout(shake) {
