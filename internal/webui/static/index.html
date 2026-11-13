@@ -3106,11 +3106,14 @@ function tipFactHtml(f) {
 function placeGraphTip(tip, pos) {
   const box = document.getElementById('cy');
   if (!box || !pos) return;
-  const w = box.clientWidth, h = box.clientHeight;
+  // Only the part of the graph box that is on screen counts: the box can be taller than the window.
+  const top = box.getBoundingClientRect().top;
+  const w = box.clientWidth, h = Math.min(box.clientHeight, window.innerHeight - top);
   const tw = tip.offsetWidth || 340, th = tip.offsetHeight || 80;
   let x = pos.x + 16, y = pos.y + 16;
   if (x + tw > w - 8) x = Math.max(8, pos.x - tw - 16);
-  if (y + th > h - 8) y = Math.max(8, h - th - 8);
+  // No room below the pointer: go above it, so the hovered node stays visible.
+  if (y + th > h - 8) y = pos.y - th - 16 >= 8 ? pos.y - th - 16 : Math.max(8, h - th - 8);
   tip.style.left = x + 'px';
   tip.style.top = y + 'px';
 }
