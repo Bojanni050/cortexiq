@@ -66,9 +66,9 @@ const (
 	// defaultGraphWeightTopic is the graph arm's weight for a topical question: a
 	// fact that shares an entity with the question already has a vector rank, and
 	// equal-weight fusion counts it twice (see docs/STATUS.md, graph arm).
-	defaultGraphWeightTopic = 0.4
+	defaultGraphWeightTopic = 0.1
 	// defaultGraphWeightRelational is the weight for a relational question.
-	defaultGraphWeightRelational = 1.0
+	defaultGraphWeightRelational = 0.5
 )
 
 // graphArmWeight is the weight the graph arm counts with in the fusion for a

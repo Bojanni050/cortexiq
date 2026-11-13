@@ -157,8 +157,8 @@ type Config struct {
 	// question that names two entities or asks how things connect, GraphWeightTopic
 	// for the rest. Requires HybridRecall. Off until measured with `eval graph`.
 	GraphRoute            bool    `env:"CORTEXIQ_GRAPH_ROUTE" envDefault:"false"`
-	GraphWeightTopic      float64 `env:"CORTEXIQ_GRAPH_WEIGHT_TOPIC" envDefault:"0.4"`
-	GraphWeightRelational float64 `env:"CORTEXIQ_GRAPH_WEIGHT_RELATIONAL" envDefault:"1"`
+	GraphWeightTopic      float64 `env:"CORTEXIQ_GRAPH_WEIGHT_TOPIC" envDefault:"0.1"`
+	GraphWeightRelational float64 `env:"CORTEXIQ_GRAPH_WEIGHT_RELATIONAL" envDefault:"0.5"`
 	// RouteRecall lets recall look at failures and goals too when no types are
 	// given and the query's wording points to them ("what did we try that failed",
 	// "what is the goal"). It only ever widens a recall. Off until measured.
