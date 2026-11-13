@@ -479,8 +479,10 @@ dialog .err { color: var(--red); }
 .gtip .tm { margin-top: 3px; color: var(--muted); font-size: 11px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
 .gtip .tt { display: inline-block; padding: 0 6px; border-radius: 999px; background: var(--hover); }
 .tl-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 32px; margin: 10px 0 12px; }
-.tl-date { display: flex; align-items: center; gap: 8px; }
-.tl-date b { min-width: 150px; font-size: 22px; letter-spacing: -.02em; }
+.tl-date { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tl-date b { min-width: 150px; font-size: 22px; letter-spacing: -.02em; white-space: nowrap; }
+.tl-date > span { display: inline-flex; gap: 8px; }
+.tl-date > span[hidden] { display: none; }
 .tl-stats { display: flex; flex-wrap: wrap; gap: 8px 28px; }
 .tl-stats .k { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--dim); }
 .tl-stats .v { font-size: 24px; font-weight: 600; letter-spacing: -.02em; }
@@ -490,6 +492,18 @@ dialog .err { color: var(--red); }
 #t-host text { font-size: 11px; fill: var(--muted); }
 #t-host .tl-axis { fill: var(--dim); font-size: 10px; }
 .tl-wrap circle { pointer-events: all; }
+.tl-wrap circle.tu { fill: var(--accent); fill-opacity: .22; }
+.tl-wrap circle.tn { fill: var(--accent); fill-opacity: 1; stroke: var(--fg); stroke-width: 1; r: 4.4px; }
+.tl-wrap .tl-cur0 { stroke: var(--accent); stroke-dasharray: 4 3; }
+.tl-diff { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 8px 24px; margin-top: 18px; }
+.tl-diff:empty { display: none; }
+.tl-diff h4 { margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--dim); }
+.tl-diff h4 b { font-size: 15px; letter-spacing: -.01em; margin-left: 6px; }
+.tl-diff h4.add { color: var(--accent); }
+.tl-diff h4.gone { color: var(--red); }
+.tl-diff .di { padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; line-height: 1.45; word-break: break-word; }
+.tl-diff .dm { margin-bottom: 2px; font-size: 11px; color: var(--muted); }
+.tl-diff .none { padding: 8px 0; border-top: 1px solid var(--border); color: var(--dim); font-size: 13px; }
 .tl-wrap circle.td { fill: var(--accent); fill-opacity: .8; }
 .tl-wrap circle.tf { fill: var(--dim); fill-opacity: .16; }
 .tl-wrap circle.tc { fill: none; stroke: var(--red); stroke-width: 1.2; }
@@ -498,6 +512,9 @@ dialog .err { color: var(--red); }
 .tl-legend i.l { background: var(--accent); }
 .tl-legend i.r { border: 1.5px solid var(--red); }
 .tl-legend i.f { background: var(--dim); opacity: .4; }
+.tl-legend i.n { background: var(--accent); box-shadow: 0 0 0 1.5px var(--fg); }
+.tl-legend i.u { background: var(--accent); opacity: .3; }
+.tl-date .btn.on { border-color: var(--accent); color: var(--accent); }
 .tl-wrap .tl-cur { stroke: var(--red); stroke-width: 1.5; }
 .tl-wrap .tl-link { stroke: var(--red); stroke-opacity: .45; stroke-width: 1; }
 .gquote { margin-top: 2px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--hover); border-radius: 0 8px 8px 0; color: var(--fg); font-size: 13px; }
@@ -3265,7 +3282,11 @@ async function showEdgePanel(edge) {
    One row per entity, one dot per fact on the day the memory learned it. A fact is
    true from then until a newer one replaces it, so the cursor can answer "what did
    the memory believe on day X": live facts, facts not learned yet, facts replaced. */
-const timelineState = { rows: 12, data: null, days: [], dots: [], day: 0, geo: null };
+const timelineState = { rows: 12, data: null, days: [], dots: [], day: 0, geo: null,
+  // compare: pick a period instead of one day; `from` is where the drag started and
+  // `day` where it ended, in either order. shown: how many facts each list opens with.
+  compare: false, from: 0, shown: { added: 12, gone: 12, both: 12 } };
+let tlDiffToken = 0;
 const TL = { label: 150, right: 14, hist: 44, axis: 18, row: 30 };
 let tlTipToken = 0;
 
@@ -3277,7 +3298,8 @@ async function renderTimeline() {
       ${[8, 12, 20, 40].map(v => `<option value="${v}"${timelineState.rows === v ? ' selected' : ''}>${v}</option>`).join('')}</select></label>`)}
     <div class="tl-head" id="t-head"></div>
     <div class="tl-wrap" id="t-wrap"><div id="t-host"></div><div class="gtip" id="t-tip" hidden role="tooltip"></div></div>
-    <div class="tl-legend"><span><i class="l"></i>learned, still true</span><span><i class="r"></i>replaced by a newer fact</span><span><i class="f"></i>not learned yet at the cursor</span><span>click or drag on the chart to move the cursor</span></div>`;
+    <div class="tl-legend" id="t-legend"></div>
+    <div class="tl-diff" id="t-diff"></div>`;
   await loadTimeline();
 }
 
@@ -3327,7 +3349,7 @@ function drawTimeline() {
     if (ci !== null) closed[ci]++;
     // A stable spread inside the row, so a busy day reads as a cloud and not one dot.
     const jitter = (((f.id * 2654435761) >>> 0) % 1000) / 1000 - 0.5;
-    const d = { f, ai, ci, x: xAt(at), y: top + ri * TL.row + TL.row / 2 + jitter * (TL.row - 12), el: null };
+    const d = { f, ai, ci, entity: row.entity || '', x: xAt(at), y: top + ri * TL.row + TL.row / 2 + jitter * (TL.row - 12), el: null };
     dots.push(d);
     byId.set(f.id, d);
   }));
@@ -3359,7 +3381,9 @@ function drawTimeline() {
   // Replaced facts are drawn last, so on a busy row they stay on top and reachable.
   const drawOrder = dots.map((d, i) => i).sort((a, b) => (dots[a].ci !== null) - (dots[b].ci !== null));
   drawOrder.forEach(i => { const d = dots[i]; svg += `<circle data-i="${i}" cx="${d.x.toFixed(1)}" cy="${d.y.toFixed(1)}" r="3.2"/>`; });
+  svg += `<rect id="t-band" x="0" y="0" width="0" height="${H}" fill="var(--accent)" fill-opacity=".09" pointer-events="none" display="none"/>`;
   svg += `<rect id="t-future" x="0" y="0" width="0" height="${H}" fill="var(--panel)" fill-opacity=".45" pointer-events="none"/>`;
+  svg += `<line id="t-cur0" class="tl-cur tl-cur0" x1="0" x2="0" y1="0" y2="${H}" pointer-events="none" display="none"/>`;
   svg += `<line id="t-cur" class="tl-cur" x1="0" x2="0" y1="0" y2="${H}" pointer-events="none"/></svg>`;
   host.innerHTML = svg;
 
@@ -3368,37 +3392,87 @@ function drawTimeline() {
   host.querySelectorAll('line[data-l]').forEach(el => { dots[Number(el.dataset.l)].link = el; });
   document.getElementById('t-head').innerHTML = `
     <div class="tl-date"><button class="btn" onclick="tlStep(-1)" aria-label="Previous day">‹</button><b id="t-date"></b>
-      <button class="btn" onclick="tlStep(1)" aria-label="Next day">›</button><button class="btn" onclick="tlStep(9999)">Latest</button></div>
-    <div class="tl-stats">
-      <div><div class="k">True then</div><div class="v" id="t-live"></div></div>
-      <div><div class="k">Learned later</div><div class="v" id="t-new"></div></div>
-      <div><div class="k">Replaced by then</div><div class="v red" id="t-old"></div></div>
-    </div>`;
+      <button class="btn" onclick="tlStep(1)" aria-label="Next day">›</button><button class="btn" onclick="tlStep(9999)">Latest</button>
+      <button class="btn" id="t-cmp" aria-pressed="false" onclick="tlToggleCompare()">Compare two dates</button>
+      <span id="t-presets" hidden><button class="btn" onclick="tlPreset(7)">Past 7 days</button><button class="btn" onclick="tlPreset(30)">Past 30 days</button></span></div>
+    <div class="tl-stats" id="t-stats"></div>`;
   tlBindPointer(host.querySelector('svg'));
   applyTimelineCursor();
 }
 
+// A fact is true on a day when it was learned by then and not yet replaced.
+function tlTrueOn(d, k) { return d.ai <= k && (d.ci === null || d.ci > k); }
+
+// The period being compared, in day order: lo is the day the memory is compared from,
+// hi the day it is compared to. The diff covers what happened after lo, up to hi.
+function tlPeriod() {
+  const { from, day } = timelineState;
+  return { lo: Math.min(from, day), hi: Math.max(from, day) };
+}
+
+// How a fact sits in the period: added (true at hi, not at lo), gone (true at lo, not
+// at hi), both (learned and replaced inside the period), same (true throughout), or
+// none (not true at either end).
+function tlChange(d, lo, hi) {
+  const a = tlTrueOn(d, lo), b = tlTrueOn(d, hi);
+  if (a && b) return 'same';
+  if (b) return 'added';
+  if (a) return 'gone';
+  return d.ai > lo && d.ci !== null && d.ci <= hi ? 'both' : 'none';
+}
+
 function applyTimelineCursor() {
-  const { days, dots, day, geo } = timelineState;
+  const { days, dots, day, geo, compare } = timelineState;
   if (!geo) return;
-  let live = 0, later = 0, old = 0;
+  const { lo, hi } = tlPeriod();
+  const fmt = (i, year) => new Date(days[i]).toLocaleDateString(undefined, year ? { day: 'numeric', month: 'short', year: 'numeric' } : { day: 'numeric', month: 'short' });
+  const counts = { live: 0, later: 0, old: 0, same: 0, added: 0, gone: 0, both: 0 };
   dots.forEach(d => {
     let cls = 'td';
-    if (d.ai > day) { cls = 'tf'; later++; }
-    else if (d.ci !== null && d.ci <= day) { cls = 'tc'; old++; }
-    else live++;
+    if (compare) {
+      const c = tlChange(d, lo, hi);
+      counts[c === 'none' ? 'later' : c]++;
+      cls = { same: 'tu', added: 'tn', gone: 'tc', both: 'tf', none: 'tf' }[c];
+    } else if (d.ai > day) { cls = 'tf'; counts.later++; }
+    else if (d.ci !== null && d.ci <= day) { cls = 'tc'; counts.old++; }
+    else counts.live++;
     if (d.el && d.el.getAttribute('class') !== cls) d.el.setAttribute('class', cls);
     // The arrow to the replacing fact only shows once the replacement has happened:
     // before the cursor reaches it, the old fact was still simply true.
     if (d.link) d.link.style.display = cls === 'tc' ? '' : 'none';
   });
-  const x = TL.label + ((day + 1) / geo.n) * geo.plotW;
-  const cur = document.getElementById('t-cur'), fut = document.getElementById('t-future');
-  if (cur) { cur.setAttribute('x1', x); cur.setAttribute('x2', x); }
-  if (fut) { fut.setAttribute('x', x); fut.setAttribute('width', Math.max(0, geo.W - x)); }
+  const xEnd = i => TL.label + ((i + 1) / geo.n) * geo.plotW;
+  const xHi = xEnd(compare ? hi : day);
+  const attr = (id, a, v) => { const el = document.getElementById(id); if (el) el.setAttribute(a, v); };
+  attr('t-cur', 'x1', xHi); attr('t-cur', 'x2', xHi);
+  attr('t-future', 'x', xHi); attr('t-future', 'width', Math.max(0, geo.W - xHi));
+  attr('t-cur0', 'display', compare ? 'inline' : 'none');
+  attr('t-band', 'display', compare ? 'inline' : 'none');
+  if (compare) {
+    const xLo = xEnd(lo);
+    attr('t-cur0', 'x1', xLo); attr('t-cur0', 'x2', xLo);
+    attr('t-band', 'x', xLo); attr('t-band', 'width', Math.max(0, xHi - xLo));
+  }
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  set('t-date', new Date(days[day]).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }));
-  set('t-live', live); set('t-new', later); set('t-old', old);
+  set('t-date', compare ? `${fmt(lo)} to ${fmt(hi, true)}` : fmt(day, true));
+  const stat = (k, v, cls) => `<div><div class="k">${k}</div><div class="v${cls ? ' ' + cls : ''}">${v}</div></div>`;
+  const stats = document.getElementById('t-stats');
+  if (stats) {
+    stats.innerHTML = compare
+      ? stat('True on ' + fmt(lo), counts.same + counts.gone) + stat('True on ' + fmt(hi), counts.same + counts.added) +
+        stat('Became true', '+' + counts.added) + stat('Stopped being true', '-' + counts.gone, 'red') + stat('Learned and replaced', counts.both)
+      : stat('True then', counts.live) + stat('Learned later', counts.later) + stat('Replaced by then', counts.old, 'red');
+  }
+  const cmp = document.getElementById('t-cmp');
+  if (cmp) { cmp.setAttribute('aria-pressed', compare ? 'true' : 'false'); cmp.classList.toggle('on', !!compare); }
+  const pre = document.getElementById('t-presets');
+  if (pre) pre.hidden = !compare;
+  const legend = document.getElementById('t-legend');
+  if (legend) {
+    legend.innerHTML = compare
+      ? '<span><i class="n"></i>became true in the period</span><span><i class="r"></i>stopped being true</span><span><i class="u"></i>true throughout</span><span>drag across the chart to pick a period</span>'
+      : '<span><i class="l"></i>learned, still true</span><span><i class="r"></i>replaced by a newer fact</span><span><i class="f"></i>not learned yet at the cursor</span><span>click or drag on the chart to move the cursor</span>';
+  }
 }
 
 function tlStep(delta) {
@@ -3406,6 +3480,70 @@ function tlStep(delta) {
   if (!n) return;
   timelineState.day = Math.max(0, Math.min(n - 1, timelineState.day + delta));
   applyTimelineCursor();
+  tlRenderDiff();
+}
+
+function tlToggleCompare() {
+  const t = timelineState;
+  if (!t.days.length) return;
+  t.compare = !t.compare;
+  // Start with the week before the cursor, so the first view already shows a diff.
+  if (t.compare) t.from = Math.max(0, t.day - 7);
+  t.shown = { added: 12, gone: 12, both: 12 };
+  applyTimelineCursor();
+  tlRenderDiff();
+}
+
+function tlPreset(days) {
+  const t = timelineState;
+  t.compare = true;
+  t.from = Math.max(0, t.day - days);
+  t.shown = { added: 12, gone: 12, both: 12 };
+  applyTimelineCursor();
+  tlRenderDiff();
+}
+
+function tlDiffMore(kind) {
+  timelineState.shown[kind] += 25;
+  tlRenderDiff();
+}
+
+// The lists under the chart: which facts became true, stopped being true, or were
+// learned and replaced inside the period. Texts load on demand, only for what shows.
+function tlRenderDiff() {
+  const box = document.getElementById('t-diff');
+  if (!box) return;
+  const token = ++tlDiffToken;
+  const t = timelineState;
+  if (!t.compare) { box.innerHTML = ''; return; }
+  const { lo, hi } = tlPeriod();
+  if (lo === hi) { box.innerHTML = '<div class="none">Drag across the chart, or pick a preset, to compare two dates.</div>'; return; }
+  const lists = { added: [], gone: [], both: [] };
+  t.dots.forEach(d => { const c = tlChange(d, lo, hi); if (lists[c]) lists[c].push(d); });
+  const newestFirst = (a, b) => new Date(b.f.at) - new Date(a.f.at);
+  const titles = { added: ['add', 'Became true'], gone: ['gone', 'Stopped being true'], both: ['', 'Learned and replaced'] };
+  let html = '';
+  Object.keys(lists).forEach(kind => {
+    const list = lists[kind].sort(newestFirst), shown = list.slice(0, t.shown[kind]);
+    html += `<section><h4 class="${titles[kind][0]}">${titles[kind][1]}<b>${list.length}</b></h4>`;
+    if (!list.length) html += '<div class="none">Nothing</div>';
+    shown.forEach(d => {
+      const f = d.f, when = new Date(f.at).toLocaleDateString();
+      const repl = f.valid_until ? ` · replaced ${esc(new Date(f.valid_until).toLocaleDateString())}${f.superseded_by ? ' by #' + f.superseded_by : ''}` : '';
+      html += `<div class="di" data-id="${f.id}"><div class="dm">#${f.id} · ${esc(d.entity || 'other')} · ${esc(when)}${kind === 'added' ? '' : repl}</div><div class="dc muted">Loading…</div></div>`;
+    });
+    if (list.length > shown.length) html += `<button class="btn" onclick="tlDiffMore('${kind}')">Show ${Math.min(25, list.length - shown.length)} more</button>`;
+    html += '</section>';
+  });
+  box.innerHTML = html;
+  box.querySelectorAll('.di').forEach(el => {
+    graphFact(Number(el.dataset.id)).then(f => {
+      if (token !== tlDiffToken) return;
+      const c = el.querySelector('.dc');
+      c.classList.remove('muted');
+      c.textContent = f ? f.content : 'Fact not available';
+    });
+  });
 }
 
 function tlBindPointer(svg) {
@@ -3419,7 +3557,10 @@ function tlBindPointer(svg) {
     if (e.clientX - svg.getBoundingClientRect().left < TL.label) return;
     dragging = true; hideTimelineTip();
     svg.setPointerCapture(e.pointerId);
-    timelineState.day = dayAt(e); applyTimelineCursor();
+    // In compare mode the press picks the start of the period and the drag its end.
+    timelineState.day = dayAt(e);
+    if (timelineState.compare) timelineState.from = timelineState.day;
+    applyTimelineCursor();
   });
   svg.addEventListener('pointermove', e => {
     if (dragging) { timelineState.day = dayAt(e); applyTimelineCursor(); return; }
@@ -3427,7 +3568,8 @@ function tlBindPointer(svg) {
     if (t && t.dataset && t.dataset.i !== undefined) showTimelineTip(timelineState.dots[Number(t.dataset.i)], e);
     else hideTimelineTip();
   });
-  const end = () => { dragging = false; };
+  // The lists reload once, when the drag ends, not on every pointer move.
+  const end = () => { if (dragging) { dragging = false; tlRenderDiff(); } };
   svg.addEventListener('pointerup', end);
   svg.addEventListener('pointercancel', end);
   svg.addEventListener('pointerleave', hideTimelineTip);
