@@ -103,6 +103,19 @@ func TestGraphRejectsBadInput(t *testing.T) {
 	}
 }
 
+func TestTimelineRejectsWrongMethod(t *testing.T) {
+	mux := http.NewServeMux()
+	(&Handler{}).Register(mux)
+
+	for _, m := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(m, "/api/v1/timeline", nil))
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s /timeline = %d, want 405", m, rec.Code)
+		}
+	}
+}
+
 func TestPathID(t *testing.T) {
 	tests := []struct {
 		path       string

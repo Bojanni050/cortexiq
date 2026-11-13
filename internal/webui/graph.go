@@ -49,6 +49,20 @@ func (h *Handler) graph(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, g)
 }
 
+// timeline lays the live facts out over time, one row per entity, for the
+// Timeline tab. Query: namespaces, rows (entities with a row of their own).
+func (h *Handler) timeline(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	tl, err := h.Brain.FactTimeline(r.Context(), namespacesParam(r), brain.TimelineOptions{Rows: intQuery(r, "rows")})
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, tl)
+}
+
 // serveVendor serves the bundled third-party scripts (Cytoscape.js and its layout)
 // from the embedded filesystem, so the dashboard works without internet access.
 func (h *Handler) serveVendor(w http.ResponseWriter, r *http.Request) {

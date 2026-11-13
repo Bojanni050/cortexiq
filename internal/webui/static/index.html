@@ -478,6 +478,28 @@ dialog .err { color: var(--red); }
 .gtip .tf:first-of-type { border-top: 0; padding-top: 0; }
 .gtip .tm { margin-top: 3px; color: var(--muted); font-size: 11px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
 .gtip .tt { display: inline-block; padding: 0 6px; border-radius: 999px; background: var(--hover); }
+.tl-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 32px; margin: 10px 0 12px; }
+.tl-date { display: flex; align-items: center; gap: 8px; }
+.tl-date b { min-width: 150px; font-size: 22px; letter-spacing: -.02em; }
+.tl-stats { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+.tl-stats .k { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--dim); }
+.tl-stats .v { font-size: 24px; font-weight: 600; letter-spacing: -.02em; }
+.tl-stats .v.red { color: var(--red); }
+.tl-wrap { position: relative; overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+#t-host svg { display: block; cursor: ew-resize; user-select: none; touch-action: none; }
+#t-host text { font-size: 11px; fill: var(--muted); }
+#t-host .tl-axis { fill: var(--dim); font-size: 10px; }
+.tl-wrap circle { pointer-events: all; }
+.tl-wrap circle.td { fill: var(--accent); fill-opacity: .8; }
+.tl-wrap circle.tf { fill: var(--dim); fill-opacity: .16; }
+.tl-wrap circle.tc { fill: none; stroke: var(--red); stroke-width: 1.2; }
+.tl-legend { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+.tl-legend i { display: inline-block; width: 9px; height: 9px; margin-right: 6px; border-radius: 50%; vertical-align: -1px; }
+.tl-legend i.l { background: var(--accent); }
+.tl-legend i.r { border: 1.5px solid var(--red); }
+.tl-legend i.f { background: var(--dim); opacity: .4; }
+.tl-wrap .tl-cur { stroke: var(--red); stroke-width: 1.5; }
+.tl-wrap .tl-link { stroke: var(--red); stroke-opacity: .45; stroke-width: 1; }
 .gquote { margin-top: 2px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--hover); border-radius: 0 8px 8px 0; color: var(--fg); font-size: 13px; }
 .gsrc { margin-top: 14px; }
 .glegend { position: absolute; left: 12px; bottom: 12px; max-width: calc(100% - 370px); display: flex; flex-wrap: wrap; gap: 6px; }
@@ -641,6 +663,7 @@ const icons = {
   metrics: '<path d="M4 19V5M4 19h16"/><path d="m7 15 3-4 3 2 5-7"/>',
   lifecycle: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/>',
   status: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  timeline: '<path d="M3 6h10M3 12h18M3 18h14"/><circle cx="17" cy="6" r="1.6"/><circle cx="8" cy="18" r="1.6"/>',
   stats: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
 };
 const svg = k => `<svg viewBox="0 0 24 24">${icons[k]}</svg>`;
@@ -652,6 +675,7 @@ const tabs = [
   ['reflect', 'Reflect', 'Ask a question and get a synthesized answer from memory'],
   ['facts', 'Facts', 'Stored facts with confidence'],
   ['graph', 'Graph', 'How entities relate: the knowledge graph (drag, zoom, click for details)'],
+  ['timeline', 'Timeline', 'When facts were learned and replaced, per entity; drag the cursor to see what was true on a day'],
   ['goals', 'Goals', 'What the agent is working towards'],
   ['goallog', 'Goal log', 'Every goal event: who moved it, on what evidence, and what the consolidator inferred'],
   ['mental', 'Mental Models', 'Curated summaries searched first in reflect'],
@@ -675,7 +699,7 @@ const tabs = [
 // healthy") keeps every tab reachable without a second click.
 const NAV_GROUPS = [
   ['Memory', ['overview', 'episodes', 'facts', 'recall']],
-  ['Knowledge', ['graph', 'mental', 'goals', 'goallog', 'hypotheses', 'hypolog', 'contradictions', 'failures', 'patterns', 'links']],
+  ['Knowledge', ['graph', 'timeline', 'mental', 'goals', 'goallog', 'hypotheses', 'hypolog', 'contradictions', 'failures', 'patterns', 'links']],
   ['System', ['status', 'namespaces', 'runs', 'jobs', 'lifecycle', 'settings', 'metrics', 'stats']],
 ];
 const nav = document.getElementById('nav');
@@ -3103,8 +3127,9 @@ function tipFactHtml(f) {
   return `<div class="tf"><div>${esc(f.content)}</div><div class="tm"><span>#${f.id}</span>${when ? `<span>${esc(when)}</span>` : ''}<span>${Math.round((f.confidence || 0) * 100)}%</span>${tags}</div></div>`;
 }
 
-function placeGraphTip(tip, pos) {
-  const box = document.getElementById('cy');
+function placeGraphTip(tip, pos) { placeTip(tip, document.getElementById('cy'), pos); }
+
+function placeTip(tip, box, pos) {
   if (!box || !pos) return;
   // Only the part of the graph box that is on screen counts: the box can be taller than the window.
   const top = box.getBoundingClientRect().top;
@@ -3235,6 +3260,208 @@ async function showEdgePanel(edge) {
     if (src) src.textContent = 'Source fact not available';
   }
 }
+
+/* ---------- Timeline tab ----------
+   One row per entity, one dot per fact on the day the memory learned it. A fact is
+   true from then until a newer one replaces it, so the cursor can answer "what did
+   the memory believe on day X": live facts, facts not learned yet, facts replaced. */
+const timelineState = { rows: 12, data: null, days: [], dots: [], day: 0, geo: null };
+const TL = { label: 150, right: 14, hist: 44, axis: 18, row: 30 };
+let tlTipToken = 0;
+
+function tlDayStart(ms) { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); }
+
+async function renderTimeline() {
+  document.getElementById('content').innerHTML = `
+    ${toolbar(`<label class="muted">Entities <select id="t-rows" onchange="timelineState.rows=Number(this.value);loadTimeline()">
+      ${[8, 12, 20, 40].map(v => `<option value="${v}"${timelineState.rows === v ? ' selected' : ''}>${v}</option>`).join('')}</select></label>`)}
+    <div class="tl-head" id="t-head"></div>
+    <div class="tl-wrap" id="t-wrap"><div id="t-host"></div><div class="gtip" id="t-tip" hidden role="tooltip"></div></div>
+    <div class="tl-legend"><span><i class="l"></i>learned, still true</span><span><i class="r"></i>replaced by a newer fact</span><span><i class="f"></i>not learned yet at the cursor</span><span>click or drag on the chart to move the cursor</span></div>`;
+  await loadTimeline();
+}
+
+async function loadTimeline() {
+  const host = document.getElementById('t-host');
+  if (!host) return;
+  host.innerHTML = '<div class="muted" style="padding:20px">Loading…</div>';
+  const data = await api('/timeline' + nsQS('&rows=' + timelineState.rows));
+  timelineState.data = data;
+  if (!data.total) {
+    document.getElementById('t-head').innerHTML = '';
+    host.innerHTML = '<div class="empty"><div class="big">∅</div>No facts to put on a timeline yet</div>';
+    return;
+  }
+  const first = tlDayStart(new Date(data.from).getTime()), last = tlDayStart(new Date(data.to).getTime());
+  const days = [];
+  for (let d = new Date(first); d.getTime() <= last; d.setDate(d.getDate() + 1)) days.push(d.getTime());
+  timelineState.days = days;
+  timelineState.day = days.length - 1;
+  drawTimeline();
+}
+
+function tlDayIndex(ms) {
+  const days = timelineState.days;
+  const i = Math.round((tlDayStart(ms) - days[0]) / 86400000);
+  return Math.max(0, Math.min(days.length - 1, i));
+}
+
+function drawTimeline() {
+  const data = timelineState.data, days = timelineState.days, host = document.getElementById('t-host');
+  if (!data || !host || !days.length) return;
+  const n = days.length, rows = data.rows;
+  const W = Math.max(host.clientWidth, 560), plotW = W - TL.label - TL.right;
+  const t0 = days[0], span = n * 86400000;
+  const xAt = ms => TL.label + ((ms - t0) / span) * plotW;
+  const top = TL.hist + TL.axis;
+  const H = top + rows.length * TL.row + 8;
+
+  // Per-day counts for the strip above the rows: learned goes up, replaced goes down.
+  const learned = new Array(n).fill(0), closed = new Array(n).fill(0);
+  const dots = [], byId = new Map();
+  rows.forEach((row, ri) => row.facts.forEach(f => {
+    const at = new Date(f.at).getTime();
+    const ai = tlDayIndex(at);
+    const ci = f.valid_until ? Math.max(ai, tlDayIndex(new Date(f.valid_until).getTime())) : null;
+    learned[ai]++;
+    if (ci !== null) closed[ci]++;
+    // A stable spread inside the row, so a busy day reads as a cloud and not one dot.
+    const jitter = (((f.id * 2654435761) >>> 0) % 1000) / 1000 - 0.5;
+    const d = { f, ai, ci, x: xAt(at), y: top + ri * TL.row + TL.row / 2 + jitter * (TL.row - 12), el: null };
+    dots.push(d);
+    byId.set(f.id, d);
+  }));
+  timelineState.dots = dots;
+  timelineState.geo = { n, plotW, W };
+
+  const maxL = Math.max(1, ...learned), maxC = Math.max(1, ...closed);
+  const colW = plotW / n, base = 28;
+  let svg = `<svg id="t-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Fact timeline per entity">`;
+  svg += `<text x="8" y="14" class="tl-axis">LEARNED</text><text x="8" y="${base + 14}" class="tl-axis">REPLACED</text>`;
+  learned.forEach((c, i) => { if (c) { const h = Math.max(1.5, (c / maxL) * (base - 4)); svg += `<rect x="${TL.label + i * colW + 0.5}" y="${base - h}" width="${Math.max(1, colW - 1)}" height="${h}" fill="var(--accent)" fill-opacity=".75"/>`; } });
+  closed.forEach((c, i) => { if (c) { const h = Math.max(1.5, (c / maxC) * 12); svg += `<rect x="${TL.label + i * colW + 0.5}" y="${base + 1}" width="${Math.max(1, colW - 1)}" height="${h}" fill="var(--red)" fill-opacity=".8"/>`; } });
+  const step = n <= 21 ? 1 : n <= 70 ? 7 : 30;
+  days.forEach((d, i) => {
+    if (i % step) return;
+    svg += `<text class="tl-axis" x="${TL.label + i * colW}" y="${TL.hist + 12}">${new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</text>`;
+  });
+  rows.forEach((row, ri) => {
+    const y = top + ri * TL.row;
+    if (ri % 2 === 0) svg += `<rect x="0" y="${y}" width="${W}" height="${TL.row}" fill="var(--hover)"/>`;
+    const name = row.entity || 'other';
+    svg += `<text x="8" y="${y + TL.row / 2 + 4}"${row.entity ? '' : ' font-style="italic"'}>${esc(name.length > 18 ? name.slice(0, 17) + '…' : name)} <tspan class="tl-axis">${row.total}</tspan></text>`;
+  });
+  // A replaced fact points at the fact that replaced it, when both are on screen.
+  dots.forEach(d => {
+    const to = d.f.superseded_by && byId.get(d.f.superseded_by);
+    if (to) svg += `<line class="tl-link" data-l="${dots.indexOf(d)}" x1="${d.x}" y1="${d.y}" x2="${to.x}" y2="${to.y}"/>`;
+  });
+  // Replaced facts are drawn last, so on a busy row they stay on top and reachable.
+  const drawOrder = dots.map((d, i) => i).sort((a, b) => (dots[a].ci !== null) - (dots[b].ci !== null));
+  drawOrder.forEach(i => { const d = dots[i]; svg += `<circle data-i="${i}" cx="${d.x.toFixed(1)}" cy="${d.y.toFixed(1)}" r="3.2"/>`; });
+  svg += `<rect id="t-future" x="0" y="0" width="0" height="${H}" fill="var(--panel)" fill-opacity=".45" pointer-events="none"/>`;
+  svg += `<line id="t-cur" class="tl-cur" x1="0" x2="0" y1="0" y2="${H}" pointer-events="none"/></svg>`;
+  host.innerHTML = svg;
+
+  const nodes = host.querySelectorAll('circle[data-i]');
+  nodes.forEach(el => { dots[Number(el.dataset.i)].el = el; });
+  host.querySelectorAll('line[data-l]').forEach(el => { dots[Number(el.dataset.l)].link = el; });
+  document.getElementById('t-head').innerHTML = `
+    <div class="tl-date"><button class="btn" onclick="tlStep(-1)" aria-label="Previous day">‹</button><b id="t-date"></b>
+      <button class="btn" onclick="tlStep(1)" aria-label="Next day">›</button><button class="btn" onclick="tlStep(9999)">Latest</button></div>
+    <div class="tl-stats">
+      <div><div class="k">True then</div><div class="v" id="t-live"></div></div>
+      <div><div class="k">Learned later</div><div class="v" id="t-new"></div></div>
+      <div><div class="k">Replaced by then</div><div class="v red" id="t-old"></div></div>
+    </div>`;
+  tlBindPointer(host.querySelector('svg'));
+  applyTimelineCursor();
+}
+
+function applyTimelineCursor() {
+  const { days, dots, day, geo } = timelineState;
+  if (!geo) return;
+  let live = 0, later = 0, old = 0;
+  dots.forEach(d => {
+    let cls = 'td';
+    if (d.ai > day) { cls = 'tf'; later++; }
+    else if (d.ci !== null && d.ci <= day) { cls = 'tc'; old++; }
+    else live++;
+    if (d.el && d.el.getAttribute('class') !== cls) d.el.setAttribute('class', cls);
+    // The arrow to the replacing fact only shows once the replacement has happened:
+    // before the cursor reaches it, the old fact was still simply true.
+    if (d.link) d.link.style.display = cls === 'tc' ? '' : 'none';
+  });
+  const x = TL.label + ((day + 1) / geo.n) * geo.plotW;
+  const cur = document.getElementById('t-cur'), fut = document.getElementById('t-future');
+  if (cur) { cur.setAttribute('x1', x); cur.setAttribute('x2', x); }
+  if (fut) { fut.setAttribute('x', x); fut.setAttribute('width', Math.max(0, geo.W - x)); }
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('t-date', new Date(days[day]).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }));
+  set('t-live', live); set('t-new', later); set('t-old', old);
+}
+
+function tlStep(delta) {
+  const n = timelineState.days.length;
+  if (!n) return;
+  timelineState.day = Math.max(0, Math.min(n - 1, timelineState.day + delta));
+  applyTimelineCursor();
+}
+
+function tlBindPointer(svg) {
+  if (!svg) return;
+  let dragging = false;
+  const dayAt = e => {
+    const { n, plotW } = timelineState.geo, r = svg.getBoundingClientRect();
+    return Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - r.left - TL.label) / plotW) * n)));
+  };
+  svg.addEventListener('pointerdown', e => {
+    if (e.clientX - svg.getBoundingClientRect().left < TL.label) return;
+    dragging = true; hideTimelineTip();
+    svg.setPointerCapture(e.pointerId);
+    timelineState.day = dayAt(e); applyTimelineCursor();
+  });
+  svg.addEventListener('pointermove', e => {
+    if (dragging) { timelineState.day = dayAt(e); applyTimelineCursor(); return; }
+    const t = e.target;
+    if (t && t.dataset && t.dataset.i !== undefined) showTimelineTip(timelineState.dots[Number(t.dataset.i)], e);
+    else hideTimelineTip();
+  });
+  const end = () => { dragging = false; };
+  svg.addEventListener('pointerup', end);
+  svg.addEventListener('pointercancel', end);
+  svg.addEventListener('pointerleave', hideTimelineTip);
+}
+
+function hideTimelineTip() {
+  tlTipToken++;
+  const tip = document.getElementById('t-tip');
+  if (tip) tip.hidden = true;
+}
+
+async function showTimelineTip(d, e) {
+  const tip = document.getElementById('t-tip'), wrap = document.getElementById('t-wrap');
+  if (!tip || !wrap) return;
+  const token = ++tlTipToken;
+  const r = wrap.getBoundingClientRect();
+  const pos = { x: e.clientX - r.left + wrap.scrollLeft, y: e.clientY - r.top };
+  const replaced = d.f.valid_until
+    ? `<div class="tm"><span>Replaced ${esc(new Date(d.f.valid_until).toLocaleDateString())}${d.f.superseded_by ? ' by #' + d.f.superseded_by : ''}</span></div>` : '';
+  tip.innerHTML = '<div class="muted">Loading fact…</div>';
+  tip.hidden = false;
+  placeTip(tip, wrap, pos);
+  const f = await graphFact(d.f.id);
+  if (token !== tlTipToken) return;
+  tip.innerHTML = (f ? tipFactHtml(f) : '<div class="muted">Fact not available</div>') + replaced;
+  placeTip(tip, wrap, pos);
+}
+
+let tlResizeTimer = null;
+window.addEventListener('resize', () => {
+  if (state.tab !== 'timeline') return;
+  clearTimeout(tlResizeTimer);
+  tlResizeTimer = setTimeout(() => { if (state.tab === 'timeline' && timelineState.data) drawTimeline(); }, 150);
+});
 
 function secs(v) {
   if (v < 60) return v + ' seconds';
@@ -3471,7 +3698,7 @@ async function saveSchedule() {
   }
 }
 
-const renderers = { overview: renderOverview, graph: renderGraph, episodes: renderEpisodes, recall: renderRecall, reflect: renderReflect, facts: renderFacts,
+const renderers = { overview: renderOverview, graph: renderGraph, timeline: renderTimeline, episodes: renderEpisodes, recall: renderRecall, reflect: renderReflect, facts: renderFacts,
   goals: renderGoals, goallog: renderGoalLog, mental: renderMentalModels, hypotheses: renderHypotheses, hypolog: renderHypothesisLog, contradictions: renderContradictions,
   failures: renderFailures, patterns: renderPatterns, links: renderLinks, namespaces: renderNamespaces, runs: renderRuns, jobs: renderJobs, lifecycle: renderLifecycle,
   status: renderStatus, settings: renderSettings, metrics: renderMetrics, stats: renderStats };
