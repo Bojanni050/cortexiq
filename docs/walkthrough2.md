@@ -878,3 +878,9 @@ voor de regel dat er na 1000 regels een nieuw walkthrough-bestand komt.
 - Findings: de lokale meting (vorige entry) gaf een eigen reranker MRR 0,80 tegen 0,85 voor Jina, en ongeveer 2,9 s extra per recall tegen 0,1 s.
 - Conclusions: Bo koos 'Jina houden'. Het risico dat Jina wegvalt (leeg saldo, 429 bij 100.000 tokens per minuut, 404) is afgedekt met de metric `recall_rerank_requests_total`, de logregel per minuut, `RERANK_CANDIDATES=30` en de graaf-routing als vangnet.
 - Actions: geen codewijziging, niets op de VPS gewijzigd. Open en niet nodig tenzij het pijn doet: fallback-keten Jina dan lokaal, meten met 10 kandidaten, meten op de VPS zelf.
+
+## 2026-11-14 (Lokale eval-omgeving opgeruimd)
+
+- Findings: na de metingen stonden op Bo's pc nog drie gestopte containers (`cortexiq-eval-pg`, `-ollama`, `-rerank`), drie volumes en de image `ghcr.io/ggml-org/llama.cpp:server`, allemaal door mijn metingen aangemaakt. Docker bevatte verder niets anders.
+- Conclusions: Bo gaf akkoord op opruimen. Alleen verwijderd wat in het voorstel stond; de images `cortexiq-postgres:eval` (682 MB) en `ollama/ollama` (8,5 GB) bleven staan omdat ik die niet had genoemd.
+- Actions: `docker rm -v` op de drie containers (het anonieme Postgres-volume ging mee), `docker volume rm cortexiq_eval_ollama cortexiq_eval_rerank`, `docker rmi ghcr.io/ggml-org/llama.cpp:server`. Daarna 0 containers en 0 volumes. De eerdere aanwijzing 'opnieuw draaien met docker start' geldt niet meer; opnieuw meten betekent een nieuwe Postgres uit `cortexiq-postgres:eval`, een nieuwe Ollama met bge-m3 (ongeveer 1,2 GB) en de dump opnieuw via scp. `~/.cortexiq-eval-jina.env` staat nog op de pc.
