@@ -2432,6 +2432,22 @@ async function renderMetrics() {
   const completion = sum('reasoner_completion_tokens_total');
   const cost = sum('reasoner_cost_total');
   const unpriced = sum('reasoner_unpriced_calls_total');
+  // Every unpriced call is labelled with the stage and the model, so the page
+  // can say which model needs a price instead of only that one does.
+  const unpricedBy = new Map();
+  for (const m of reasoner) {
+    if (m.name !== 'reasoner_unpriced_calls_total') continue;
+    const l = m.labels || {};
+    const key = `${l.model || 'unknown'} · ${l.stage || 'unknown'}`;
+    unpricedBy.set(key, (unpricedBy.get(key) || 0) + Number(m.value || 0));
+  }
+  const unpricedRows = [...unpricedBy.entries()].sort((a, b) => b[1] - a[1])
+    .map(([key, n]) => `<tr><td class="mono wrap">${esc(key)}</td><td class="mono">${n.toLocaleString()}</td></tr>`);
+  const hint = unpriced > 0
+    ? `<div class="card"><h3>Unpriced calls</h3>
+        <p class="muted" style="margin:0 0 8px">A price comes from the provider's catalogue. For a model no catalogue lists, enter it under <a href="#settings">Settings → Models</a>. These counters are cumulative, so a call made with a model that has since been priced keeps showing here.</p>
+        ${table(['Model · stage', 'Calls'], unpricedRows)}</div>`
+    : '';
   // Estimated cost per stage, from the reasoner_cost_total series.
   const byStage = new Map();
   for (const m of reasoner) {
@@ -2442,8 +2458,6 @@ async function renderMetrics() {
   const money = n => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
   const costRows = [...byStage.entries()].sort((a, b) => b[1] - a[1])
     .map(([stage, v]) => `<tr><td class="mono">${esc(stage)}</td><td class="mono">${money(v)}</td></tr>`);
-  const hint = unpriced > 0
-    ? `<div class="muted">${unpriced.toLocaleString()} call(s) used a model without a configured price — set CORTEXIQ_MODEL_PRICES to price them.</div>` : '';
   // The split deployment records these counters on the MCP process, not in the
   // dashboard process that serves this page; say which one is shown.
   const source = body && body.source === 'mcp' ? 'consolidation process' : 'dashboard process';
@@ -2456,7 +2470,8 @@ async function renderMetrics() {
       ${stat('metrics', 'var(--yellow)', prompt.toLocaleString(), 'Reasoner prompt tokens')}
       ${stat('metrics', 'var(--red)', completion.toLocaleString(), 'Reasoner completion tokens')}
     </div>` +
-    (costRows.length ? `<div class="card"><h3>Estimated cost by stage ${hint ? '' : ''}</h3>${hint}<div class="tablewrap"><table><thead><tr><th>Stage</th><th>Cost (configured unit)</th></tr></thead><tbody>${costRows.join('')}</tbody></table></div></div>` : '') +
+    (costRows.length ? `<div class="card"><h3>Estimated cost by stage</h3><div class="tablewrap"><table><thead><tr><th>Stage</th><th>Cost (configured unit)</th></tr></thead><tbody>${costRows.join('')}</tbody></table></div></div>` : '') +
+    hint +
     `<div class="card"><h3>All metrics <span class="muted">${esc(ts(body.updated_at))} · ${esc(source)}</span></h3>` +
     table(['Metric', 'Type', 'Labels', 'Value'], items.map(m => `<tr>
       <td><b>${esc(m.name)}</b>${m.help ? `<div class="muted">${esc(m.help)}</div>` : ''}</td>
@@ -3773,7 +3788,7 @@ function modelLabel(m) {
 async function renderModelsCard() {
   const el = document.getElementById('models-card');
   if (!el) return;
-  let purposes = [], providers = [];
+  let purposes = [], providers = [], manual = [];
   try {
     purposes = await api('/models');
     providers = await api('/providers');
@@ -3781,6 +3796,9 @@ async function renderModelsCard() {
     el.innerHTML = `<div class="card"><h3>Models</h3><p class="muted">${esc(e.message)}</p></div>`;
     return;
   }
+  // A server that predates the price table still renders the rest of Settings.
+  try { manual = await api('/prices'); } catch (e) { manual = []; }
+  const rate = v => '$' + (v < 0.01 ? v.toFixed(4) : v.toFixed(2));
   const rows = purposes.map(p => {
     const spec = PURPOSES.find(x => x[0] === p.purpose) || [p.purpose, p.purpose, ''];
     const source = p.source === 'dashboard'
@@ -3789,22 +3807,38 @@ async function renderModelsCard() {
     const model = p.model ? `<span class="mono">${esc(p.model)}</span>` : '<span class="muted">not configured</span>';
     const env = p.source === 'dashboard' && p.env ? `<div class="muted">env: <span class="mono">${esc(p.env)}</span></div>` : '';
     const note = p.restart_required ? '<div class="muted">a change here needs a restart</div>' : '';
-    // Prices come from the provider catalogues, refreshed every six hours. A
-    // model the catalogue does not know is not free — its calls are counted as
-    // unpriced — so say that instead of printing 0.00.
-    const money = v => '$' + (v < 0.01 ? v.toFixed(4) : v.toFixed(2));
+    // The price in use, wherever it came from: a provider catalogue first, a
+    // rate entered here for a model no catalogue prices. A model with neither is
+    // not free — its calls are counted as unpriced — so say that instead of
+    // printing 0.00.
     const price = p.input_per_mtok != null
-      ? `<span class="mono">${money(p.input_per_mtok)}</span> <span class="muted">in</span><br>
-         <span class="mono">${money(p.output_per_mtok)}</span> <span class="muted">out</span>`
-      : (p.model ? '<span class="muted" title="No provider catalogue lists this model, so its calls are counted as unpriced.">not priced</span>' : '');
+      ? `<span class="mono">${rate(p.input_per_mtok)}</span> <span class="muted">in</span><br>
+         <span class="mono">${rate(p.output_per_mtok)}</span> <span class="muted">out</span>
+         ${p.price_source === 'manual' ? '<div class="muted">entered here</div>' : ''}`
+      : (p.model ? '<span class="muted" title="No provider catalogue lists this model, so its calls are counted as unpriced. Enter a rate below to price them.">not priced</span>' : '');
     // The embedding model is read-only here on purpose: stored vectors carry its
     // dimensions, so changing it is a re-embed job, not a dropdown.
     const btn = p.purpose === 'embedding'
       ? '<span class="muted">read-only</span>'
       : `<button class="primary" onclick="modelDialog('${p.purpose}')">Change model</button>`;
+    // A catalogue rate cannot be edited, so the button only appears for a model
+    // with no price or one priced here.
+    const priceBtn = (p.purpose === 'embedding' || !p.model || p.price_source === 'catalogue')
+      ? ''
+      : `<button data-model="${esc(p.model)}" onclick="priceDialog(this.dataset.model)">${p.price_source === 'manual' ? 'edit price' : 'set price'}</button>`;
     return `<tr><td><b>${esc(spec[1])}</b><div class="muted">${esc(spec[2])}</div></td>
-      <td>${source}${env}</td><td>${model}${note}</td><td>${price}</td><td class="row-actions">${btn}</td></tr>`;
+      <td>${source}${env}</td><td>${model}${note}</td><td>${price}</td><td class="row-actions">${btn}${priceBtn}</td></tr>`;
   }).join('');
+  const manualRows = manual.map(m => `<tr>
+      <td class="mono wrap">${esc(m.model)}</td>
+      <td class="mono">${rate(m.input_per_mtok)}</td>
+      <td class="mono">${rate(m.output_per_mtok)}</td>
+      <td>${m.overruled
+        ? '<span class="badge pending">catalogue wins</span><div class="muted">The provider publishes its own rate for this model.</div>'
+        : '<span class="badge active">in use</span>'}</td>
+      <td class="row-actions">
+        <button data-model="${esc(m.model)}" onclick="priceDialog(this.dataset.model)">edit</button>
+        <button data-model="${esc(m.model)}" onclick="priceDelete(this.dataset.model)">remove</button></td></tr>`);
   const provRows = providers.map(p => `<tr><td><b>${esc(p.name)}</b><div class="muted mono">${esc(p.slug)}</div></td>
       <td class="mono wrap">${esc(p.base_url)}</td>
       <td>${p.key_hint ? `<span class="badge active">key ${esc(p.key_hint)}</span>` : '<span class="badge abandoned">no key</span>'}</td>
@@ -3814,6 +3848,12 @@ async function renderModelsCard() {
       <h3>Models</h3>
       <p class="muted">What each part of consolidation calls. The environment stays the default; a choice made here overrides it and is shown next to it, never instead of it.</p>
       ${table(['Purpose', 'Source', 'Model', 'Price / Mtok', ''], [rows])}
+    </div>
+    <div class="card">
+      <h3>Prices you entered</h3>
+      <p class="muted">Used for a model no provider catalogue prices. A rate the catalogue publishes always replaces a rate here, so nothing has to be removed when a provider catches up. Both are per million tokens, in dollars.</p>
+      ${table(['Model', 'Input / Mtok', 'Output / Mtok', 'Status', ''], manualRows)}
+      <div class="actions" style="margin-top:14px"><button class="primary" onclick="priceDialog('')">Add price</button></div>
     </div>
     <div class="card">
       <h3>Providers</h3>
@@ -3923,6 +3963,56 @@ async function mdClear(purpose) {
   try {
     await api('/models/' + encodeURIComponent(purpose), { method: 'DELETE' });
     dlgClose(); renderModelsCard(); toast('Back to the environment value');
+  } catch (e) { toast(e.message, true); }
+}
+// A rate entered by hand exists for the models no catalogue prices. The dialog
+// is shared by "set price" on a purpose row and "add price" on the card, so both
+// paths ask for the same two numbers and nothing else.
+async function priceDialog(model) {
+  let row = null;
+  try {
+    const list = await api('/prices');
+    row = list.find(x => x.model.toLowerCase() === (model || '').toLowerCase()) || null;
+  } catch (e) {}
+  const d = document.getElementById('dlg');
+  const value = v => (v == null ? '' : v);
+  d.innerHTML = `<h3>${row ? 'Price' : 'Add a price'}</h3>
+    <p class="muted">Per million tokens, in dollars. Used only for a model no provider catalogue prices; a published catalogue rate always wins.</p>
+    <div class="label">Model</div>
+    <input id="pr-model" value="${esc(row ? row.model : (model || ''))}" placeholder="deepinfra/gemma-4-31B-it-turbo" style="width:100%">
+    <div class="label">Input $/Mtok</div>
+    <input id="pr-in" type="number" min="0" step="0.0001" value="${value(row && row.input_per_mtok)}" style="width:100%">
+    <div class="label">Output $/Mtok</div>
+    <input id="pr-out" type="number" min="0" step="0.0001" value="${value(row && row.output_per_mtok)}" style="width:100%">
+    <div class="muted" style="margin-top:4px">Leave one of the two empty when the provider charges only for the other. The id must match what the reasoner sends, including the provider prefix.</div>
+    <div class="actions"><button onclick="dlgClose()">Cancel</button><button class="primary" onclick="priceSave()">Save</button></div>`;
+  d.showModal();
+}
+async function priceSave() {
+  const model = document.getElementById('pr-model').value.trim();
+  const num = id => {
+    const v = document.getElementById(id).value.trim();
+    return v === '' ? 0 : Number(v);
+  };
+  const input = num('pr-in'), output = num('pr-out');
+  if (!model) { toast('A model id is required', true); return; }
+  if (!(input >= 0) || !(output >= 0)) { toast('Rates must be zero or more', true); return; }
+  if (input <= 0 && output <= 0) { toast('Enter at least one rate above zero', true); return; }
+  try {
+    const saved = await api('/prices/' + encodeURIComponent(model), {
+      method: 'PUT', body: JSON.stringify({ input_per_mtok: input, output_per_mtok: output }),
+    });
+    dlgClose(); renderModelsCard();
+    toast(saved.overruled
+      ? 'Saved, but the provider catalogue publishes its own rate for this model'
+      : 'Price saved');
+  } catch (e) { toast(e.message, true); }
+}
+async function priceDelete(model) {
+  if (!confirm(`Remove the price for ${model}?`)) return;
+  try {
+    await api('/prices/' + encodeURIComponent(model), { method: 'DELETE' });
+    renderModelsCard(); toast('Price removed');
   } catch (e) { toast(e.message, true); }
 }
 

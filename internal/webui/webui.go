@@ -18,6 +18,7 @@ import (
 	"github.com/Bojanni050/cortexiq/internal/auth"
 	"github.com/Bojanni050/cortexiq/internal/brain"
 	"github.com/Bojanni050/cortexiq/internal/llmreg"
+	"github.com/Bojanni050/cortexiq/internal/modelprice"
 	"github.com/Bojanni050/cortexiq/internal/models"
 	"github.com/Bojanni050/cortexiq/internal/schedule"
 	"github.com/Bojanni050/cortexiq/internal/scope"
@@ -48,6 +49,11 @@ type Handler struct {
 	// MetricsToken authenticates that scrape when the peer requires a Bearer
 	// token.
 	MetricsToken string
+	// Prices is the refresher that owns the cost table, so a saved rate is
+	// republished here at once instead of waiting for the next catalogue
+	// refresh. When nil, the rate is stored and only a refresher that reads the
+	// table (one per process, every minute) will apply it.
+	Prices *modelprice.Refresher
 }
 
 // Register mounts the UI and API routes on the given mux.
@@ -105,6 +111,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/providers/", h.providerItem)
 	api.HandleFunc("/api/v1/models", h.models)
 	api.HandleFunc("/api/v1/models/", h.modelItem)
+	api.HandleFunc("/api/v1/prices", h.prices)
+	api.HandleFunc("/api/v1/prices/", h.priceItem)
 	mux.Handle("/api/v1/", auth.Require(h.Auth, readOnlyWeb(api)))
 }
 
@@ -208,7 +216,8 @@ func errStatus(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, llmreg.ErrProviderNotFound):
 		return http.StatusNotFound
-	case errors.Is(err, llmreg.ErrModelRequired), errors.Is(err, llmreg.ErrPurposeUnknown):
+	case errors.Is(err, llmreg.ErrModelRequired), errors.Is(err, llmreg.ErrPurposeUnknown),
+		errors.Is(err, llmreg.ErrPriceInvalid):
 		return http.StatusBadRequest
 	case errors.Is(err, brain.ErrReadOnly):
 		return http.StatusForbidden

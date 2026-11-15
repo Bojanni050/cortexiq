@@ -72,6 +72,7 @@ func serveHTTP(ctx context.Context, cmd *cli.Command) error {
 		},
 		MetricsSource: bc.Config.MetricsSource,
 		MetricsToken:  metricsToken(bc),
+		Prices:        bc.Prices,
 	}
 	if !bc.Auth.Enabled() {
 		log.Println("WARNING: no API token configured; the dashboard API is unauthenticated")

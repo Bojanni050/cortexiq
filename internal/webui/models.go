@@ -36,6 +36,10 @@ type modelPurpose struct {
 	// unpriced model is costed separately, and 0.00 there would read as a bargain.
 	InputPerMTok  *float64 `json:"input_per_mtok,omitempty"`
 	OutputPerMTok *float64 `json:"output_per_mtok,omitempty"`
+	// PriceSource says where that rate came from: "catalogue" when a provider
+	// publishes it, "manual" when it was entered in the dashboard. Empty means
+	// the model has no price at all.
+	PriceSource string `json:"price_source,omitempty"`
 }
 
 // providers handles GET (list, masked) and POST (upsert).
@@ -187,6 +191,12 @@ func (h *Handler) modelPurposes(r *http.Request) ([]modelPurpose, error) {
 		if price, ok := observability.LookupPrice(env[i].Model); ok {
 			in, out := price.InputPerM, price.OutputPerM
 			env[i].InputPerMTok, env[i].OutputPerMTok = &in, &out
+			// A catalogue rate wins over a typed one, so the distinction matters
+			// to whoever wants to change it.
+			env[i].PriceSource = "manual"
+			if h.cataloguePriced(env[i].Model) {
+				env[i].PriceSource = "catalogue"
+			}
 		}
 	}
 	return env, nil

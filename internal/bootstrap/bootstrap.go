@@ -35,6 +35,9 @@ type Context struct {
 	// deployment did not configure it, in which case the MCP listener keeps
 	// using the static tokens only.
 	OAuth *oauth.Server
+	// Prices is the cost table refresher. The dashboard writes the rates it is
+	// given and republishes them through this instance.
+	Prices *modelprice.Refresher
 
 	// embedder is the raw (uncached) embedder, kept for the start-up warm-up.
 	embedder embedder.Embedder
@@ -111,7 +114,12 @@ func New(ctx context.Context) (*Context, error) {
 	}
 	// WithoutCancel: the refresher outlives a start-up context that the caller
 	// may cancel once it has what it needs, but still stops with the process.
-	modelprice.NewRefresher(logger, priceSources).Start(context.WithoutCancel(ctx))
+	prices := modelprice.NewRefresher(logger, priceSources)
+	// Rates entered in the dashboard are the fallback for models no catalogue
+	// prices. They live in the database because the dashboard process is not
+	// necessarily this one, so a save is read back here rather than signalled.
+	prices.SetManualPrices(llmreg.NewStore(pool))
+	prices.Start(context.WithoutCancel(ctx))
 
 	q, err := queries.New()
 	if err != nil {
@@ -251,6 +259,9 @@ func New(ctx context.Context) (*Context, error) {
 		Pool:   pool,
 		Logger: logger,
 		Auth:   tokenSet,
+		// Prices is the refresher this process already runs, handed to the
+		// dashboard so a saved rate is republished here without a restart.
+		Prices: prices,
 		OAuth: oauth.NewServer(oauth.Config{
 			Issuer:        cfg.OAuthIssuer,
 			Resource:      cfg.OAuthResource,
