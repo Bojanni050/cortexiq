@@ -4,14 +4,14 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-11-16, after the `v0.1.85` deploy.
+Last updated: 2026-11-16, after the `v0.1.86` deploy.
 
 ## Build
 
 | | |
 |---|---|
-| Latest release | `v0.1.85`, 2026-11-16 |
-| Release commit | `613b31e` |
+| Latest release | `v0.1.86`, 2026-11-16 |
+| Release commit | `c58c06f` |
 | Every release | tagged and published; `gh release list` is the authoritative list |
 | Schema | `goose_db_version` reads `63`; migrations are append-only |
 | How to check | `docker compose exec -T cortexiq /cortexiq version` — the image has no shell and `cortexiq` is not on `PATH`, so the absolute path matters |
@@ -77,6 +77,12 @@ it landed:
 - **Model prices** — rates are read from the provider catalogues every six hours, and
   a model no catalogue prices can be priced by hand in Settings → Models; a catalogue
   price always wins over that row (migration `00063`, `v0.1.85`).
+- **Reasoning models get room to think** — the extraction call was capped at 1024
+  output tokens, and a reasoning model spends that same budget before it writes
+  anything, so a bound model returned empty answers that surfaced as JSON parse
+  errors or as runs that silently created nothing. The default is 8192, a bound
+  model follows the configured budget and JSON mode instead of a forced one, and
+  JSON mode's `{"facts": [...]}` wrapper is unwrapped (`v0.1.86`).
 
 ### Earlier: since the 2026-10-30 snapshot
 
@@ -127,23 +133,33 @@ merged 0 of 48 (it misses 3 of 20 true twins, which leaves a duplicate rather th
 information). That measurement is `internal/reasoner/modeleval_test.go` (`-tags modeleval`); the
 numbers are in `walkthrough2.md`.
 
-It also produced a rule this page has to contradict: do not bind a reasoner model in the dashboard,
-because that path builds the client with JSON mode forced on and Gemma failed every stage that returns
-a list with it. The code still forces JSON mode on for `reasoner`, `triage` and the binding path
-(`internal/bootstrap/bootstrap.go:412`, `internal/webui/models.go:263`); only the critic follows the
-environment flag. And the data shows the cost: of 669 runs with a model call since that binding was
-created, **every one** recorded at least one error, dominated by truncated JSON (`unexpected end of
-JSON input`) and `no JSON array or object in the response`, while `facts_created` stayed in single
-digits per day after the first (151 on 8 November, then 2, 4, 0, 0, 7, 4, 5). Two candidate causes,
-neither measured: `max_tokens=1024` truncates longer extraction answers, and the provider may not
-honour `response_format: json_object`. Treat the binding as neither proven good nor proven bad until
-one of those is ruled out. Rollback is unbinding it in Settings → Models, which brings back the
-environment value on the next restart.
+It also produced a rule this page had to contradict: do not bind a reasoner model in the dashboard,
+because that path built the client with JSON mode forced on and Gemma failed every stage that returns
+a list with it. `v0.1.86` replaced the rule with the measurement behind it. A bound model now takes
+`CORTEXIQ_REASONER_MAX_TOKENS` and `CORTEXIQ_REASONER_JSON_MODE` from the configuration (only triage
+keeps a forced JSON mode and its own small budget), and the default output budget went from 1024 to
+8192 tokens. The reason the binding looked broken on every run was the budget, not the model or the
+provider: `baseten/DeepSeek-V4-Flash-0731` is a reasoning model, `max_tokens` covers the thinking and
+the answer together, and 1024 tokens ran out mid-thought, leaving an empty message that surfaced as
+`no JSON array or object in the response` or `unexpected end of JSON input`. Probed against the same
+provider with the same prompt: JSON mode at 1024 and at 4096 → `finish_reason=length`, empty content;
+without JSON mode at 1024 → length, empty; at 4096 → 2300 tokens and a valid array; JSON mode at
+16384 → 3538 tokens and `{"facts": [...]}`. `reasoning_effort: low` did not
+help. That second result exposed a real parser bug: JSON mode wraps the array in an object, which the
+parser read as one fact without a summary and discarded silently — it now unwraps `{"facts": [...]}`
+first. An answer that stops on the length limit with nothing in it is no longer reported as a parse
+error but names the budget that ran out. The data before the fix: of 669 runs with a model call since
+the binding was created, every one recorded at least one error (dominated by truncated JSON), and 311
+of them had no `error_sample` at all and `facts_created=0` — the silent version of the same failure.
+Live proof on `v0.1.86`: one new episode in `/eval` produced 6 model calls, 5 facts, 3 relationships
+and 4 causal links with no error sample, then was purged again. The binding stays; what is still
+unmeasured is how much of the earlier `relationships` failure (a provider error returned as content,
+on the same fact cluster each time) survives the bigger budget.
 
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  a single VPS, in `/opt/cortexiq`, currently `v0.1.85`. That is the version the
+  a single VPS, in `/opt/cortexiq`, currently `v0.1.86`. That is the version the
   binary reports: `docker compose exec -T cortexiq /cortexiq version` (the image is
   distroless, so there is no shell and no `cortexiq` on `PATH`). Postgres 17 with
   pgvector and pg_textsearch, plus a local Ollama for embeddings, sit beside them and
@@ -185,7 +201,7 @@ environment value on the next restart.
   server, so the running binary is byte-for-byte the one the release workflow
   produced (compare `.Image` with the tag's digest). Rolling back is setting the
   previous tag. Migrations run on startup. Pull with the new tag inline —
-  `CORTEXIQ_IMAGE_TAG=0.1.85 docker compose pull cortexiq cortexiq-ui` — because
+  `CORTEXIQ_IMAGE_TAG=0.1.86 docker compose pull cortexiq cortexiq-ui` — because
   compose reads the tag from `.env`: a plain `pull` after bumping fetches the old
   image and the deploy then looks successful while running last release's binary.
   That is what the first attempt at the `v0.1.85` deploy did.
@@ -196,9 +212,9 @@ environment value on the next restart.
 - Registry tags: exactly one tag per release (`0.1.2`, `0.1.3`, …) and nothing
   else. Checked at the registry after `v0.1.15`: `0.1.2` through `0.1.15`, fourteen
   tags for fourteen releases, no `latest` and no floating `0.1`. The workflow still
-  sets `flavor: latest=false`, so `v0.1.85` published `0.1.85` and no `latest`.
+  sets `flavor: latest=false`, so `v0.1.86` published `0.1.86` and no `latest`.
   Past releases are kept rather than deleted, so a rollback can still pull the tag
-  it names; production pulls `0.1.85` today. With a moving tag, "which version runs
+  it names; production pulls `0.1.86` today. With a moving tag, "which version runs
   here" becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the compose
   file, so a missing value fails the deploy instead of silently pulling
   something old.
@@ -213,7 +229,7 @@ environment value on the next restart.
   not images; they are harmless.
 - This page may be one documentation-only commit ahead of the deployed binary;
   compare with `cortexiq version` rather than assuming.
-- Storage: Postgres 17 + pgvector. At the `v0.1.85` deploy: 2,960 live facts,
+- Storage: Postgres 17 + pgvector. At the `v0.1.86` deploy: 2,960 live facts,
   853 episodes, 30 namespaces. Tag coverage at the same moment: 920 of 2,960 facts
   and 296 of 853 episodes carry a tag, over 134 distinct fact tags; `cortexiq tags`
   gives the current numbers.
@@ -348,7 +364,7 @@ These are the values read from `/opt/cortexiq/.env` on 2026-11-16, plus the defa
 that apply to settings the file does not carry (marked above). Also on:
 `CORTEXIQ_GRAPH_ROUTE=true` (0.1 topic, 0.5 relational), `CORTEXIQ_DECAY_SPLIT=true`
 (disuse lowers a fact's strength, not its confidence), `MAX_RESULT_SIZE=10000`,
-`RERANK_CANDIDATES=30`, `REASONER_MAX_TOKENS=1024`. Two of the rows used to be
+`RERANK_CANDIDATES=30`, `REASONER_MAX_TOKENS=8192`. Two of the rows used to be
 accidents rather than decisions: the candidate cap looked like ordinary configuration
 nobody had measured, and the dedup thresholds were in the file twice, so the effective
 values came from whichever line happened to be last (see below).
@@ -509,7 +525,7 @@ own setting.
   hours with a five-minute retry after a failed attempt. A model whose catalogue
   publishes no price, or a price that is not in USD, deliberately stays unpriced
   rather than showing `$0.00`. `CORTEXIQ_MODEL_PRICES` was removed in `v0.1.24`; a
-  page or a log line that still names it is stale. At `v0.1.85` the table held 958
+  page or a log line that still names it is stale. At `v0.1.86` the table held 958
   models over two providers.
 - **A price can be entered by hand** in Settings → Models, for a model no catalogue
   prices (`model_prices`, migration `00063`). It is a fallback, not an override: a
@@ -540,11 +556,14 @@ What is left:
    rejected on latency. Jina stays, with the metric, the log line,
    `RERANK_CANDIDATES=30` and the routing as the safety net. A fallback chain
    Jina → local is not built and is not needed unless Jina actually starts failing.
-4. The reasoner binding: production runs a dashboard-bound model on a code path that
-   forces JSON mode on, and every run since that binding was created recorded an
-   error. Whether `max_tokens=1024` truncates the answers or the provider ignores
-   `response_format: json_object` is not measured. Rule one out before deciding
-   whether the binding stays.
+4. The reasoner binding: the reason every run failed was the 1024-token output budget,
+   not the model — a reasoning model spends that budget on its thoughts and returned
+   an empty answer. `v0.1.86` raises the default to 8192, lets a bound model follow
+   the configured budget and JSON mode instead of a forced one, and unwraps the
+   `{"facts": [...]}` shape JSON mode returns; one live run then produced 6 calls,
+   5 facts, 3 relationships and no error. The binding stays. What is still open is
+   how much of the `relationships` provider error (returned as content, on the same
+   fact cluster each time) survives the bigger budget — watch that stage specifically.
 
 ## Known rough edges
 
