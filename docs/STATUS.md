@@ -4,17 +4,17 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-11-08, after the `v0.1.61` deploy.
+Last updated: 2026-11-16, after the `v0.1.85` deploy.
 
 ## Build
 
 | | |
 |---|---|
-| Latest release | `v0.1.61`, 2026-11-08 |
-| Release commit | `c83c66b` |
+| Latest release | `v0.1.85`, 2026-11-16 |
+| Release commit | `613b31e` |
 | Every release | tagged and published; `gh release list` is the authoritative list |
-| Schema | `goose_db_version` reads `58`; migrations are append-only |
-| How to check | `cortexiq version` (works without a database) |
+| Schema | `goose_db_version` reads `63`; migrations are append-only |
+| How to check | `docker compose exec -T cortexiq /cortexiq version` — the image has no shell and `cortexiq` is not on `PATH`, so the absolute path matters |
 
 A binary built from a working tree reports `cortexiq dev (built from source)`.
 Release and Docker builds inject the tag, commit and build date; the values live
@@ -23,7 +23,62 @@ in `internal/version`.
 This page avoids counts that change on every release (tags, commits, tool totals).
 Where a number appears here, it is a measurement with a date attached.
 
-### Since the 2026-10-30 snapshot
+### Since the 2026-11-08 snapshot (v0.1.61)
+
+The snapshot that stood here described `v0.1.61`. What changed since, in the order
+it landed:
+
+- **Patterns reach the answer** — a reflected answer now includes patterns whose
+  terms recur against the question instead of any pattern sharing one word, and the
+  Patterns tab shows what was extracted. A rejection can no longer overwrite a
+  cluster that was already accepted.
+- **Entities at the source** — name variants fold into one entity (`Hindsight` next
+  to `hindsight`, `'Wipe All Data'` next to `Wipe All Data`), descriptions and
+  placeholder types are refused, and a quote, port or role inside a name no longer
+  becomes part of it. Contradiction detection compares entity and property
+  case-insensitively (migration `00062` adds the index for it), which is how two
+  facts that disagreed only in capitalisation could finally contradict each other.
+  The sweep over relationship clusters got one predicate identity (`pushed to` =
+  `pushed_to`) and skips clusters a live pattern already covers.
+- **BM25 keyword recall** — the keyword arm moved from `ts_rank_cd` over a stored
+  tsvector to real BM25 through `pg_textsearch`, which is why PostgreSQL 17 is now a
+  hard requirement; the tsvector columns and their GIN indexes are gone (migration
+  `00061`, `v0.1.74`). On 500k synthetic rows one word took the old arm 160–230 ms and
+  BM25 0.4–6 ms; on 15 real queries the top-3 changed mostly in BM25's favour, which
+  is the IDF effect working.
+- **Lenient list parsing** — every list-shaped step accepts a bare array, one loose
+  object, an array under a key, or `{}`, and repairs `"fact_id": "3128"`. Before
+  `v0.1.76`, 179 of 221 runs with a model call in 24 hours failed on `cannot
+  unmarshal object into []…`; with the parsers fixed the first error moved on to
+  truncation instead of disappearing (`v0.1.75`–`v0.1.76`).
+- **Graph arm weighted per question shape** — instead of on or off, the arm can be
+  fused at 0.1 for a topic question and 0.5 for a relational one
+  (`CORTEXIQ_GRAPH_ROUTE`, default off, on in production since 2026-11-13). On 36
+  questions written against a copy of production: 0.72 MRR with the arm off, 0.65
+  with equal weight, 0.76 weighted — measured without a reranker, which is exactly
+  where the arm matters (`v0.1.83`).
+- **Reranker made honest** — an unconfigured reranker crashed recall through a typed
+  nil, a trailing slash in the base URL produced `//rerank` and a silent 404, and a
+  failing reranker was invisible. All three are fixed: an empty configuration is a
+  no-op, the slash is stripped, and `recall_rerank_requests_total{status}` plus one
+  log line per minute report a failure. `CORTEXIQ_RERANK_CANDIDATES` went from 100 to
+  30 because Jina allows 100,000 tokens per minute (`v0.1.74`–`v0.1.84`).
+- **Dashboard: Timeline and Clean-up** — a timeline per entity with a time cursor and
+  a two-date comparison (true then / new since / no longer true), a Clean-up tab for
+  duplicate entities, islands and weak relationships, and a hover card in the graph
+  that shows the facts behind a node (`v0.1.78`–`v0.1.81`).
+- **Schema setup under a lock** — `db.Open` runs goose and its check-then-create
+  steps under a Postgres advisory lock, because the two containers starting together
+  raced on the same migration and one died on `relation … already exists`. A
+  cancelled waiter leaves no lock behind (`v0.1.75`).
+- **OAuth loopback ports** — a client that registers `http://127.0.0.1/callback`
+  without a port may use the port the operating system gave it, as RFC 8252 §7.3
+  requires; host and path still have to match exactly (`v0.1.77`).
+- **Model prices** — rates are read from the provider catalogues every six hours, and
+  a model no catalogue prices can be priced by hand in Settings → Models; a catalogue
+  price always wins over that row (migration `00063`, `v0.1.85`).
+
+### Earlier: since the 2026-10-30 snapshot
 
 The snapshot that stood here described `v0.1.16`. What changed since, in the order
 it landed:
@@ -57,36 +112,49 @@ it landed:
   `data[].uniblock` block (capabilities, context window, deprecation) (`v0.1.55`).
 
 
-Consolidation model: since 2026-10-30 production runs `deepinfra/gemma-4-31B-it-turbo` via DeepInfra
-(`CORTEXIQ_REASONER_MODEL` in `.env`, `CORTEXIQ_REASONER_JSON_MODE=false`), replacing
-`mistralai/Mistral-Small-24B-Instruct-2501`. On the same inputs the old model failed to parse 13 of 40
-fact calls and 6 of 20 relation batches, and merged 13 of 48 different fact pairs in the same-fact
-review; Gemma had no parse errors on those stages and merged 0 of 48 (it misses 3 of 20 true twins,
-which leaves a duplicate instead of losing information). Do not bind a reasoner model in the dashboard
-(`llm_bindings`) for now: that path builds the client with JSON mode forced on, and with JSON mode on
-Gemma fails every stage that returns a list. The test is `internal/reasoner/modeleval_test.go`
-(`-tags modeleval`); the numbers are in `walkthrough2.md`. Not yet seen on live traffic: check
-`consolidation_runs` for parse errors after a few days. Rollback is the previous value in
-`.env.bak-pregemma` plus a restart of both containers.
+Consolidation model: the environment still says `deepinfra/gemma-4-31B-it-turbo` via DeepInfra
+(`CORTEXIQ_REASONER_MODEL`, `CORTEXIQ_REASONER_JSON_MODE=false`), but production has not used it
+since 2026-11-08 08:21 — the `reasoner` row in `llm_bindings` points at
+`baseten/DeepSeek-V4-Flash-0731` through the `hopscotch` provider. Triage is bound to
+`deepinfra/Meta-Llama-3.1-8B-Instruct-Turbo` (the same value sits in `CORTEXIQ_TRIAGE_MODEL`), and
+the critic is an environment model of its own, `deepinfra/DeepSeek-V3` (`CORTEXIQ_CRITIC_MODEL`),
+which reuses `CORTEXIQ_REASONER_JSON_MODE`, so it runs without JSON mode.
+
+The history: Gemma replaced `mistralai/Mistral-Small-24B-Instruct-2501` on 2026-10-30 because, on the
+same inputs, Mistral failed to parse 13 of 40 fact calls and 6 of 20 relation batches and merged 13 of
+48 genuinely different pairs in the same-fact review; Gemma had no parse errors on those stages and
+merged 0 of 48 (it misses 3 of 20 true twins, which leaves a duplicate rather than losing
+information). That measurement is `internal/reasoner/modeleval_test.go` (`-tags modeleval`); the
+numbers are in `walkthrough2.md`.
+
+It also produced a rule this page has to contradict: do not bind a reasoner model in the dashboard,
+because that path builds the client with JSON mode forced on and Gemma failed every stage that returns
+a list with it. The code still forces JSON mode on for `reasoner`, `triage` and the binding path
+(`internal/bootstrap/bootstrap.go:412`, `internal/webui/models.go:263`); only the critic follows the
+environment flag. And the data shows the cost: of 669 runs with a model call since that binding was
+created, **every one** recorded at least one error, dominated by truncated JSON (`unexpected end of
+JSON input`) and `no JSON array or object in the response`, while `facts_created` stayed in single
+digits per day after the first (151 on 8 November, then 2, 4, 0, 0, 7, 4, 5). Two candidate causes,
+neither measured: `max_tokens=1024` truncates longer extraction answers, and the provider may not
+honour `response_format: json_object`. Treat the binding as neither proven good nor proven bad until
+one of those is ruled out. Rollback is unbinding it in Settings → Models, which brings back the
+environment value on the next restart.
 
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  a single VPS, in `/opt/cortexiq`, currently `v0.1.61` (`cortexiq version` inside
-  the container is the source of truth; the binary lives at `/cortexiq` and the
-  image has no shell, so use `docker compose exec -T cortexiq /cortexiq version`).
-  Postgres with pgvector and a local Ollama for embeddings sit beside them and are
-  not replaced on a release. A deploy is: dump the database, bump
-  `CORTEXIQ_IMAGE_TAG` in `.env`, `docker compose pull && docker compose up -d`,
-  then confirm the goose version and the two containers. Migrations `00038`
-  (retractions and the purge log) and `00039` (providers and model bindings)
-  applied on the 2026-10-26 and 2026-10-27 restarts, and `00040` (hygiene) on
-  the 2026-10-27 restart. `00041` applied on the `v0.1.9` restart: it drops
-  twelve `hygiene_*` columns and the `hygiene_audit_log` table, so the schema is
-  back to what it was before `00040` — verified after the deploy (0 matching
-  columns, table gone, data intact). All of them are idempotent. `00042` through
-  `00058` followed between `v0.1.17` and `v0.1.57`; the releases after that
-  changed the binary only.
+  a single VPS, in `/opt/cortexiq`, currently `v0.1.85`. That is the version the
+  binary reports: `docker compose exec -T cortexiq /cortexiq version` (the image is
+  distroless, so there is no shell and no `cortexiq` on `PATH`). Postgres 17 with
+  pgvector and pg_textsearch, plus a local Ollama for embeddings, sit beside them and
+  are not replaced on a release. A deploy is: pull the new tag while the old version
+  still runs, stop the two app containers, take a verified dump, set
+  `CORTEXIQ_IMAGE_TAG` in `.env`, `docker compose up -d`, then confirm the goose
+  version and the containers. Migrations `00038`–`00058` ran between `v0.1.17` and
+  `v0.1.57`; `00059` (pattern cursor), `00060` (pattern source entities), `00061`
+  (BM25) and `00062` (the case-insensitive entity index) followed up to `v0.1.82`;
+  `00063` (`model_prices`) applied on the `v0.1.85` restart. They are all idempotent,
+  and goose now runs them under an advisory lock so two containers cannot race.
 - The MCP server hands its prime directive to a client at connect time, in the
   `initialize` result's `instructions` field (6445 characters on `v0.1.4`). A
   client reads that once per connection, so it has to reconnect after an upgrade
@@ -116,17 +184,22 @@ Gemma fails every stage that returns a list. The test is `internal/reasoner/mode
   `docker compose -f docker-compose.prod.yml up -d`; nothing is compiled on the
   server, so the running binary is byte-for-byte the one the release workflow
   produced (compare `.Image` with the tag's digest). Rolling back is setting the
-  previous tag. Migrations run on startup.
+  previous tag. Migrations run on startup. Pull with the new tag inline —
+  `CORTEXIQ_IMAGE_TAG=0.1.85 docker compose pull cortexiq cortexiq-ui` — because
+  compose reads the tag from `.env`: a plain `pull` after bumping fetches the old
+  image and the deploy then looks successful while running last release's binary.
+  That is what the first attempt at the `v0.1.85` deploy did.
 - `build: .` is no longer in the prod compose. The old locally built
   `cortexiq:local` image and `0.1.0`/`0.1.1` stay on the server as rollback
   artifacts, about 90 MB together; nothing pulls them. The local `latest` tag was
   untagged, so nothing on the server suggests a moving tag.
 - Registry tags: exactly one tag per release (`0.1.2`, `0.1.3`, …) and nothing
   else. Checked at the registry after `v0.1.15`: `0.1.2` through `0.1.15`, fourteen
-  tags for fourteen releases, no `latest` and no floating `0.1`. Past releases are
-  kept rather than deleted, so a rollback can still pull the tag it names;
-  production pulls `0.1.15` today. With a moving tag, "which version runs here"
-  becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the compose
+  tags for fourteen releases, no `latest` and no floating `0.1`. The workflow still
+  sets `flavor: latest=false`, so `v0.1.85` published `0.1.85` and no `latest`.
+  Past releases are kept rather than deleted, so a rollback can still pull the tag
+  it names; production pulls `0.1.85` today. With a moving tag, "which version runs
+  here" becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the compose
   file, so a missing value fails the deploy instead of silently pulling
   something old.
 - Getting there took one correction. `v0.1.1` was published with a `latest` tag
@@ -140,9 +213,9 @@ Gemma fails every stage that returns a list. The test is `internal/reasoner/mode
   not images; they are harmless.
 - This page may be one documentation-only commit ahead of the deployed binary;
   compare with `cortexiq version` rather than assuming.
-- Storage: Postgres + pgvector. At the `v0.1.15` deploy: 1,188 live facts,
-  323 episodes, 24 namespaces. The tag coverage was last measured at the
-  `v0.1.12` deploy (82 of 1,166 facts, 17 of 328 episodes); `cortexiq tags`
+- Storage: Postgres 17 + pgvector. At the `v0.1.85` deploy: 2,960 live facts,
+  853 episodes, 30 namespaces. Tag coverage at the same moment: 920 of 2,960 facts
+  and 296 of 853 episodes carry a tag, over 134 distinct fact tags; `cortexiq tags`
   gives the current numbers.
 
 ## A namespace on every write
@@ -260,22 +333,25 @@ not built.
 
 | Setting | Production | Why |
 |---|---|---|
-| `CORTEXIQ_GRAPH_RECALL` | `false` | Off by default since the 37-query measurement: on, it costs topical questions more than it gains on relational ones. Any call can still ask for it with `"graph": true`; the capability is intact, only the default changed. See below. |
-| `CORTEXIQ_RERANKER_MODEL` | `jina-reranker-v3.5` | On. It re-scores the top ~100 fused candidates and costs roughly 300 ms of a ~525 ms recall, so it owns the top of the list. |
+| `CORTEXIQ_GRAPH_RECALL` | `false` | The switch itself is off: with the arm on at equal weight, relational questions gain less than topical ones lose (37 queries, 2026-10-26). Production runs `CORTEXIQ_GRAPH_ROUTE=true` instead, so relational questions get the arm at weight 0.5 and topic questions at 0.1. Any call can still force the plain switch with `"graph": true`. See below. |
+| `CORTEXIQ_RERANKER_MODEL` | `jina-reranker-v3.5` | On, with `CORTEXIQ_RERANK_CANDIDATES=30`. It re-scores fused candidates and owns the top of the list; the cap keeps an ordinary recall under Jina's 100k-tokens-per-minute limit. A local reranker was measured and rejected on latency (below). |
 | `CORTEXIQ_RECALL_MIN_SIMILARITY` | `0.40` | Drops weak vector-only hits. Model dependent. |
-| `CORTEXIQ_CONSOLIDATION_CANDIDATE_CAP` | `0` | Measured on 272 real episodes (2026-10-26): the lexical arm would add a member to 271 of them, but the near-threshold pairs are mostly state changes (v0.1.2 → v0.1.3, bug found → bug fixed, volume not shared → shared), not restatements. Left at 0. |
+| `CORTEXIQ_CONSOLIDATION_CANDIDATE_CAP` | `0` (code default, not in `.env`) | Measured on 272 real episodes (2026-10-26): the lexical arm would add a member to 271 of them, but the near-threshold pairs are mostly state changes (v0.1.2 → v0.1.3, bug found → bug fixed, volume not shared → shared), not restatements. Left at 0. |
 | `CORTEXIQ_CONSOLIDATION_DEDUP_THRESHOLD` | `0.98` | Auto-merge only near-identical facts. On 932 real facts, every pair between 0.85 and 0.98 differed in a number, an entity or a state. |
 | `CORTEXIQ_CONSOLIDATION_DEDUP_REVIEW_THRESHOLD` | `0.85` | Below this, an LLM verdict was always "different"; above it the pair is worth asking. Narrowed from 0.75, which sent a third of all facts through the model. |
-| `CORTEXIQ_TRIAGE_MODEL` | unset (production uses a dashboard binding) | Optional cheap classifier that runs before extraction and can refuse a cluster of acknowledgements. Without a model, everything goes to the reasoner. In production the model comes from the `triage` row in `llm_bindings` (DeepInfra, `Meta-Llama-3.1-8B-Instruct-Turbo`, set 2026-10-26 from the dashboard), which is applied at start-up and wins over this variable. Set `CORTEXIQ_TRIAGE_LOG=true` to log one line per triage call. It fails open (unusable answer = durable), so enabling it risks cost, not memories. |
-| `CORTEXIQ_WRITE_FILTER` | `off` | Since `v0.1.8`, opt-in: `warn` logs what it would refuse, `strict` refuses secrets and noise. Left off until the false-positive rate on real writes is known. The hygiene cleaner that shipped beside it was removed in `v0.1.9`: it audited noise the store's own decay already handles, and its archive flag was read by nothing. |
-| `CORTEXIQ_ROUTE_RECALL` | `false` | Only widens recall; never measured in production. |
-| `CORTEXIQ_RECALL_MMR_LAMBDA` | `0` | Available per call; off by default so ranking stays plain fusion. |
+| `CORTEXIQ_TRIAGE_MODEL` | `deepinfra/Meta-Llama-3.1-8B-Instruct-Turbo` | Set in `.env` and bound to the same model in `llm_bindings` (through `hopscotch`), so both say the same thing and the binding is what start-up applies. It classifies a cluster before extraction and can refuse acknowledgements; without it everything goes to the reasoner. It fails open (unusable answer = durable), so enabling it risks cost, not memories. Set `CORTEXIQ_TRIAGE_LOG=true` to log one line per triage call. |
+| `CORTEXIQ_WRITE_FILTER` | `off` (code default, not in `.env`) | Since `v0.1.8`, opt-in: `warn` logs what it would refuse, `strict` refuses secrets and noise. Left off until the false-positive rate on real writes is known. The hygiene cleaner that shipped beside it was removed in `v0.1.9`: it audited noise the store's own decay already handles, and its archive flag was read by nothing. |
+| `CORTEXIQ_ROUTE_RECALL` | `false` (code default, not in `.env`) | Only widens recall; never measured in production. |
+| `CORTEXIQ_RECALL_MMR_LAMBDA` | `0` (code default, not in `.env`) | Available per call; off by default so ranking stays plain fusion. |
 
-These are the values read from `/opt/cortexiq/.env` on 2026-10-26, not defaults
-from the code. Two of them used to be accidents rather than decisions: the
-candidate cap looked like ordinary configuration nobody had measured, and the
-dedup thresholds were in the file twice, so the effective values came from
-whichever line happened to be last (see below).
+These are the values read from `/opt/cortexiq/.env` on 2026-11-16, plus the defaults
+that apply to settings the file does not carry (marked above). Also on:
+`CORTEXIQ_GRAPH_ROUTE=true` (0.1 topic, 0.5 relational), `CORTEXIQ_DECAY_SPLIT=true`
+(disuse lowers a fact's strength, not its confidence), `MAX_RESULT_SIZE=10000`,
+`RERANK_CANDIDATES=30`, `REASONER_MAX_TOKENS=1024`. Two of the rows used to be
+accidents rather than decisions: the candidate cap looked like ordinary configuration
+nobody had measured, and the dedup thresholds were in the file twice, so the effective
+values came from whichever line happened to be last (see below).
 
 ### Consolidation: what merges, and what does not (272 episodes, 932 facts)
 
@@ -340,11 +416,16 @@ production runs `CORTEXIQ_MAX_RESULT_SIZE=10000`: at a large limit those
 neighbours do surface, and there the floor is the difference between a hub list
 and a pile.
 
-Gating the arm on question shape — only run it when the question names two or
-more entities — remains open. Entity counts did not separate the two sets
-cleanly (on the topic set, gating at three or more entities scored 0.538 against
-0.554 for always-off), and thresholds tuned on 37 hand-written labels prove
-little.
+Gating the arm on question shape happened anyway, as a weight rather than a gate:
+`CORTEXIQ_GRAPH_ROUTE=true` runs the arm on every recall and fuses it at 0.1 for a
+topic question and 0.5 for a relational one. On 36 questions written against a copy
+of production (2026-11-13) that scored 0.76 MRR against 0.72 with the arm off and
+0.65 with equal weight — without a reranker, which is where the arm matters. With a
+working Jina reranker every variant, off included, reached 0.93–0.97, so that set
+cannot show a difference: the questions were derived from the fact text and are too
+easy for a cross-encoder. The weights come from a sweep on 36 labels I wrote myself,
+so they are a hypothesis. Production keeps the routing on because it is neutral at
+worst with a working reranker and better than equal weight when the reranker fails.
 
 Fixed alongside it: a recall that asked for facts *and* episodes returned facts
 only. Episodes were handed whatever slots the facts left over, and facts fill the
@@ -356,9 +437,9 @@ by score, so the better answer wins regardless of type.
 
 | | |
 |---|---|
-| Test functions | 539 across 95 files (2026-11-08) |
+| Test functions | 621 across 107 files (2026-11-16) |
 | Unit tests | run everywhere, no database needed |
-| Integration tests | `internal/brain`, need `CORTEXIQ_TEST_DSN`; CI runs them against the PostgreSQL 17 image built from `deploy/postgres` (pgvector + pg_textsearch) and fails if any was skipped |
+| Integration tests | `internal/brain` and `internal/db`, need `CORTEXIQ_TEST_DSN`; CI runs them against the PostgreSQL 17 image built from `deploy/postgres` (pgvector + pg_textsearch) and fails if any was skipped |
 | Race detector | CI job `race`, `go test -race ./...` — green since its first run on 2026-10-26 |
 | Coverage | 43.5% overall, gated by `.github/coverage-baseline.txt` (ratchet, cannot drop) |
 
@@ -366,9 +447,10 @@ Coverage is measured with the database attached. Without it `internal/brain`
 reports 26% instead of 67%, so a coverage number from a bare `go test ./...` is
 not comparable.
 
-Thin spots, in order of how much it hurts: `internal/bootstrap` (12%),
-`internal/db` (11%), `internal/webui` (15%), `internal/reasoner` (21%). Those are
-the wiring layers — a bug there breaks startup or the dashboard, not recall.
+Thin spots, last measured 2026-11-08, in order of how much it hurts:
+`internal/bootstrap` (12%), `internal/db` (11%), `internal/webui` (15%),
+`internal/reasoner` (21%). Those are the wiring layers — a bug there breaks startup
+or the dashboard, not recall.
 
 ## Removed memory: three verbs
 
@@ -401,9 +483,10 @@ in place.
 
 ## Models and providers
 
-The four models consolidation uses (reasoner, triage, embedding, reranker) are
-visible in **Settings → Models**, with the environment value next to whatever was
-chosen in the dashboard, so an override never hides the deployment's own setting.
+The five models consolidation can use (reasoner, triage, critic, embedding,
+reranker) are visible in **Settings → Models**, with the environment value next to
+whatever was chosen in the dashboard, so an override never hides the deployment's
+own setting.
 
 - Providers live in `llm_providers` (migration 39), alongside the model chosen per
   purpose in `llm_bindings`. A purpose without a row keeps the environment value,
@@ -421,6 +504,24 @@ chosen in the dashboard, so an override never hides the deployment's own setting
   read-only**: stored vectors carry its dimensions, so switching it is a re-embed
   job, and the API refuses with `409` rather than letting recall degrade quietly.
   The reranker is changeable but needs a restart.
+- **Prices come from the catalogues**, not from a variable: `GET {base}/models` of
+  the environment provider and of every row in `llm_providers`, refreshed every six
+  hours with a five-minute retry after a failed attempt. A model whose catalogue
+  publishes no price, or a price that is not in USD, deliberately stays unpriced
+  rather than showing `$0.00`. `CORTEXIQ_MODEL_PRICES` was removed in `v0.1.24`; a
+  page or a log line that still names it is stale. At `v0.1.85` the table held 958
+  models over two providers.
+- **A price can be entered by hand** in Settings → Models, for a model no catalogue
+  prices (`model_prices`, migration `00063`). It is a fallback, not an override: a
+  catalogue price always wins, also when the two spell the model differently in
+  case, and the row then shows "catalogue wins" instead of disappearing. The MCP
+  process re-reads that table every minute and merges it with the last known
+  catalogue prices, so a change applies without a restart even in the split
+  deployment; the dashboard publishes it immediately for its own page. A failing
+  read keeps the last known values, so a hiccup does not make calls unpriced.
+- The Metrics tab reports unpriced calls per `model · stage`, because the counter
+  already carries both labels. That is the only place that says *which* model is
+  missing a price; it used to print a total and a variable that no longer existed.
 
 ## Open decisions
 
@@ -428,14 +529,22 @@ Closed on 2026-10-26 by measurement: the candidate cap stays `0`, and fact dedup
 runs at `0.98` with reviews from `0.85` (see the consolidation section above).
 What is left:
 
-1. Graph recall: decided — off by default, opt-in per call, on the evidence
-   above. Still open is whether to gate it on question shape, which needs labels
-   from questions you actually could not answer, not more invented ones.
-2. RRF arm weights: the sweep says the graph arm at any weight above 0 is worse
-   before reranking, and with the arm off by default the point is moot. The
-   reranker decides the top anyway, so tuning weights would be work with no
-   measurable effect.
-3. Cross-encoder reranker: a new external dependency, not just code.
+1. Graph routing: built and on in production, with 0.1/0.5 as the weights. Whether
+   those are the right numbers needs a question set that is hard for the reranker
+   and labels from questions you actually could not answer, not more of mine.
+2. RRF arm weights: with routing on there is something to tune, but the measurement
+   above saturates with a working reranker. Tuning before there is a harder set
+   would be work with no measurable effect.
+3. Cross-encoder reranker: a local one was measured on a copy of production — 0.80
+   MRR against 0.85 for Jina, at roughly 2.9 s extra per recall against 0.1 s — and
+   rejected on latency. Jina stays, with the metric, the log line,
+   `RERANK_CANDIDATES=30` and the routing as the safety net. A fallback chain
+   Jina → local is not built and is not needed unless Jina actually starts failing.
+4. The reasoner binding: production runs a dashboard-bound model on a code path that
+   forces JSON mode on, and every run since that binding was created recorded an
+   error. Whether `max_tokens=1024` truncates the answers or the provider ignores
+   `response_format: json_object` is not measured. Rule one out before deciding
+   whether the binding stays.
 
 ## Known rough edges
 
@@ -445,8 +554,18 @@ What is left:
   non-pointer vector fails with `unsupported data type: <nil>`, logged per query
   rather than per row. Production writes always embed, so this reaches
   hand-seeded or imported rows, not normal traffic.
+- Jina rates 100,000 tokens per minute. Above that a recall gets `429` and falls
+  back to the fusion order, which is now visible in
+  `recall_rerank_requests_total{status="error"}` and one log line per minute.
+  `CORTEXIQ_RERANK_CANDIDATES=30` keeps an ordinary recall well under the limit; a
+  large `limit` still is not.
+- The app image is distroless: no shell, no `cortexiq` on `PATH`, so every container
+  check has to call `/cortexiq` by absolute path. `docker exec … cortexiq version`
+  fails even though the binary is there.
 - Windows: `go test ./...` can fail with `unlinkat ... test.exe` when a test
-  binary is still running. Retry; it is not a test failure.
+  binary is still running. Retry; it is not a test failure. On this machine AppLocker
+  also refuses to execute some `go test` binaries written to `%TEMP%`; building the
+  binary into the repository directory and running it there works around that.
 - The integration suite wants a clean database. `TestGlobalMentalModelReadsAllNamespaces`
   builds a global model from a cross-namespace recall, so facts left behind by
   earlier runs can push the expected one out of the top N and fail the test.
