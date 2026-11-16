@@ -126,7 +126,20 @@ func (o *OpenAI) chat(ctx context.Context, stage string, msgs []openai.ChatCompl
 		return "", errors.New("reasoner: no response from LLM")
 	}
 	observability.RecordReasonerCall(stage, o.model, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, true)
-	return strings.TrimSpace(resp.Choices[0].Message.Content), nil
+	choice := resp.Choices[0]
+	content := strings.TrimSpace(choice.Message.Content)
+	// A reasoning model spends max_tokens on its thoughts before it writes an
+	// answer. Capped below what it thinks, it stops at the limit with nothing to
+	// show; that used to surface as "no JSON array or object in the response"
+	// and hid the real cause. Retrying cannot help either, since the same budget
+	// hits the same wall.
+	if content == "" && choice.FinishReason == "length" {
+		if o.maxTokens > 0 {
+			return "", fmt.Errorf("reasoner: %s used all %d output tokens without answering (a reasoning model counts its thoughts against max_tokens); raise CORTEXIQ_REASONER_MAX_TOKENS", o.model, o.maxTokens)
+		}
+		return "", fmt.Errorf("reasoner: %s hit the provider's output limit without answering; raise the model's output limit", o.model)
+	}
+	return content, nil
 }
 
 // --- JSON response types ---
@@ -345,6 +358,12 @@ GOOD example (two topics in the Events become two specific facts):
 // capped at maxFactsPerCall.
 func parseStructuredFacts(output string) ([]*StructuredFact, error) {
 	raw := extractJSON(output)
+	// JSON mode makes a model wrap the array in an object ({"facts": [...]}).
+	// Left wrapped it decodes as one fact with no summary, which is dropped
+	// silently: the run then stores nothing and reports no error at all.
+	if strings.HasPrefix(strings.TrimSpace(raw), "{") {
+		raw = unwrapTopLevelArray(raw, "facts", "summary")
+	}
 
 	var jfs []jsonFact
 	switch {

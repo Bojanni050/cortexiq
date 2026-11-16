@@ -20,6 +20,10 @@ type ModelEnv struct {
 	Reranker  string
 	Critic    string
 	MaxTokens int
+	// JSONMode is the deployment's reasoner setting, so a model swapped in from
+	// the dashboard is built exactly like the environment one instead of always
+	// asking for response_format=json_object.
+	JSONMode bool
 }
 
 // modelSources ties a purpose to the environment value that applies when no
@@ -257,10 +261,12 @@ func (h *Handler) applyModel(r *http.Request, purpose, providerSlug, model strin
 		return false, err
 	}
 	maxTokens := h.Models.MaxTokens
+	jsonMode := h.Models.JSONMode
 	if purpose == llmreg.PurposeTriage {
 		maxTokens = 200
+		jsonMode = true
 	}
-	client, err := reasoner.NewOpenAI(p.BaseURL, p.APIKey, model, maxTokens, true)
+	client, err := reasoner.NewOpenAI(p.BaseURL, p.APIKey, model, maxTokens, jsonMode)
 	if err != nil {
 		return false, err
 	}

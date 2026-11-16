@@ -42,10 +42,12 @@ type Config struct {
 	CriticAPIKey  string `env:"CORTEXIQ_CRITIC_API_KEY" envDefault:""`
 
 	// Reasoner request tuning. MaxTokens caps output tokens per call (0 =
-	// unlimited); it guards against verbose/reasoning models burning output
-	// tokens during JSON extraction. JSONMode requests a native JSON response
+	// unlimited); it guards against verbose/reasoning models running on. It must
+	// cover the model's reasoning tokens as well as its answer: a reasoning model
+	// that is capped below what it thinks returns an empty message, which reads
+	// as a parse error and costs a call. JSONMode requests a native JSON response
 	// (response_format=json_object) where the provider/model supports it.
-	ReasonerMaxTokens int  `env:"CORTEXIQ_REASONER_MAX_TOKENS" envDefault:"1024"`
+	ReasonerMaxTokens int  `env:"CORTEXIQ_REASONER_MAX_TOKENS" envDefault:"8192"`
 	ReasonerJSONMode  bool `env:"CORTEXIQ_REASONER_JSON_MODE" envDefault:"false"`
 
 	// The cost estimate reads its prices from the provider catalogue, so there

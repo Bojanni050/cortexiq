@@ -30,6 +30,35 @@ func TestParseStructuredFactsAcceptsSingleObject(t *testing.T) {
 	}
 }
 
+// JSON mode wraps the array in an object. Left wrapped it used to read as one
+// fact without a summary, so the run stored nothing and reported no error: the
+// dashboard showed healthy runs that extracted zero knowledge.
+func TestParseStructuredFactsUnwrapsTheJSONModeObject(t *testing.T) {
+	facts, err := parseStructuredFacts(`{"facts": [
+  {"entity": "CortexIQ", "property": "reasoner", "value": "baseten/DeepSeek-V4-Flash-0731", "summary": "CortexIQ's reasoner runs on DeepSeek-V4-Flash via the hopscotch provider."},
+  {"entity": "CortexIQ", "property": "reasoner budget", "value": "1024", "summary": "CortexIQ capped reasoner output at 1024 tokens on 2026-11-08."}
+]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts) != 2 {
+		t.Fatalf("want 2 facts from the wrapper, got %d: %+v", len(facts), facts)
+	}
+	if facts[0].Property != "reasoner" {
+		t.Errorf("fields not mapped: %+v", facts[0])
+	}
+}
+
+func TestParseStructuredFactsEmptyWrapper(t *testing.T) {
+	facts, err := parseStructuredFacts(`{"facts": []}`)
+	if err != nil {
+		t.Fatalf("an empty wrapper is a valid \"nothing durable here\": %v", err)
+	}
+	if len(facts) != 0 {
+		t.Fatalf("want no facts, got %+v", facts)
+	}
+}
+
 func TestParseStructuredFactsAcceptsScalarValue(t *testing.T) {
 	// Models sometimes emit a bare number (or boolean) where the schema wants a
 	// string; that must not cost us the whole reply.

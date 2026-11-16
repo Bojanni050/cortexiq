@@ -406,10 +406,19 @@ func applyModelBindings(ctx context.Context, pool *pgxpool.Pool, br *brain.Brain
 			return fmt.Errorf("model binding for %s names provider %q, which does not exist", purpose, b.Provider)
 		}
 		maxTokens := cfg.ReasonerMaxTokens
+		jsonMode := cfg.ReasonerJSONMode
 		if purpose == llmreg.PurposeTriage {
+			// Triage always asks for JSON: it is a single short verdict, and the
+			// environment path builds it that way too.
 			maxTokens = triageMaxTokens
+			jsonMode = true
 		}
-		client, err := reasoner.NewOpenAI(p.BaseURL, p.APIKey, b.Model, maxTokens, true)
+		// JSON mode follows the deployment's setting, exactly as the environment
+		// path does. Forcing it here made every call through a dashboard binding
+		// ask for response_format=json_object even on a model that answers with a
+		// wrapper object or, worse, spends its whole budget reasoning and returns
+		// an empty message — neither of which the parser could read.
+		client, err := reasoner.NewOpenAI(p.BaseURL, p.APIKey, b.Model, maxTokens, jsonMode)
 		if err != nil {
 			return fmt.Errorf("build %s model %q: %w", purpose, b.Model, err)
 		}

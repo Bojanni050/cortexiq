@@ -1,6 +1,9 @@
 package reasoner
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -103,5 +106,26 @@ func TestPatternSourcesAreEnough(t *testing.T) {
 		if got := patternSourcesAreEnough(c.facts, c.rels); got != c.want {
 			t.Errorf("patternSourcesAreEnough(%d facts, %d rels) = %v, want %v", c.facts, c.rels, got, c.want)
 		}
+	}
+}
+
+// A reasoning model spends max_tokens on its thoughts first. Capped too low it
+// returns an empty message with finish_reason=length, which used to reach the
+// parser as "no JSON array or object in the response" and sent the next run
+// straight into the same wall.
+func TestChatNamesTheBudgetWhenTheModelAnswersNothing(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"x","object":"chat.completion","created":1,"model":"m","choices":[{"index":0,"finish_reason":"length","message":{"role":"assistant","content":""}}],"usage":{"prompt_tokens":10,"completion_tokens":1024,"total_tokens":1034}}`))
+	}))
+	defer srv.Close()
+
+	o, err := NewOpenAI(srv.URL, "k", "baseten/DeepSeek-V4-Flash-0731", 1024, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = o.Chat(context.Background(), []ChatMessage{{Role: "user", Content: "hi"}})
+	if err == nil || !strings.Contains(err.Error(), "1024 output tokens") {
+		t.Fatalf("want an error naming the limit, got %v", err)
 	}
 }

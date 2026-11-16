@@ -69,6 +69,7 @@ func serveHTTP(ctx context.Context, cmd *cli.Command) error {
 			Reranker:  bc.Config.RerankerModel,
 			Critic:    bc.Config.CriticModel,
 			MaxTokens: bc.Config.ReasonerMaxTokens,
+			JSONMode:  bc.Config.ReasonerJSONMode,
 		},
 		MetricsSource: bc.Config.MetricsSource,
 		MetricsToken:  metricsToken(bc),
