@@ -139,6 +139,12 @@ func (o *OpenAI) chat(ctx context.Context, stage string, msgs []openai.ChatCompl
 		}
 		return "", fmt.Errorf("reasoner: %s hit the provider's output limit without answering; raise the model's output limit", o.model)
 	}
+	// A provider can fail a generation and still return 200 with the failure as
+	// the content. Passing that on turns it into "cannot unmarshal object" at the
+	// caller, which points at the wrong thing and hides what the provider said.
+	if failed := providerContentError(content); failed != nil {
+		return "", failed
+	}
 	return content, nil
 }
 
@@ -369,16 +375,16 @@ func parseStructuredFacts(output string) ([]*StructuredFact, error) {
 	switch {
 	case strings.HasPrefix(raw, "["):
 		if err := decodeModelJSON(raw, &jfs); err != nil {
-			return nil, fmt.Errorf("parse json: %w", err)
+			return nil, parseError(err)
 		}
 	case strings.HasPrefix(raw, "{"):
 		var one jsonFact
 		if err := decodeModelJSON(raw, &one); err != nil {
-			return nil, fmt.Errorf("parse json: %w", err)
+			return nil, parseError(err)
 		}
 		jfs = []jsonFact{one}
 	default:
-		return nil, errors.New("parse json: no JSON array or object in the response")
+		return nil, parseError(errors.New("no JSON array or object in the response"))
 	}
 
 	var facts []*StructuredFact
@@ -420,6 +426,13 @@ func (o *OpenAI) ReasonStructured(ctx context.Context, texts []string, subject s
 	for attempt := 0; attempt < attempts; attempt++ {
 		output, err := o.chat(ctx, "structured", msgs)
 		if err != nil {
+			// A generation the provider failed on its side: resend as it asks,
+			// without a warning about JSON it never complained about.
+			var failed *ProviderContentError
+			if errors.As(err, &failed) && attempt == 0 {
+				valErr = err
+				continue
+			}
 			return nil, err
 		}
 
@@ -496,6 +509,14 @@ Rules:
 	for attempt := 0; attempt < 2; attempt++ {
 		output, err := o.chat(ctx, "relationships", msgs)
 		if err != nil {
+			// The provider says the extraction has to run again, not that the
+			// JSON was wrong: resending the same request is what it asks for, and
+			// a warning about the previous answer would only confuse it.
+			var failed *ProviderContentError
+			if errors.As(err, &failed) && attempt == 0 {
+				valErr = err
+				continue
+			}
 			return nil, err
 		}
 
@@ -646,7 +667,7 @@ func (o *OpenAI) ReasonPatterns(ctx context.Context, facts []models.Fact, relati
 
 		var jpats []jsonPattern
 		if err := decodeModelJSON(raw, &jpats); err != nil {
-			valErr = fmt.Errorf("parse json: %w", err)
+			valErr = parseError(err)
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
 		}
@@ -1370,7 +1391,7 @@ func (o *OpenAI) ProposeCounterHypothesis(ctx context.Context, h models.Hypothes
 
 		var jc jsonCounterHypothesis
 		if err := decodeModelJSON(raw, &jc); err != nil {
-			valErr = fmt.Errorf("parse json: %w", err)
+			valErr = parseError(err)
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
 		}
@@ -1621,7 +1642,7 @@ func (o *OpenAI) ProposeHypotheses(ctx context.Context, facts []models.Fact, exi
 
 		parsed, err := proposalParse(raw)
 		if err != nil {
-			valErr = fmt.Errorf("parse json: %w", err)
+			valErr = parseError(err)
 			msgs = append(msgs, openai.SystemMessage(retryWarning))
 			continue
 		}

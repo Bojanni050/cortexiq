@@ -247,6 +247,23 @@ type Brain struct {
 	// worst case is a duplicate synthesis, not a lost one.
 	mmMu         sync.Mutex
 	mmRefreshing map[int64]struct{}
+
+	// relFailMu guards relFails: how many runs in a row the relationship stage
+	// failed on the same leading batch with an answer it could not read. It is
+	// in memory on purpose — a restart is exactly when a fresh attempt is
+	// cheap, and a persisted counter would need a migration for something that
+	// only exists to stop an unreadable answer from blocking a namespace
+	// forever.
+	relFailMu sync.Mutex
+	relFails  map[relBatchKey]int
+}
+
+// relBatchKey identifies the batch a relationship failure is counted against:
+// the namespace and the first fact id in it. The checkpoint only moves forward,
+// so a key can never come back once the checkpoint has passed it.
+type relBatchKey struct {
+	nsID   int64
+	factID int64
 }
 
 // TriageReasoner classifies a cluster of episodes before the extractor reads

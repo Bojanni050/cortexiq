@@ -866,6 +866,46 @@ func strPtrOrNull(s string) *string {
 
 // --- Stage 2: Facts -> Relationships ---
 
+// relationshipBatchGivesUp is how many runs in a row one batch may fail with an
+// answer that cannot be read before it is written off. Three lets a transient
+// oddity pass and still keeps a poison batch to hours instead of days: in
+// November 2026 one unreadable batch froze a whole namespace for four days,
+// because the checkpoint only moves over a contiguous run of done facts.
+const relationshipBatchGivesUp = 3
+
+// noteRelationshipFailure counts one more unreadable answer for a batch.
+func (b *Brain) noteRelationshipFailure(nsID, factID int64) int {
+	b.relFailMu.Lock()
+	defer b.relFailMu.Unlock()
+	if b.relFails == nil {
+		b.relFails = make(map[relBatchKey]int)
+	}
+	key := relBatchKey{nsID: nsID, factID: factID}
+	b.relFails[key]++
+	return b.relFails[key]
+}
+
+// clearRelationshipFailure forgets a batch that was read, so a later failure
+// starts counting from zero.
+func (b *Brain) clearRelationshipFailure(nsID, factID int64) {
+	b.relFailMu.Lock()
+	defer b.relFailMu.Unlock()
+	delete(b.relFails, relBatchKey{nsID: nsID, factID: factID})
+}
+
+// pruneRelationshipFailures drops counts for this namespace that no longer point
+// at the leading batch. They can never be reached again: the checkpoint only
+// moves forward, and facts behind it are not handed to the model in this order.
+func (b *Brain) pruneRelationshipFailures(nsID, leading int64) {
+	b.relFailMu.Lock()
+	defer b.relFailMu.Unlock()
+	for key := range b.relFails {
+		if key.nsID == nsID && key.factID != leading {
+			delete(b.relFails, key)
+		}
+	}
+}
+
 func (b *Brain) consolidateFactsToRelationships(ctx context.Context, nsID int64, cp *models.ConsolidationProgress) (count, llmCalls int, errs []string) {
 	sql, args, err := b.queries.FetchFacts(nsID, cp.LastFactID, 50)
 	if err != nil {
@@ -902,6 +942,7 @@ func (b *Brain) consolidateFactsToRelationships(ctx context.Context, nsID int64,
 	if batchSize <= 0 {
 		batchSize = defaultRelationshipBatchSize
 	}
+	b.pruneRelationshipFailures(nsID, facts[0].ID)
 
 	// One LLM call per batch of facts instead of per fact. Facts are done per
 	// batch; the checkpoint only moves over a contiguous run of done facts so a
@@ -920,9 +961,27 @@ func (b *Brain) consolidateFactsToRelationships(ctx context.Context, nsID int64,
 		byFact, err := b.reasoner.ReasonRelationshipsBatch(ctx, batch)
 		llmCalls++
 		if err != nil {
+			// An answer that cannot be read used to block the checkpoint for the
+			// whole namespace: every fact behind it waited until someone changed
+			// the code. Such a batch is written off after a few runs so the stage
+			// can move on, and the facts are named in the run's errors so the gap
+			// stays visible. A provider that could not be reached is not written
+			// off: that says nothing about this batch and may pass next run.
+			if reasoner.IsAnswerError(err) && b.noteRelationshipFailure(nsID, batch[0].ID) >= relationshipBatchGivesUp {
+				log.Printf("relationships: namespace %d: giving up on facts %d-%d after %d unreadable answers: %v",
+					nsID, batch[0].ID, batch[len(batch)-1].ID, relationshipBatchGivesUp, err)
+				errs = append(errs, fmt.Sprintf("relationships skipped facts %d-%d after %d unreadable answers (they keep no relationships): %v",
+					batch[0].ID, batch[len(batch)-1].ID, relationshipBatchGivesUp, err))
+				for _, f := range batch {
+					done[f.ID] = true
+				}
+				b.clearRelationshipFailure(nsID, batch[0].ID)
+				continue
+			}
 			errs = append(errs, fmt.Sprintf("reason relationships facts %d-%d: %v", batch[0].ID, batch[len(batch)-1].ID, err))
 			continue
 		}
+		b.clearRelationshipFailure(nsID, batch[0].ID)
 
 		batchOK := true
 		for _, fact := range batch {

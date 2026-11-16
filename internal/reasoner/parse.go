@@ -63,8 +63,9 @@ func repairQuotedNumbers(s string) string {
 // Models answer with the array, with one element on its own (members names the
 // fields that identify an element), with the array under a key (key, or any other
 // key that holds an array of objects), or with {} when they found nothing. All of
-// these are read; anything else, such as {"error": "..."} or prose, is a parse
-// error, because the retry and the dashboard's error count depend on it.
+// these are read; anything else, such as prose, is a parse error, because the
+// retry and the dashboard's error count depend on it. A provider that answers
+// with {"error": "..."} never gets here: chat reports that as a failed generation.
 func parseModelList[T any](output, key string, members ...string) ([]T, error) {
 	raw := extractJSON(output)
 	if isEmptyObject(raw) {
@@ -72,7 +73,7 @@ func parseModelList[T any](output, key string, members ...string) ([]T, error) {
 	}
 	var list []T
 	if err := decodeModelJSON(unwrapTopLevelArray(raw, key, members...), &list); err != nil {
-		return nil, fmt.Errorf("parse json: %w", err)
+		return nil, parseError(err)
 	}
 	return list, nil
 }

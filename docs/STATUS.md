@@ -501,6 +501,17 @@ in place.
   signal uses. The timer stays the safety net: a notification published while the
   listener restarts is lost, so the listener re-reads pending work on every
   (re)connect.
+- **Unreleased on `main` (2026-11-16)**: the relationship stage no longer stops on an
+  answer it cannot read. Its checkpoint only moves over a contiguous run of finished
+  batches, so one batch the model kept answering unreadably froze every fact behind it
+  for that namespace — four days in November 2026, until the parser was taught the
+  shapes. A provider that fails a generation and returns the failure as the content
+  (`{"error": "…"}`) is now recognised as a failed generation, not a parse error, and
+  the request is resent unchanged; a batch that stays unreadable is written off after
+  three runs, so the checkpoint moves past it and the fact ids plus the reason land in
+  `error_sample` and the log. Transport failures, timeouts and an exhausted budget are
+  never written off: they say nothing about the batch. The count is in memory, keyed by
+  namespace and leading fact id, so a restart is a fresh attempt.
 - Triage was tried on `/test` after `v0.1.5`: two fresh episodes, one durable and
   one chatter, gave `episodes_read: 2`, `episodes_skipped: 1` — the chatter was
   refused before extraction. `llm_calls` went from 5 to 6, because the triage call
@@ -574,6 +585,9 @@ What is left:
    5 facts, 3 relationships and no error. The binding stays. What is still open is
    how much of the `relationships` provider error (returned as content, on the same
    fact cluster each time) survives the bigger budget — watch that stage specifically.
+   Since 2026-11-16 (unreleased) that provider error is no longer a parse failure: it
+   is retried unchanged and, if it keeps failing, the batch is written off after three
+   runs so the checkpoint can move on; see the note on the relationship stage above.
 
 ## Known rough edges
 
