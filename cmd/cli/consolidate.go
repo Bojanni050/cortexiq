@@ -88,6 +88,13 @@ func runSchedule(ctx context.Context, bc *bootstrap.Context, interval time.Durat
 		cfg = schedule.ConfigFromInterval(interval)
 	}
 
+	// Writes made by a sibling process (the dashboard in the split deployment,
+	// or a stdio server) only reach this one through the database, so this is
+	// also the only process that listens for their wake-ups. Without it a write
+	// from the dashboard waited for the next tick — two hours on a slow
+	// schedule.
+	go bc.Brain.WatchEpisodeSignals(ctx)
+
 	sched := &schedule.Scheduler{
 		Initial: cfg,
 		Consolidate: func(ctx context.Context, nsID int64) error {

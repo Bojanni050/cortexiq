@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -220,9 +221,21 @@ func (b *Brain) RememberWithOutcome(ctx context.Context, namespaceSlug, content 
 	}
 	// Let the consolidator pick this up right away, unless this is an eval
 	// write: /eval/ episodes exist to measure recall and must not turn into
-	// facts while the evaluation is still running.
+	// facts while the evaluation is still running. The database notification
+	// carries the same news to a consolidator running in another process, which
+	// in the split deployment is the only consolidator there is; in a single
+	// process it arrives twice, and the second wake-up finds nothing to do.
 	if !out.Unchanged && !strings.HasPrefix(namespaceSlug, "/eval/") {
 		b.noteEpisode(nsID)
+		// The episode is committed, so the wake-up must not be cancelled with a
+		// client that closed its request: a dashboard write whose reader
+		// navigated away is exactly a write nobody would be watching for.
+		nctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		err := b.NotifyConsolidator(nctx, out.ID)
+		cancel()
+		if err != nil {
+			log.Printf("remember: could not wake a consolidator in another process: %v", err)
+		}
 	}
 	if opts.CompleteGoal != nil {
 		// The memory is already stored at this point, so a failure here must say

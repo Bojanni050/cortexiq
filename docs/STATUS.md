@@ -491,6 +491,16 @@ in place.
   the database wins over the environment **at startup**, not only in the process
   that accepted the change. Before that, a binding looked enabled and then did
   nothing in the next consolidation run, because that runs in its own process.
+- **Unreleased on `main` (2026-11-16)**: the same split, seen from the other side.
+  A `remember` through the dashboard listener stored the episode and then sat
+  until the next timer tick — two hours on the production schedule — because the
+  in-process wake-up only reaches the process that wrote. The write now also
+  publishes `pg_notify` on `cortexiq_episode` with the namespace id, and the
+  consolidating process listens on a dedicated connection (a hijacked pool
+  connection, closed on shutdown) and feeds the id into the same drain the local
+  signal uses. The timer stays the safety net: a notification published while the
+  listener restarts is lost, so the listener re-reads pending work on every
+  (re)connect.
 - Triage was tried on `/test` after `v0.1.5`: two fresh episodes, one durable and
   one chatter, gave `episodes_read: 2`, `episodes_skipped: 1` — the chatter was
   refused before extraction. `llm_calls` went from 5 to 6, because the triage call
