@@ -1005,3 +1005,9 @@ voor de regel dat er na 1000 regels een nieuw walkthrough-bestand komt.
 - Findings: in Settings > Models toonde een rij met een dashboard-keuze "dashboard hopscotch" en daaronder "env: <model>". Het was daardoor niet te zien welk model echt draait; de env-regel las als een tweede, gelijkwaardige waarde.
 - Conclusions: alleen de labels aangepast, geen logica. Een dashboard-keuze heet nu "dashboard override" met de regel "replaces env default: <model>"; een rij zonder keuze heet "env (in use)". Tooltips leggen uit welke van de twee geldt.
 - Actions: `internal/webui/static/index.html` (renderModelsCard, 3 regels); validated: `go test ./internal/webui` groen, `check_no_emoji.py` schoon. Niet in een browser bekeken.
+
+## 2026-11-17 (v0.1.90 uitgerold: Run now)
+
+- Findings: de pushes met de Run now-knop faalden op CI (`gofmt`: veldlijn `runNow` in `internal/brain/brain.go` niet uitgelijnd). Mijn eerdere "validated" bevatte geen `gofmt -l`, dus dat had ik gemist.
+- Conclusions: eerst gofmt hersteld (`636cce4`) en CI groen afgewacht voordat er een release kwam. Daarna de gedocumenteerde deploy-volgorde: image pullen met de tag inline, app-containers stoppen, geverifieerde dump (`backups/cortexiq-20261117T192649Z.dump`), `.env` gebackupt als `.env.bak-pre0.1.90`, tag bumpen, `up -d`. Geen migratie (goose blijft 63).
+- Actions: release `v0.1.90` (tag op `636cce4`), VPS `/opt/cortexiq` op `0.1.90`, `docs/STATUS.md` (versieverwijzingen). validated: `cortexiq version` meldt v0.1.90 (636cce4), containers draaien, en een `pg_notify('cortexiq_run_now')` gaf `schedule: manual round requested` in de log en een ronde over 34 namespaces met 0 LLM-calls. Niet geprobeerd: de knop zelf in de browser (geen dashboardtoken hier); de rest van het pad is dezelfde route.
