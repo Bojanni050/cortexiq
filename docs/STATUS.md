@@ -630,6 +630,14 @@ What is left:
   have a live twin, 2,117 are the only carrier of their claim, and the merge did not
   record which fact survived, so a repoint would be a guess. Nothing filters on
   `source_fact_id`, so recall and the graph are unaffected; only "where does this
-  come from" ends at a deleted fact. A further 226 relations come from facts that
-  have expired (superseded or invalidated); whether a relation should expire with its
-  source is an open decision.
+  come from" ends at a deleted fact. A further 226 relations come from 39 facts
+  that were expired by a detected contradiction (none by disuse). Measured 2026-11-17:
+  146 of them (fact 55 alone: 123) hang on "contradictions" that are rewordings of
+  the same claim, so the relation is still true; only 30 name the replaced value
+  (version bumps such as v0.1.12 to v0.1.17). Expiring a relation with its source
+  would hide about 196 true relations, so it is not done. The cause is upstream:
+  `DetectContradictions` compares entity and property and sees any different wording
+  of the value as a contradiction (54 contradictions on record, none with an equal
+  value, several that are paraphrases). That includes `Bo / tooling preferences`
+  (fact 32), a core preference that expired on 2026-10-08 although fact 41 restates
+  it.
