@@ -640,4 +640,10 @@ What is left:
   of the value as a contradiction (54 contradictions on record, none with an equal
   value, several that are paraphrases). That includes `Bo / tooling preferences`
   (fact 32), a core preference that expired on 2026-10-08 although fact 41 restates
-  it.
+  it. Cosine between old and new fact over all 54 pairs: 38 sit below 0.80 and are
+  real changes (versions, commit ids, status); the clear rewordings (facts 32, 55, 76,
+  106, 1924) score 0.894-0.938 and carry 190 of the 264 relations on these old facts;
+  the closest real change scores 0.857 (`v0.1.17` to `v0.1.20 (e56a03b)`). A cut near
+  0.89 separates them on this data, but 0.883 (two different confirmation records) and
+  0.888 (a narrower restatement) sit on the line, so the cosine alone is too thin to
+  decide; the same-fact LLM review that the dedup already uses is the safer judge.
