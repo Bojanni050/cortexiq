@@ -289,7 +289,7 @@ td.tagcell { white-space: nowrap; }
 /* The context column can take half the screen, which leaves the list about as
    wide as a phone. A table there is a lie: the name column eats a quarter, the
    actions keep their width, and the text wraps at 190px. So below 620px of
-   content the rows stop being table rows and become cards — name, then text at
+   content the rows stop being table rows and become cards - name, then text at
    the full width, then the buttons on their own line. */
 body.list-narrow .lst thead { display: none; }
 body.list-narrow .lst,
@@ -567,7 +567,7 @@ dialog .err { color: var(--red); }
     opacity: 0; transform: translateX(30px); pointer-events: none; border-left-color: transparent;
   }
 }
-/* On screens wider than 1600px the context rail starts at 600px — a starting
+/* On screens wider than 1600px the context rail starts at 600px - a starting
    width, not a ceiling: a saved width (localStorage cq.ctxw) is applied inline
    and outranks this, and the grip can take the rail anywhere between 320 and
    half the viewport. min-width here keeps the very first paint before the
@@ -746,7 +746,7 @@ NAV_GROUPS.forEach(([group, ids]) => {
     if (!t) return;
     const b = document.createElement('button');
     b.dataset.tab = id;
-    b.title = t[1] + ' — ' + t[2];
+    b.title = t[1] + ' - ' + t[2];
     b.innerHTML = svg(id) + `<span>${t[1]}</span>`;
     b.onclick = () => {
       state.tab = id;
@@ -938,8 +938,8 @@ function paintTab(tab) {
   const to = L.offset + L.items.length;
   const total = L.total;
   const counts = total == null
-    ? 'showing ' + from + '–' + to
-    : 'showing ' + from + '–' + to + ' of ' + total.toLocaleString();
+    ? 'showing ' + from + '-' + to
+    : 'showing ' + from + '-' + to + ' of ' + total.toLocaleString();
   const onPage = term ? ' · ' + rows.length + ' of these match “' + esc(term) + '” on this page' : '';
   const hasPrev = L.offset > 0;
   const hasNext = total == null ? L.items.length === PAGE : L.offset + L.items.length < total;
@@ -1016,10 +1016,10 @@ function tagBarHTML() {
   if (!vocab.length) return '';
   const chips = vocab.map(t => {
     const on = state.tags.includes(t.tag);
-    const title = `${t.facts} fact${t.facts === 1 ? '' : 's'}, ${t.episodes} episode${t.episodes === 1 ? '' : 's'} — click to filter`;
+    const title = `${t.facts} fact${t.facts === 1 ? '' : 's'}, ${t.episodes} episode${t.episodes === 1 ? '' : 's'} - click to filter`;
     return `<button class="tagchip${on ? ' on' : ''}" title="${esc(title)}" onclick="toggleTag('${esc(t.tag)}')">${esc(t.tag)}<em>${tagCountLabel(t)}</em></button>`;
   }).join('');
-  const clear = state.tags.length ? `<button class="tagchip" onclick="clearTags()">clear ✕</button>` : '';
+  const clear = state.tags.length ? `<button class="tagchip" onclick="clearTags()">clear</button>` : '';
   const hint = state.tags.length ? `<span class="muted">${state.tags.length > 1 ? 'all of these tags' : 'this tag'}</span>` : '';
   return `<div class="tagbar" data-tagbar>${chips}${clear}${hint}<span class="taglegend">f = facts · e = episodes</span><button class="tagreport" onclick="tagsReport()" title="Count tags over a period instead of filtering by them">counts by period</button></div>`;
 }
@@ -1109,7 +1109,7 @@ async function tagsReport(since) {
     : '<tr><td colspan="4" class="muted">No tagged memories in this period.</td></tr>';
   const d = document.getElementById('dlg');
   d.innerHTML = `<h3>Tag counts</h3>
-    <p class="muted" style="margin:0 0 12px">${state.ns ? esc(state.ns) : 'all namespaces'} — memories stored ${since ? 'on or after ' + esc(since) : 'at any time'}.</p>
+    <p class="muted" style="margin:0 0 12px">${state.ns ? esc(state.ns) : 'all namespaces'} - memories stored ${since ? 'on or after ' + esc(since) : 'at any time'}.</p>
     <input type="date" id="tr-since" value="${esc(since)}" max="${isoDay(new Date())}" onchange="tagsReport(this.value)">
     <div class="tr-quick">
       <button class="tagchip" onclick="tagsReport(daysAgo(7))">7 days</button>
@@ -1290,7 +1290,7 @@ window.addEventListener('resize', syncCtxToggle);
 // the viewport: past that the list stops being the subject of the page.
 const CTX_W_KEY = 'cq.ctxw';
 // The starting width answers the screen: 600px is too much below 1601px, 432px
-// underuses everything above it. It is a default, not a rule — a width the
+// underuses everything above it. It is a default, not a rule - a width the
 // reader dragged or saved wins (the saved value is applied inline), and the
 // headline width is mirrored in the stylesheet so the very first paint without
 // a saved width already matches.
@@ -1312,7 +1312,7 @@ function setCtxWidth(px, persist) {
 // Below roughly 620px the table cannot hold its columns, and the rows become
 // cards. Computed from the intended width rather than measured from the element:
 // the grid track is still animating when this runs, so the box would report the
-// old width. The two breakpoints have to match the stylesheet — below 861px the
+// old width. The two breakpoints have to match the stylesheet - below 861px the
 // navigation turns into a topbar and stops being a column.
 function syncListNarrow() {
   const root = getComputedStyle(document.documentElement);
@@ -1382,7 +1382,7 @@ function selectTr(tr) {
 // --- rail detail for the other lists ---------------------------------------
 // A row that carries its own detail needs no request: every list tab with
 // metadata builds its rail from the row it already fetched, through the `rail`
-// function in its listTab spec. Facts and episodes are the exception — they
+// function in its listTab spec. Facts and episodes are the exception - they
 // fetch, because their detail lives in other tables.
 function metaGrid(rows) {
   return `<dl class="metagrid">${rows.filter(Boolean)
@@ -1449,7 +1449,7 @@ function renderEpisodeCtx(d) {
   ctxTitle('Episode #' + e.id);
   const tags = (e.tags || []).length
     ? `<div class="ctx-tags">${e.tags.map(t => `<span class="badge">${esc(t)}</span>`).join('')}</div>`
-    : '<span class="muted">—</span>';
+    : '<span class="muted">-</span>';
   const backlog = facts.length ? '' : `<div class="ctx-note">Nothing has been extracted from this episode yet. It may still be waiting for a consolidation run, or the run found nothing worth keeping.</div>`;
   ctxShow(`
     <div class="ctx-section">
@@ -1500,7 +1500,7 @@ function renderFactCtx(f, episodes) {
     ? `<dt>Claim</dt><dd>${esc(f.entity || '')} · ${esc(f.property || '')} → ${esc(f.value || '')}</dd>` : '';
   const tags = (f.tags || []).length
     ? `<div class="ctx-tags">${f.tags.map(t => `<span class="badge">${esc(t)}</span>`).join('')}</div>`
-    : '<span class="muted">—</span>';
+    : '<span class="muted">-</span>';
   const sources = episodes.length
     ? episodes.map(episodeMini).join('')
     : `<div class="ctx-note">No source episodes recorded. The fact survived a purge or was merged without keeping its provenance.</div>`;
@@ -1541,7 +1541,7 @@ async function renderOverview() {
     countOf('contradictions'), countOf('failures'),
     apiPage('/facts' + qs(0)), api('/consolidation' + nsQS('')),
   ]);
-  const num = v => (v === null || v === undefined) ? '—' : v;
+  const num = v => (v === null || v === undefined) ? '-' : v;
   const hypo = (proposed === null || testing === null) ? null : proposed + testing;
   // A memory that was just written is only an episode; extraction turns it into
   // facts a little later. Saying when it last ran and what is still queued is
@@ -1583,7 +1583,7 @@ async function renderRecall() {
 // armCell shows where one search arm placed a result: its rank and raw score, or
 // a dash when the arm did not return it.
 function armCell(rank, score, digits) {
-  if (!rank) return '<span class="muted">–</span>';
+  if (!rank) return '<span class="muted">-</span>';
   return `#${rank} <span class="muted">${Number(score).toFixed(digits)}</span>`;
 }
 async function doRecall() {
@@ -1607,7 +1607,7 @@ async function doRecall() {
       results.map((r, i) => {
         const t = r.trace || {};
         const boost = (t.recency_factor != null && (t.recency_factor !== 1 || t.importance_factor !== 1))
-          ? `recency ×${t.recency_factor.toFixed(2)}<br>importance ×${t.importance_factor.toFixed(2)}` : '<span class="muted">–</span>';
+          ? `recency ×${t.recency_factor.toFixed(2)}<br>importance ×${t.importance_factor.toFixed(2)}` : '<span class="muted">-</span>';
         return `<tr><td class="muted">${i + 1}</td>
           <td><span class="badge pending">${esc(r.type)}</span></td><td class="tagcell">${tagChips(r.tags)}</td><td class="wrap" style="min-width:280px">${esc(r.content)}</td>
           <td>${pct(r.score)}</td><td>${armCell(t.vector_rank, t.vector_similarity, 3)}</td>
@@ -1794,7 +1794,7 @@ async function renderGoals() {
     (g.completed_at ? `<div class="muted">${ts(g.completed_at)}</div>` : g.abandoned_at ? `<div class="muted">${ts(g.abandoned_at)}</div>` : '');
   const related = (g, L) => {
     const s = subsOf(L, g.id), f = fails.get(g.id) || 0;
-    return s || f ? `<span class="muted">${s} subgoal${s === 1 ? '' : 's'} · ${f} failure${f === 1 ? '' : 's'}</span>` : '<span class="muted">—</span>';
+    return s || f ? `<span class="muted">${s} subgoal${s === 1 ? '' : 's'} · ${f} failure${f === 1 ? '' : 's'}</span>` : '<span class="muted">-</span>';
   };
   await listTab('goals', {
     path: o => '/goals' + qs(o),
@@ -1863,7 +1863,7 @@ async function goalAbandon(id) {
 }
 
 function mmTags(tags) {
-  if (!tags || !tags.length) return '<span class="muted">—</span>';
+  if (!tags || !tags.length) return '<span class="muted">-</span>';
   return tags.map(t => `<span class="badge">${esc(t)}</span>`).join(' ');
 }
 function mmStale(m) {
@@ -1971,7 +1971,7 @@ async function renderMentalModels() {
         ['Created', ts(m.created_at)],
       ]))}
       ${m.last_refresh_failed_at ? ctxSection('Last refresh failed',
-        `<div class="ctx-note err">${ts(m.last_refresh_failed_at)} — ${esc(m.last_refresh_error || 'unknown error')}</div>`) : ''}
+        `<div class="ctx-note err">${ts(m.last_refresh_failed_at)} - ${esc(m.last_refresh_error || 'unknown error')}</div>`) : ''}
       ${ctxSection('Content', m.content
         ? `<div class="md">${md(m.content)}</div>`
         : `<div class="ctx-note">${m.last_refresh_failed_at ? 'Generation failed.' : 'Generating…'}</div>`)}`,
@@ -2031,8 +2031,8 @@ function mmBaseline(m) {
 }
 
 // mmWait polls one queued model until the server records a refresh newer than
-// the one we started from. The old test — content present and
-// last_refreshed_source_query equal to source_query — was true for a model that
+// the one we started from. The old test - content present and
+// last_refreshed_source_query equal to source_query - was true for a model that
 // went stale because new memories arrived, so the first poll (3s) declared it
 // done while the regeneration was still running, and the row kept its stale
 // badge until a manual reload. It keeps running when the reader moves to
@@ -2156,7 +2156,7 @@ async function renderHypotheses() {
   const factLine = id => `<div><span class="mono">#${id}</span> ${byId.has(id) ? esc(byId.get(id)) : '<span class="muted">(fact no longer in memory)</span>'}</div>`;
   // What the hypothesis is based on, and how it ended (if it did).
   const basis = h => (h.source_fact_ids || []).length
-    ? h.source_fact_ids.map(factLine).join('') : '<span class="muted">—</span>';
+    ? h.source_fact_ids.map(factLine).join('') : '<span class="muted">-</span>';
   // The proof count: facts alone flatter a belief, so the episode count is the
   // number that matters. Six facts from one conversation are one leg.
   const support = h => {
@@ -2198,7 +2198,7 @@ async function renderHypotheses() {
     railTitle: h => 'Hypothesis #' + h.id,
     rail: h => `
       <div class="ctx-section"><div class="ctx-quote lead">${esc(h.content)}</div></div>
-      ${ctxSection('How to verify', `<div class="ctx-quote">${esc(h.verification_plan || '—')}</div>`)}
+      ${ctxSection('How to verify', `<div class="ctx-quote">${esc(h.verification_plan || '-')}</div>`)}
       ${ctxSection('Metadata', metaGrid([
         ['Status', `${badge(h.status)}${outcome(h)}`],
         ['Confidence', pctCompact(h.confidence)],
@@ -2282,7 +2282,7 @@ async function renderFailures() {
   const goalById = new Map();
   // The goal this attempt belonged to, so the failure reads in context.
   const goal = f => {
-    if (!f.goal_id) return '<span class="muted">—</span>';
+    if (!f.goal_id) return '<span class="muted">-</span>';
     const g = goalById.get(f.goal_id);
     return g
       ? `<div><span class="mono">#${g.id}</span> ${esc(g.content)}</div>${badge(g.status)}`
@@ -2305,8 +2305,8 @@ async function renderFailures() {
     railTitle: f => 'Failure #' + f.id,
     rail: f => `
       <div class="ctx-section"><div class="ctx-quote lead">${esc(f.content)}</div></div>
-      ${ctxSection('Why', `<div class="ctx-quote">${esc(f.reason || '—')}</div>`)}
-      ${ctxSection('Lesson', `<div class="ctx-quote">${esc(f.lesson || '—')}</div>`)}
+      ${ctxSection('Why', `<div class="ctx-quote">${esc(f.reason || '-')}</div>`)}
+      ${ctxSection('Lesson', `<div class="ctx-quote">${esc(f.lesson || '-')}</div>`)}
       ${ctxSection('Metadata', metaGrid([
         ['Goal', goal(f)],
         ['Namespace', `<span class="mono">${esc(nsSlug(f.namespace_id))}</span>`],
@@ -2390,7 +2390,7 @@ async function renderNamespaces() {
   const depth = n => n.slug.split('/').filter(Boolean).length - 1;
   const cell = (id, i) => {
     const v = (counts.get(id) || {})[kinds[i]] || 0;
-    return v ? `${v}${capped[i] ? '+' : ''}` : '<span class="muted">—</span>';
+    return v ? `${v}${capped[i] ? '+' : ''}` : '<span class="muted">-</span>';
   };
   await listTab('namespaces', {
     path: o => `/namespaces?limit=${PAGE}&offset=${o}`,
@@ -2503,7 +2503,7 @@ async function renderStats() {
 // Status answers "is this server healthy": the build identity, how long the
 // process has been up, the database pulse, and what the consolidator is doing
 // (or stuck on). It reads /api/v1/status, which always answers even when a
-// component cannot be checked yet — an error is reported, never swallowed.
+// component cannot be checked yet - an error is reported, never swallowed.
 async function renderStatus() {
   const s = await api('/status');
   const db = s.database || {};
@@ -2519,7 +2519,7 @@ async function renderStatus() {
     }
     return parts.join(' ');
   };
-  const uptime = isFinite(Number(s.uptime_seconds)) ? uptimeFmt(Number(s.uptime_seconds)) : '—';
+  const uptime = isFinite(Number(s.uptime_seconds)) ? uptimeFmt(Number(s.uptime_seconds)) : '-';
   const whenRun = cons.last_run ? `${ts(cons.last_run)} <span class="muted">(${ago(cons.last_run)})</span>` : '<span class="muted">never</span>';
   const freq = s.consolidation_error ? `<span class="muted">could not be read: ${esc(s.consolidation_error)}</span>`
     : (!s.schedule ? '<span class="muted">unknown</span>'
@@ -2597,7 +2597,7 @@ async function nsConfigDialog(encSlug) {
   };
   d.innerHTML = `<h3>Configuration</h3>
     <div class="mono" style="margin-bottom:8px">${esc(slug)}</div>
-    <p class="muted" style="margin:0 0 8px">Effective values come from the global default, overridden by this namespace and its ancestors (nearest wins). The middle column is what applies here; the input is this namespace's own override — empty means inherit.</p>
+    <p class="muted" style="margin:0 0 8px">Effective values come from the global default, overridden by this namespace and its ancestors (nearest wins). The middle column is what applies here; the input is this namespace's own override - empty means inherit.</p>
     <div class="tablewrap"><table><thead><tr><th>Key</th><th>Effective</th><th>Override</th><th></th></tr></thead>
     <tbody>${NS_CONFIG_KEYS.map(row).join('')}</tbody></table></div>
     <div class="actions"><button onclick="dlgClose()">Close</button><button class="primary" onclick="nsConfigSave('${encodeURIComponent(slug)}')">Save overrides</button></div>`;
@@ -2697,7 +2697,7 @@ async function renderLifecycle() {
     if (ev.kind === 'retracted') return `<span class="wrap">${esc(ev.content)}</span>`;
     const parts = Object.entries(ev.details || {}).filter(([, v]) => v)
       .map(([k, v]) => `${v} ${v === 1 && k.endsWith('s') ? k.slice(0, -1) : k}`);
-    return parts.length ? `<span class="muted">${esc(parts.join(' · '))}</span>` : '<span class="muted">—</span>';
+    return parts.length ? `<span class="muted">${esc(parts.join(' · '))}</span>` : '<span class="muted">-</span>';
   };
   // Purge rows name their table in the plural ("episodes #258"); a single row
   // reads better in the singular, like the retraction rows next to it.
@@ -2736,7 +2736,7 @@ async function renderHypothesisLog() {
     counter: 'pending', confirmed: 'confirmed', rejected: 'rejected', deleted: 'abandoned' };
   const num = v => Number(v).toFixed(2);
   const conf = ev => {
-    if (ev.confidence_from == null && ev.confidence_to == null) return '<span class="muted">—</span>';
+    if (ev.confidence_from == null && ev.confidence_to == null) return '<span class="muted">-</span>';
     if (ev.confidence_from == null || ev.confidence_to == null || ev.confidence_from === ev.confidence_to) {
       return `<span class="mono">${num(ev.confidence_to == null ? ev.confidence_from : ev.confidence_to)}</span>`;
     }
@@ -2760,7 +2760,7 @@ async function renderHypothesisLog() {
     if (ev.fact_id) bits.push('fact #' + ev.fact_id);
     const head = ev.reason ? `<span class="wrap">${esc(ev.reason)}</span>` : '';
     const tail = bits.length ? `<div class="muted">${esc(bits.join(' · '))}</div>` : '';
-    return head + tail || '<span class="muted">—</span>';
+    return head + tail || '<span class="muted">-</span>';
   };
   document.getElementById('content').innerHTML =
     `<div class="card"><h3>Hypothesis log</h3>
@@ -2775,14 +2775,14 @@ async function renderHypothesisLog() {
           <td class="muted">${ts(ev.created_at)}</td>
           <td><span class="badge ${tone[ev.event] || 'pending'}">${esc(ev.event)}</span></td>
           <td><span class="mono">#${ev.hypothesis_id}</span> <span class="wrap">${esc(ev.hypothesis_content)}</span></td>
-          <td class="mono">${esc((ev.status_from || '—') + ' → ' + ev.status_to)}</td>
+          <td class="mono">${esc((ev.status_from || '-') + ' → ' + ev.status_to)}</td>
           <td>${conf(ev)}</td>
           <td>${why(ev)}</td>
           <td class="mono">${esc(ev.actor)}</td>
         </tr>`))
         : `<p class="muted">Nothing has ever been proposed. That is different from "nothing is open":
            the consolidator only tests hypotheses it finds, it never invents one. A client with a
-           read-only token cannot create one either — that call is refused with 403 and now shows up
+           read-only token cannot create one either - that call is refused with 403 and now shows up
            in the server log.</p>`) +
     '</div>';
 }
@@ -2794,15 +2794,15 @@ async function renderGoalLog() {
   const events = await apiList('/goal-events' + nsQS('&limit=200'));
   const num = v => Number(v).toFixed(2);
   const move = ev => (ev.status_from || ev.status_to)
-    ? `<span class="mono">${esc((ev.status_from || '—') + ' → ' + (ev.status_to || '—'))}</span>`
-    : '<span class="muted">—</span>';
+    ? `<span class="mono">${esc((ev.status_from || '-') + ' → ' + (ev.status_to || '-'))}</span>`
+    : '<span class="muted">-</span>';
   const why = ev => {
     const bits = [];
     if (ev.fact_id) bits.push('fact #' + ev.fact_id);
     if (ev.episode_id) bits.push('episode #' + ev.episode_id);
     const head = ev.note ? `<span class="wrap">${esc(ev.note)}</span>` : '';
     const tail = bits.length ? `<div class="muted">${esc(bits.join(' · '))}</div>` : '';
-    return head + tail || '<span class="muted">—</span>';
+    return head + tail || '<span class="muted">-</span>';
   };
   document.getElementById('content').innerHTML =
     `<div class="card"><h3>Goal log</h3>
@@ -2810,7 +2810,7 @@ async function renderGoalLog() {
         Newest first, up to 200. Creating a goal writes the first entry; after that the log records
         what the consolidator inferred (<b>progress</b>, <b>suggested_complete</b>,
         <b>contradicted</b>) and who actually moved the goal (<b>completed</b>, <b>abandoned</b>).
-        The consolidator only suggests — it never completes a goal itself. An inference points at the
+        The consolidator only suggests - it never completes a goal itself. An inference points at the
         fact it rested on; a completion points at the episode that closed it. The actor is the token
         that made the change, <b>consolidator</b> for the background sweep, or <b>system</b>.
       </p>` +
@@ -2820,7 +2820,7 @@ async function renderGoalLog() {
           <td><span class="badge ${GOAL_EVENT_TONE[ev.event] || 'pending'}">${esc(ev.event)}</span></td>
           <td><span class="mono">#${ev.goal_id}</span> <span class="wrap">${esc(ev.goal_content)}</span></td>
           <td>${move(ev)}</td>
-          <td>${ev.confidence == null ? '<span class="muted">—</span>' : `<span class="mono">${num(ev.confidence)}</span>`}</td>
+          <td>${ev.confidence == null ? '<span class="muted">-</span>' : `<span class="mono">${num(ev.confidence)}</span>`}</td>
           <td>${why(ev)}</td>
           <td class="mono">${esc(ev.actor)}</td>
         </tr>`))
@@ -2835,13 +2835,13 @@ async function renderGoalLog() {
 const JOB_TONE = { queued: 'proposed', running: 'testing', done: 'confirmed', skipped: 'pending', failed: 'rejected' };
 
 async function renderJobs() {
-  const what = j => j.error ? `<span class="wrap">${esc(j.error)}</span>` : '<span class="muted">—</span>';
+  const what = j => j.error ? `<span class="wrap">${esc(j.error)}</span>` : '<span class="muted">-</span>';
   await listTab('jobs', {
     path: o => '/jobs' + qs(o),
     headers: ['When', 'State', 'Namespace', 'By', 'What happened'],
     fields: ['state', 'namespace', 'actor', 'error'],
     above: `<p class="muted" style="margin:0 0 12px">
-      Deferred writes, newest first. <b>queued</b> is a promise the server has not kept yet — it survives a
+      Deferred writes, newest first. <b>queued</b> is a promise the server has not kept yet - it survives a
       restart. <b>skipped</b> means the gates refused it (noise, a social closer), which is an answer, not a
       fault. <b>failed</b> carries the reason; a transient one is retried up to three times before it lands
       there. A queue that keeps growing means no worker is running: check the server log for "write worker".
@@ -2863,8 +2863,8 @@ async function renderJobs() {
         ['Attempts', String(j.attempts)],
         ['Episode', j.episode_id ? `<span class="mono">#${j.episode_id}</span>` : '<span class="muted">not stored</span>'],
         ['Created', ts(j.created_at)],
-        ['Started', j.started_at ? ts(j.started_at) : '<span class="muted">—</span>'],
-        ['Finished', j.finished_at ? ts(j.finished_at) : '<span class="muted">—</span>'],
+        ['Started', j.started_at ? ts(j.started_at) : '<span class="muted">-</span>'],
+        ['Finished', j.finished_at ? ts(j.finished_at) : '<span class="muted">-</span>'],
       ]), '#' + j.id)}
       ${ctxSection('Payload', `<button onclick="jobPayload(${j.id})">Load the queued write</button>
         <div id="job-payload-${j.id}" class="muted"></div>`)}`,
@@ -2889,10 +2889,10 @@ async function jobPayload(id) {
 // consolidator made, not a fact, and the confidence is the weakest source times
 // its own coherence.
 async function renderPatterns() {
-  const score = v => (v == null ? '<span class="muted">—</span>' : Number(v).toFixed(2));
+  const score = v => (v == null ? '<span class="muted">-</span>' : Number(v).toFixed(2));
   const ids = (list, prefix) => (list && list.length)
     ? list.map(id => `<span class="mono">${prefix}#${id}</span>`).join(' ')
-    : '<span class="muted">—</span>';
+    : '<span class="muted">-</span>';
   await listTab('patterns', {
     path: o => '/patterns' + qs(o),
     headers: ['Pattern', 'Confidence', 'Coherence', ''],
@@ -2919,16 +2919,16 @@ async function renderPatterns() {
 
 async function renderRuns() {
   const dur = ms => ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : (ms || 0) + 'ms';
-  const n = v => v ? String(v) : '<span class="muted">—</span>';
+  const n = v => v ? String(v) : '<span class="muted">-</span>';
   // Compact on purpose: four hypothesis counters in one cell, because a run row
   // is already 13 columns wide and only the non-zero ones matter.
   const hyp = r => {
     const bits = [];
     if (r.hypotheses_proposed) bits.push('+' + r.hypotheses_proposed);
-    if (r.hypotheses_auto_confirmed) bits.push('✓' + r.hypotheses_auto_confirmed);
-    if (r.hypotheses_auto_rejected) bits.push('✗' + r.hypotheses_auto_rejected);
+    if (r.hypotheses_auto_confirmed) bits.push('confirmed ' + r.hypotheses_auto_confirmed);
+    if (r.hypotheses_auto_rejected) bits.push('rejected ' + r.hypotheses_auto_rejected);
     if (r.hypotheses_updated) bits.push('~' + r.hypotheses_updated);
-    if (!bits.length) return '<span class="muted">—</span>';
+    if (!bits.length) return '<span class="muted">-</span>';
     return `<span class="mono" title="proposed / auto-confirmed / auto-rejected / confidence updated">${bits.join(' ')}</span>`;
   };
   // A stage that stopped moving is invisible in the run list: a failing batch
@@ -2968,7 +2968,7 @@ async function renderRuns() {
       <td>${n(r.contradictions_found)}</td>
       <td>${hyp(r)}</td>
       <td>${n(r.llm_calls)}${r.llm_calls_limited ? ' <span class="badge pending">limited</span>' : ''}</td>
-      <td>${r.errors ? `<span class="badge abandoned">${r.errors}</span>${r.error_sample ? `<div class="muted">${esc(r.error_sample)}</div>` : ''}` : '<span class="muted">—</span>'}</td>
+      <td>${r.errors ? `<span class="badge abandoned">${r.errors}</span>${r.error_sample ? `<div class="muted">${esc(r.error_sample)}</div>` : ''}` : '<span class="muted">-</span>'}</td>
     </tr>`,
   });
 }
@@ -3776,14 +3776,14 @@ const PURPOSES = [
   ['reranker', 'Reranker', 'Cross-encoder that re-orders fused candidates. Takes effect after a restart.'],
   ['critic', 'Critic', 'Argues the other side of a hypothesis. Pick a different model than the reasoner, or the check is not independent. Unset reuses the reasoner.'],
 ];
-const PROVIDER_BASE_HINT = 'OpenAI-compatible, usually ending in /v1 — for example https://api.hopscotchlabs.ai/v1';
+const PROVIDER_BASE_HINT = 'OpenAI-compatible, usually ending in /v1 - for example https://api.hopscotchlabs.ai/v1';
 function money(v) { return typeof v === 'number' && v > 0 ? '$' + v.toFixed(2) : 'price unknown'; }
 function modelLabel(m) {
   const bits = [];
   if (m.context) bits.push((m.context / 1000).toFixed(0) + 'k ctx');
   if (m.input_per_mtok || m.output_per_mtok) bits.push(money(m.input_per_mtok) + ' in / ' + money(m.output_per_mtok) + ' out per Mtok');
   if ((m.capabilities || []).length) bits.push(m.capabilities.slice(0, 4).join(', '));
-  return m.id + (bits.length ? ' — ' + bits.join(' · ') : '');
+  return m.id + (bits.length ? ' - ' + bits.join(' · ') : '');
 }
 async function renderModelsCard() {
   const el = document.getElementById('models-card');
@@ -3809,7 +3809,7 @@ async function renderModelsCard() {
     const note = p.restart_required ? '<div class="muted">a change here needs a restart</div>' : '';
     // The price in use, wherever it came from: a provider catalogue first, a
     // rate entered here for a model no catalogue prices. A model with neither is
-    // not free — its calls are counted as unpriced — so say that instead of
+    // not free - its calls are counted as unpriced - so say that instead of
     // printing 0.00.
     const price = p.input_per_mtok != null
       ? `<span class="mono">${rate(p.input_per_mtok)}</span> <span class="muted">in</span><br>
@@ -3876,7 +3876,7 @@ async function providerForm(slug, name, url) {
     <div class="muted" style="margin-top:4px">${editing ? 'The slug is the identifier model bindings point at, so it cannot change.' : 'Short identifier for model bindings. Filled from the name; it cannot change later.'}</div>
     <div class="label">Base URL</div><input id="pv-url" value="${esc(p.base_url)}" placeholder="https://api.hopscotchlabs.ai/v1" style="width:100%">
     <div class="muted" style="margin-top:4px">${PROVIDER_BASE_HINT}</div>
-    <div class="label">API key ${p.key_hint ? `<span class="muted">(stored: ${esc(p.key_hint)} — leave empty to keep it)</span>` : ''}</div>
+    <div class="label">API key ${p.key_hint ? `<span class="muted">(stored: ${esc(p.key_hint)} - leave empty to keep it)</span>` : ''}</div>
     <input id="pv-key" type="password" autocomplete="off" style="width:100%">
     <div class="actions"><button onclick="dlgClose()">Cancel</button><button class="primary" onclick="providerSave()">Save</button></div>`;
   d.showModal();
