@@ -268,6 +268,25 @@ func TestSchedulerSwitchesModeWhenTheSettingChanges(t *testing.T) {
 	}
 }
 
+// The dashboard's Run now button must start a full round even in events-only
+// mode, where nothing else would run: a manual round is not an event.
+func TestSchedulerRunsEveryNamespaceOnManualRequest(t *testing.T) {
+	h := newHarness(Config{Mode: ModeEvents, IntervalSeconds: 300}, 1, 2)
+	now := make(chan struct{}, 1)
+	s := h.scheduler()
+	s.Now = func() <-chan struct{} { return now }
+	run(t, s)
+	waitCall(t, h) // start-up catch-up: namespaces 1 and 2
+	waitCall(t, h)
+
+	now <- struct{}{}
+	waitCall(t, h)
+	waitCall(t, h)
+	if calls := h.snapshot(); len(calls) != 4 {
+		t.Fatalf("calls after a manual round = %v, want 4 (catch-up plus both namespaces)", calls)
+	}
+}
+
 // A run that fails on one batch leaves the work behind it untouched. Waiting for
 // the next tick means waiting the whole interval — a day on a slow schedule — so
 // the scheduler tries once more, shortly, and then stops.

@@ -245,6 +245,8 @@ type Brain struct {
 	episodeNS       map[int64]struct{}
 	episodeSignal   chan struct{}
 	scheduleChanged chan struct{}
+	// runNow carries a manual "run a round now" request into the scheduler.
+	runNow chan struct{}
 	// writeWake wakes the write worker the moment a job is queued in this
 	// process. The poll in RunWriteWorker covers jobs another process queued.
 	writeWake chan struct{}
@@ -326,7 +328,8 @@ func New(pool *pgxpool.Pool, e embedder.Embedder, r reasoner.Reasoner, q *querie
 		episodeSignal:   make(chan struct{}, 1),
 		writeWake:       make(chan struct{}, 1),
 		scheduleChanged: make(chan struct{}, 1),
-		mmRefreshing:    make(map[int64]struct{}),
+		runNow:          make(chan struct{}, 1),
+		mmRefreshing:   make(map[int64]struct{}),
 	}, nil
 }
 

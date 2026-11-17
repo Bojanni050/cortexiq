@@ -19,6 +19,25 @@ import (
 // hours. Postgres is the one channel both sides are known to have.
 const episodeNotifyChannel = "cortexiq_episode"
 
+// runNowNotifyChannel carries the dashboard's "Run now" request to the process
+// that runs consolidation. The payload is empty: a manual round covers every
+// configured namespace.
+const runNowNotifyChannel = "cortexiq_run_now"
+
+// RunNow is signalled when a manual consolidation round was requested.
+func (b *Brain) RunNow() <-chan struct{} { return b.runNow }
+
+// RequestConsolidationRound asks whichever process runs consolidation to start
+// a full round now. Like NotifyConsolidator it travels through Postgres, so it
+// works in the split deployment. It is fire-and-forget: if no consolidator is
+// listening, nothing happens and the regular schedule remains in force.
+func (b *Brain) RequestConsolidationRound(ctx context.Context) error {
+	if _, err := b.pool.Exec(ctx, `SELECT pg_notify($1, '')`, runNowNotifyChannel); err != nil {
+		return fmt.Errorf("request consolidation round: %w", err)
+	}
+	return nil
+}
+
 // NotifyConsolidator tells whichever process runs consolidation that this
 // episode is waiting. It is a courtesy, not a guarantee: the listener may be
 // restarting at that moment, and the timer is still the safety net. A caller
@@ -77,6 +96,9 @@ func (b *Brain) listenEpisodeSignals(ctx context.Context) error {
 	if _, err := conn.Exec(ctx, "LISTEN "+episodeNotifyChannel); err != nil {
 		return fmt.Errorf("listen on %s: %w", episodeNotifyChannel, err)
 	}
+	if _, err := conn.Exec(ctx, "LISTEN "+runNowNotifyChannel); err != nil {
+		return fmt.Errorf("listen on %s: %w", runNowNotifyChannel, err)
+	}
 	// A notification published while nobody was listening is gone. Catching up
 	// here is what makes a restart or a dropped connection cost one query
 	// instead of a full interval of waiting.
@@ -87,6 +109,13 @@ func (b *Brain) listenEpisodeSignals(ctx context.Context) error {
 		note, err := conn.WaitForNotification(ctx)
 		if err != nil {
 			return err
+		}
+		if note.Channel == runNowNotifyChannel {
+			select {
+			case b.runNow <- struct{}{}:
+			default: // a round is already queued; a second click collapses into it
+			}
+			continue
 		}
 		id, err := strconv.ParseInt(note.Payload, 10, 64)
 		if err != nil || id <= 0 {

@@ -106,6 +106,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/cleanup", h.cleanup)
 	api.HandleFunc("/api/v1/stats", h.stats)
 	api.HandleFunc("/api/v1/settings/schedule", h.schedule)
+	api.HandleFunc("/api/v1/consolidation/run", h.consolidationRun)
 	api.HandleFunc("/api/v1/metrics", h.metrics)
 	api.HandleFunc("/api/v1/providers", h.providers)
 	api.HandleFunc("/api/v1/providers/", h.providerItem)
@@ -1844,6 +1845,21 @@ func (h *Handler) consolidation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
+}
+
+// consolidationRun asks the background consolidator to start a full round now.
+// The request is a Postgres notification, so it answers 202 as soon as it is
+// sent: the round itself runs in the consolidator process and shows up under
+// Runs. A read-only token is refused by readOnlyWeb, since this is a POST.
+func (h *Handler) consolidationRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	if err := h.Brain.RequestConsolidationRound(r.Context()); !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"requested": true})
 }
 
 // consolidationStages reports checkpoints that stopped moving while work waits

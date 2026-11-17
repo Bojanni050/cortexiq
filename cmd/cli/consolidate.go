@@ -113,6 +113,7 @@ func runSchedule(ctx context.Context, bc *bootstrap.Context, interval time.Durat
 		Episodes: bc.Brain.EpisodeSignal,
 		Drain:    bc.Brain.DrainEpisodeNamespaces,
 		Changes:  bc.Brain.ScheduleChanged,
+		Now:      bc.Brain.RunNow,
 		// A run that failed on a batch leaves work waiting behind it. Retrying
 		// two minutes later beats waiting for the next tick, which on a slow
 		// schedule is a day.

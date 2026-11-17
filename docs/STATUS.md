@@ -648,3 +648,5 @@ What is left:
   0.89 separates them on this data, but 0.883 (two different confirmation records) and
   0.888 (a narrower restatement) sit on the line, so the cosine alone is too thin to
   decide; the same-fact LLM review that the dedup already uses is the safer judge.
+
+- 2026-11-17: Settings heeft een Run now-knop (`POST /api/v1/consolidation/run`, Postgres-notify `cortexiq_run_now`) die een volledige ronde over alle namespaces start. Gebouwd en unit-getest, nog niet end-to-end of in de browser geprobeerd, niet uitgerold.

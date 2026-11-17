@@ -30,6 +30,10 @@ type Scheduler struct {
 	Drain func() []int64
 	// Changes fires when the stored schedule changed.
 	Changes func() <-chan struct{}
+	// Now fires when someone asked for a round right away (the dashboard's Run
+	// now button). It runs every configured namespace, whatever the mode: a
+	// manual round is not an event and not a tick. nil disables it.
+	Now func() <-chan struct{}
 	// Pending returns the namespaces that still have work waiting behind a
 	// checkpoint. A run that fails on one batch leaves the work ahead of it
 	// untouched, and waiting for the next tick means waiting up to the whole
@@ -59,6 +63,11 @@ func (s *Scheduler) Run(ctx context.Context) error {
 
 	episodes := s.Episodes()
 	changes := s.Changes()
+	// A nil channel blocks forever in select, which is exactly "disabled".
+	var now <-chan struct{}
+	if s.Now != nil {
+		now = s.Now()
+	}
 
 	var ticker *time.Ticker
 	var ticks <-chan time.Time
@@ -147,6 +156,10 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			}
 			s.logf("schedule: retrying %d namespace(s) with work still waiting", len(left))
 			s.runNamespaces(ctx, left)
+		case <-now:
+			s.logf("schedule: manual round requested")
+			s.runAll(ctx)
+			armRetry(ctx)
 		case <-episodes:
 			// Only a wake-up; the next iteration drains the namespaces.
 		case <-changes:

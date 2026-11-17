@@ -3760,7 +3760,7 @@ async function renderSettings() {
         <select id="sc-interval" style="width:100%;max-width:460px">${intOpts}</select>
         <p class="muted" style="margin:16px 0 0">${modes.find(m => m[0] === s.mode)[2]}</p>
       </div>
-      <div class="actions"><button class="primary" onclick="saveSchedule()">Save</button></div>
+      <div class="actions"><button class="primary" onclick="saveSchedule()">Save</button> <button id="sc-run-now" onclick="runConsolidationNow()" title="Start a full consolidation round for every namespace now, outside the schedule">Run now</button></div>
       <p class="muted" style="margin:0 0 18px">Current: <b>${current}</b>. Every start does one catch-up run, so memories written while the service was down are not missed.</p>
     </div>
     <div id="models-card"></div>`;
@@ -4024,6 +4024,22 @@ function scSync() {
   if (interval) {
     interval.disabled = mode === 'events';
     interval.style.opacity = mode === 'events' ? '.45' : '';
+  }
+}
+
+// Run now only sends the request; the round runs in the consolidator process
+// and its result appears under Runs, so the toast says "requested", not "done".
+async function runConsolidationNow() {
+  const btn = document.getElementById('sc-run-now');
+  if (btn) btn.disabled = true;
+  try {
+    await api('/consolidation/run', { method: 'POST', body: '{}' });
+    toast('Consolidation round requested; follow it under Runs');
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    // Brief lock so a double click does not queue noise; the server collapses repeats anyway.
+    setTimeout(() => { if (btn) btn.disabled = false; }, 3000);
   }
 }
 
