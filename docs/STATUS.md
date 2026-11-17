@@ -10,7 +10,7 @@ Last updated: 2026-11-17, after the `v0.1.90` deploy.
 
 | | |
 |---|---|
-| Latest release | `v0.1.89`, 2026-11-17 |
+| Latest release | `v0.1.90`, 2026-11-17 |
 | Release commit | `6f29979` |
 | Every release | tagged and published; `gh release list` is the authoritative list |
 | Schema | `goose_db_version` reads `63`; migrations are append-only |
