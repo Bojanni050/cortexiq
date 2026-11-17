@@ -173,6 +173,7 @@ func New(ctx context.Context) (*Context, error) {
 		DecayFactor:                    cfg.DecayFactor,
 		ExpiryThreshold:                cfg.ExpiryThreshold,
 		DecayProtectedTags:             protectedTags,
+		ContradictionReviewThreshold:   cfg.ContradictionReviewThreshold,
 		HypothesisAutoConfirmThreshold: cfg.HypothesisAutoConfirmThreshold,
 		HypothesisAutoRejectThreshold:  cfg.HypothesisAutoRejectThreshold,
 		HypothesisAutoPropose:          cfg.HypothesisAutoPropose,

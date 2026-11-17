@@ -26,12 +26,18 @@ func (b *Brain) DetectContradictions(ctx context.Context, nsID int64, fact *mode
 		return 0, 0, nil
 	}
 
+	// sim is the cosine similarity of the old fact with the new one, 0 when either
+	// has no embedding. It only matters when the same-fact review is on.
 	rows, err := b.pool.Query(ctx,
-		`SELECT id, content, value, confidence FROM facts
-		 WHERE namespace_id = $1
-		   AND entity IS NOT NULL AND property IS NOT NULL
-		   AND lower(btrim(entity)) = lower(btrim($2)) AND lower(btrim(property)) = lower(btrim($3))
-		   AND id != $4 AND deleted_at IS NULL AND valid_until IS NULL`,
+		`SELECT f.id, f.content, f.value, f.confidence,
+		        CASE WHEN f.embedding IS NULL OR n.embedding IS NULL THEN 0
+		             ELSE 1 - (f.embedding <=> n.embedding) END,
+		        coalesce(n.content, '')
+		 FROM facts f LEFT JOIN facts n ON n.id = $4
+		 WHERE f.namespace_id = $1
+		   AND f.entity IS NOT NULL AND f.property IS NOT NULL
+		   AND lower(btrim(f.entity)) = lower(btrim($2)) AND lower(btrim(f.property)) = lower(btrim($3))
+		   AND f.id != $4 AND f.deleted_at IS NULL AND f.valid_until IS NULL`,
 		nsID, *fact.Entity, *fact.Property, fact.ID,
 	)
 	if err != nil {
@@ -44,12 +50,14 @@ func (b *Brain) DetectContradictions(ctx context.Context, nsID int64, fact *mode
 		Content    string
 		Value      *string
 		Confidence float32
+		Sim        float64
+		NewContent string
 	}
 
 	var existing []existingFact
 	for rows.Next() {
 		var ef existingFact
-		if err := rows.Scan(&ef.ID, &ef.Content, &ef.Value, &ef.Confidence); err != nil {
+		if err := rows.Scan(&ef.ID, &ef.Content, &ef.Value, &ef.Confidence, &ef.Sim, &ef.NewContent); err != nil {
 			return 0, 0, fmt.Errorf("scan existing fact: %w", err)
 		}
 		existing = append(existing, ef)
@@ -71,6 +79,21 @@ func (b *Brain) DetectContradictions(ctx context.Context, nsID int64, fact *mode
 
 		if oldValue == newValue {
 			continue
+		}
+
+		// Two facts about one entity and property that say the same thing in other
+		// words are not in conflict, and expiring the older one would drop a true
+		// claim (a reworded core preference expired that way). Close facts get the
+		// same review dedup uses; if it says "same", neither supersede nor record.
+		// A failed review falls through to the normal check, as before.
+		newContent := fact.Content
+		if newContent == "" {
+			newContent = ef.NewContent
+		}
+		if contradictionReviewDue(ef.Sim, b.config.ContradictionReviewThreshold) && newContent != "" {
+			if same, sameErr := b.reasoner.ReasonSameFact(ctx, ef.Content, newContent); sameErr == nil && same {
+				continue
+			}
 		}
 
 		cr, llmErr := b.reasoner.ReasonContradiction(ctx, *fact.Entity, *fact.Property, oldValue, newValue)
@@ -103,6 +126,12 @@ func (b *Brain) DetectContradictions(ctx context.Context, nsID int64, fact *mode
 	}
 
 	return detected, autoResolved, nil
+}
+
+// contradictionReviewDue says whether two facts are close enough to be asked about
+// as a rewording. A threshold of 0 (or below) switches the review off.
+func contradictionReviewDue(sim, threshold float64) bool {
+	return threshold > 0 && sim >= threshold
 }
 
 func (b *Brain) autoSupersede(ctx context.Context, nsID, oldFactID, newFactID int64, entity, property, oldValue, newValue string, confidence float32) error {

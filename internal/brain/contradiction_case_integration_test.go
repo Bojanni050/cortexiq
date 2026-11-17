@@ -1,6 +1,7 @@
 package brain
 
 import (
+	"context"
 	"testing"
 
 	"github.com/Bojanni050/cortexiq/internal/models"
@@ -103,5 +104,90 @@ func TestIntegrationStoreRelationshipRejectsPlaceholderTypes(t *testing.T) {
 	stored, err := e.b.storeRelationship(e.ctx, e.nsID, fact, &reasoner.StructuredRelationship{FromEntity: "Bo", RelationType: "prefers", ToEntity: "summaries", Confidence: 0.9})
 	if err != nil || !stored || count() != 1 {
 		t.Errorf("a real relation must still be stored: stored=%v err=%v count=%d", stored, err, count())
+	}
+}
+
+// replacingReasoner answers every contradiction check with a confident replacement
+// and counts the calls, so a test can see whether the check was reached at all.
+type replacingReasoner struct {
+	*fakeReasoner
+	contradictionCalls int
+}
+
+func (r *replacingReasoner) ReasonContradiction(context.Context, string, string, string, string) (*reasoner.ContradictionResult, error) {
+	r.contradictionCalls++
+	return &reasoner.ContradictionResult{Classification: reasoner.ClassificationReplacement, Confidence: 0.95}, nil
+}
+
+// sameEmbedding gives two facts one embedding, so their similarity is exactly 1.
+func (e *testEnv) sameEmbedding(t *testing.T, from, to int64) {
+	t.Helper()
+	if _, err := e.b.pool.Exec(e.ctx,
+		`UPDATE facts SET embedding = (SELECT embedding FROM facts WHERE id = $1) WHERE id = $2`, from, to); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (e *testEnv) endedFact(t *testing.T, id int64) bool {
+	t.Helper()
+	var ended bool
+	if err := e.b.pool.QueryRow(e.ctx, `SELECT valid_until IS NOT NULL FROM facts WHERE id = $1`, id).Scan(&ended); err != nil {
+		t.Fatal(err)
+	}
+	return ended
+}
+
+// With the review on, a close fact that the LLM calls a rewording is no
+// contradiction: the older fact stays valid and the contradiction check is skipped.
+func TestIntegrationContradictionReviewKeepsRewordedFact(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.ContradictionReviewThreshold = 0.85 })
+	rr := &replacingReasoner{fakeReasoner: e.r}
+	e.b.reasoner = rr
+	e.r.sameAnswer = true
+
+	old := e.insertPropertyFact(t, "Claude data export", "packaging format", "behind one-time 24h download URLs")
+	fresh := e.insertPropertyFact(t, "Claude data export", "packaging format", "with one-time 24h download URLs")
+	e.sameEmbedding(t, fresh, old)
+
+	e.detect(t, fresh, "Claude data export", "packaging format", "with one-time 24h download URLs")
+	if e.endedFact(t, old) {
+		t.Error("a reworded fact expired the older one; the review must keep it")
+	}
+	if rr.contradictionCalls != 0 || e.r.sameCalls != 1 {
+		t.Errorf("contradiction calls = %d, same calls = %d; want 0 and 1", rr.contradictionCalls, e.r.sameCalls)
+	}
+}
+
+// When the LLM says the new fact is not a rewording, the old behaviour is intact.
+func TestIntegrationContradictionReviewStillSupersedesRealChange(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.ContradictionReviewThreshold = 0.85 })
+	rr := &replacingReasoner{fakeReasoner: e.r}
+	e.b.reasoner = rr
+	e.r.sameAnswer = false
+
+	old := e.insertPropertyFact(t, "CortexIQ", "version", "v0.1.17")
+	fresh := e.insertPropertyFact(t, "CortexIQ", "version", "v0.1.20")
+	e.sameEmbedding(t, fresh, old)
+
+	e.detect(t, fresh, "CortexIQ", "version", "v0.1.20")
+	if !e.endedFact(t, old) || rr.contradictionCalls != 1 {
+		t.Errorf("a real change must still supersede: ended=%v contradiction calls=%d", e.endedFact(t, old), rr.contradictionCalls)
+	}
+}
+
+// Off by default: no review call, same as before.
+func TestIntegrationContradictionReviewOffByDefault(t *testing.T) {
+	e := newEnv(t, nil)
+	rr := &replacingReasoner{fakeReasoner: e.r}
+	e.b.reasoner = rr
+	e.r.sameAnswer = true
+
+	old := e.insertPropertyFact(t, "CortexIQ", "version", "v0.1.17")
+	fresh := e.insertPropertyFact(t, "CortexIQ", "version", "v0.1.20")
+	e.sameEmbedding(t, fresh, old)
+
+	e.detect(t, fresh, "CortexIQ", "version", "v0.1.20")
+	if e.r.sameCalls != 0 || !e.endedFact(t, old) {
+		t.Errorf("same calls = %d, ended = %v; with the review off the old path must run unchanged", e.r.sameCalls, e.endedFact(t, old))
 	}
 }

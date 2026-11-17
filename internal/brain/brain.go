@@ -82,6 +82,11 @@ type Config struct {
 	// DedupReviewThreshold: from this similarity up to DedupThreshold a new fact is
 	// compared by the LLM with its nearest neighbour. 0 disables the review.
 	DedupReviewThreshold float64
+	// ContradictionReviewThreshold: when a new fact has the same entity and property
+	// as an older one and the two are at least this similar (cosine), the LLM is
+	// first asked whether the new one is only a rewording; if so, nothing is
+	// superseded. 0 (the default) disables the review.
+	ContradictionReviewThreshold float64
 	// DedupCandidates is how many nearest facts a new fact is weighed against
 	// before it is stored as new. 0 uses the default (5).
 	DedupCandidates int
