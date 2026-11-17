@@ -106,6 +106,46 @@ func TestIntegrationDefaultDecayStillExpiresOnConfidence(t *testing.T) {
 	}
 }
 
+// Facts with a protected tag (identity, core preferences) neither fade nor expire
+// from disuse, in both decay modes; untagged facts next to them still do.
+func TestIntegrationDecaySkipsProtectedTags(t *testing.T) {
+	for _, split := range []bool{false, true} {
+		e := newEnv(t, func(c *Config) {
+			c.DecaySplit = split
+			c.DecayProtectedTags = []string{"kern"}
+		})
+		kept := e.staleFact(t, "Bo werkt solo en wil antwoorden in het Nederlands")
+		plain := e.staleFact(t, "an old fact that nobody mentions any more")
+		if _, err := e.b.pool.Exec(e.ctx,
+			`UPDATE facts SET tags = '{kern,voorkeur}' WHERE id = $1`, kept); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := e.b.DecayConfidence(e.ctx, e.nsID); err != nil {
+			t.Fatal(err)
+		}
+		if s := e.decayState(t, kept); s.confidence != 0.8 || s.strength != 1 || s.ended {
+			t.Errorf("split=%v: protected fact changed: %+v", split, s)
+		}
+		if s := e.decayState(t, plain); s.confidence == 0.8 && s.strength == 1 {
+			t.Errorf("split=%v: unprotected fact did not decay: %+v", split, s)
+		}
+
+		// Even below the expiry threshold the protected fact stays valid.
+		col := map[bool]string{false: "confidence", true: "strength"}[split]
+		if _, err := e.b.pool.Exec(e.ctx,
+			`UPDATE facts SET `+col+` = 0.01 WHERE id = $1`, kept); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.b.DecayConfidence(e.ctx, e.nsID); err != nil {
+			t.Fatal(err)
+		}
+		if e.decayState(t, kept).ended {
+			t.Errorf("split=%v: protected fact was expired", split)
+		}
+	}
+}
+
 // Seeing a fact again is what brings its strength back.
 func TestIntegrationReinforcementRestoresStrength(t *testing.T) {
 	e := newEnv(t, func(c *Config) { c.DecaySplit = true })

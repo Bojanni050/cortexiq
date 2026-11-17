@@ -33,11 +33,20 @@ func (b *Brain) DecayConfidence(ctx context.Context, nsID int64) (DecayResult, e
 
 	var result DecayResult
 
+	// Facts carrying a protected tag (identity, core preferences) are left out of
+	// both statements. With no protected tags the array is empty and && is false,
+	// so nothing changes for a deployment that has not set the list.
+	protected := b.config.DecayProtectedTags
+	if protected == nil {
+		protected = []string{}
+	}
+
 	decayTag, err := b.pool.Exec(ctx,
 		`UPDATE facts SET `+column+` = `+column+` * $3, updated_at = now()
 		 WHERE namespace_id = $1 AND deleted_at IS NULL AND valid_until IS NULL
-		 AND GREATEST(updated_at, COALESCE(last_recalled_at, updated_at)) < now() - $2::interval`,
-		nsID, b.config.Window.String(), b.config.DecayFactor,
+		 AND GREATEST(updated_at, COALESCE(last_recalled_at, updated_at)) < now() - $2::interval
+		 AND NOT (tags && $4::text[])`,
+		nsID, b.config.Window.String(), b.config.DecayFactor, protected,
 	)
 	if err != nil {
 		return result, fmt.Errorf("decay confidence: %w", err)
@@ -53,8 +62,9 @@ func (b *Brain) DecayConfidence(ctx context.Context, nsID int64) (DecayResult, e
 	expireTag, err := b.pool.Exec(ctx,
 		`UPDATE facts SET valid_until = now(), known_until = now(), updated_at = now()`+marker+`
 		 WHERE namespace_id = $1 AND deleted_at IS NULL AND valid_until IS NULL
-		 AND `+column+` < $2`,
-		nsID, b.config.ExpiryThreshold,
+		 AND `+column+` < $2
+		 AND NOT (tags && $3::text[])`,
+		nsID, b.config.ExpiryThreshold, protected,
 	)
 	if err != nil {
 		return result, fmt.Errorf("expire low-confidence facts: %w", err)

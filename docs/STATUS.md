@@ -363,6 +363,7 @@ not built.
 | `CORTEXIQ_WRITE_FILTER` | `off` (code default, not in `.env`) | Since `v0.1.8`, opt-in: `warn` logs what it would refuse, `strict` refuses secrets and noise. Left off until the false-positive rate on real writes is known. The hygiene cleaner that shipped beside it was removed in `v0.1.9`: it audited noise the store's own decay already handles, and its archive flag was read by nothing. |
 | `CORTEXIQ_ROUTE_RECALL` | `false` (code default, not in `.env`) | Only widens recall; never measured in production. |
 | `CORTEXIQ_RECALL_MMR_LAMBDA` | `0` (code default, not in `.env`) | Available per call; off by default so ranking stays plain fusion. |
+| `CORTEXIQ_DECAY_PROTECTED_TAGS` | empty (code default, not in `.env`) | Unreleased (2026-11-17). Facts carrying one of these tags are skipped by the decay sweep, so identity and core preferences neither fade nor expire from disuse. Empty protects nothing, so nothing changes until the owner names a tag (for example `kern`) and tags the episodes. See `design-decay-split.md`. |
 
 These are the values read from `/opt/cortexiq/.env` on 2026-11-16, plus the defaults
 that apply to settings the file does not carry (marked above). Also on:

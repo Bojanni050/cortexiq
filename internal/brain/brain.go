@@ -95,6 +95,9 @@ type Config struct {
 	Window          time.Duration
 	DecayFactor     float64
 	ExpiryThreshold float32
+	// DecayProtectedTags: facts carrying any of these tags are skipped by the
+	// decay sweep (no fading, no expiry from disuse). Empty protects nothing.
+	DecayProtectedTags []string
 	// RRFK is the reciprocal-rank-fusion constant used to merge the recall arms.
 	// 0 keeps the default (60). It is process-wide; see SetRRFK.
 	RRFK int

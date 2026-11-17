@@ -133,6 +133,12 @@ func New(ctx context.Context) (*Context, error) {
 		return nil, fmt.Errorf("parse consolidation window: %w", err)
 	}
 
+	protectedTags, err := brain.NormalizeTags(cfg.DecayProtectedTags)
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("CORTEXIQ_DECAY_PROTECTED_TAGS: %w", err)
+	}
+
 	rerank := reranker.NewHTTP(cfg.RerankerBaseURL, cfg.RerankerAPIKey, cfg.RerankerModel)
 
 	// Custom write-ignore patterns are a process-wide setting (not per-namespace
@@ -166,6 +172,7 @@ func New(ctx context.Context) (*Context, error) {
 		TriageLog:                      cfg.TriageLog,
 		DecayFactor:                    cfg.DecayFactor,
 		ExpiryThreshold:                cfg.ExpiryThreshold,
+		DecayProtectedTags:             protectedTags,
 		HypothesisAutoConfirmThreshold: cfg.HypothesisAutoConfirmThreshold,
 		HypothesisAutoRejectThreshold:  cfg.HypothesisAutoRejectThreshold,
 		HypothesisAutoPropose:          cfg.HypothesisAutoPropose,

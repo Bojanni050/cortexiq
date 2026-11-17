@@ -212,6 +212,9 @@ type Config struct {
 	DecaySplit      bool    `env:"CORTEXIQ_DECAY_SPLIT" envDefault:"false"`
 	DecayFactor     float64 `env:"CORTEXIQ_DECAY_FACTOR" envDefault:"0.95"`
 	ExpiryThreshold float32 `env:"CORTEXIQ_EXPIRY_THRESHOLD" envDefault:"0.1"`
+	// DecayProtectedTags lists tags (comma separated) whose facts the decay sweep
+	// skips: they neither fade nor expire from disuse. Empty = nothing protected.
+	DecayProtectedTags []string `env:"CORTEXIQ_DECAY_PROTECTED_TAGS" envSeparator:"," envDefault:""`
 	// RRFK is the rank-fusion constant for recall. 60 is the paper's default;
 	// measure with `cortexiq eval recall --rrf-k 20,60,100` before changing it.
 	RRFK int `env:"CORTEXIQ_RRF_K" envDefault:"60"`

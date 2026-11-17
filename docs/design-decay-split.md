@@ -33,3 +33,13 @@ Een feit dat alleen door onbruik is beëindigd, wordt weer actief als dezelfde c
 ## Aanzetten
 
 Zet `CORTEXIQ_DECAY_SPLIT=true`. Let op: `docker-compose.prod.yml` op de server moet de variabele doorgeven (zie `docker-compose.prod.example.yml`). Terugzetten is de variabele weghalen; `strength`-waarden blijven staan en doen niets.
+
+## Beschermde tags (toegevoegd 2026-11-17)
+
+Idee uit de vergelijking met maasv, waar identity, family en core preferences van verval zijn uitgezonderd. Bij ons vervaagt elk feit dat niet wordt waargenomen of opgevraagd, ook "Bo werkt solo" of "antwoord in het Nederlands", terwijl dat juist het soort feit is dat zelden letterlijk terugkomt.
+
+- `CORTEXIQ_DECAY_PROTECTED_TAGS` (komma-gescheiden, standaard leeg). `DecayConfidence` slaat feiten over waarvan `tags` een van deze bevat, in beide statements (verval en verlopen) en in beide modi (met en zonder `DECAY_SPLIT`).
+- Leeg betekent niets beschermd: `tags && '{}'` is altijd onwaar, dus gedrag en SQL-uitkomst blijven gelijk voor wie de variabele niet zet.
+- Geen nieuwe kolom of migratie: tags bestaan al op facts en worden geërfd van episodes (migratie 00037). Een tag is een vernauwing binnen de scope, dus dit sluit aan op het tags-ontwerp.
+- De lijst wordt bij het opstarten genormaliseerd met `NormalizeTags` (lowercase, max 32 tekens). Een ongeldige tag laat de start mislukken met een duidelijke melding, in plaats van stilzwijgend niets te beschermen.
+- Bewust niet gedaan: een vaste lijst van categorieën in code (geen vaste vocabulary, zie het tags-ontwerp) en terugwerkend beschermen. Facts die al zijn vervaagd of verlopen blijven zoals ze zijn; alleen toekomstige sweeps slaan beschermde feiten over. Een feit moet de tag dus al dragen, en de tag wordt geërfd bij consolidatie van getagde episodes.
