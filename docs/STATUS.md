@@ -623,3 +623,13 @@ What is left:
 - `docs/handoff-2026-10-18.md` still lists tags, Reflect and mental models as
   "not built". They shipped on 2026-10-23; the handoff stays as the record of
   that day.
+- 2,365 live relationships (27% of 8,888, measured 2026-11-17) have a `source_fact_id`
+  that points at a soft-deleted fact. All come from one manual `dedupe` on
+  2026-10-13 that merged 73 facts: `mergeFacts` moved sources but not relationships.
+  Fixed for future merges (unreleased). The old rows are not repaired: 248 of them
+  have a live twin, 2,117 are the only carrier of their claim, and the merge did not
+  record which fact survived, so a repoint would be a guess. Nothing filters on
+  `source_fact_id`, so recall and the graph are unaffected; only "where does this
+  come from" ends at a deleted fact. A further 226 relations come from facts that
+  have expired (superseded or invalidated); whether a relation should expire with its
+  source is an open decision.

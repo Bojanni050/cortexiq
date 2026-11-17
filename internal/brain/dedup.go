@@ -377,7 +377,8 @@ func (b *Brain) loadDedupeMembers(ctx context.Context, ids []int64) ([]dedupeMem
 }
 
 // mergeFacts folds merge into keep atomically: sources move over, keep is
-// reinforced once per merged fact, the merged facts are soft-deleted.
+// reinforced once per merged fact, relationships sourced from a merged fact move
+// to keep, the merged facts are soft-deleted.
 func (b *Brain) mergeFacts(ctx context.Context, keep dedupeMember, merge []int64) error {
 	tx, err := b.pool.Begin(ctx)
 	if err != nil {
@@ -395,6 +396,13 @@ func (b *Brain) mergeFacts(ctx context.Context, keep dedupeMember, merge []int64
 		"UPDATE facts SET confidence = $2, updated_at = now() WHERE id = $1",
 		keep.id, reinforcedConfidence(keep.confidence, len(merge))); err != nil {
 		return fmt.Errorf("dedupe: reinforce: %w", err)
+	}
+	// Relationships extracted from a merged fact are still true: the surviving
+	// fact states the same thing. Point them at it, or they keep a source that is
+	// about to be soft-deleted (the first manual dedupe left 2,365 such relations).
+	if _, err := tx.Exec(ctx,
+		"UPDATE relationships SET source_fact_id = $1 WHERE source_fact_id = ANY($2)", keep.id, merge); err != nil {
+		return fmt.Errorf("dedupe: move relationships: %w", err)
 	}
 	if _, err := tx.Exec(ctx,
 		"UPDATE facts SET deleted_at = now(), updated_at = now() WHERE id = ANY($1) AND deleted_at IS NULL", merge); err != nil {
