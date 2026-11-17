@@ -999,3 +999,9 @@ voor de regel dat er na 1000 regels een nieuw walkthrough-bestand komt.
 - Findings: de UX-gate (`check_no_emoji.py`) meldde 57 tekens in `internal/webui/static/index.html`: 52 regels met em-/en-dashes (in UI-tekst, lege-waarde-markeringen en commentaar) en drie pictogrammen (✕, ✓, ✗). De 578 hardcoded px/hex-waarden en 16 native selects uit dezelfde hook zijn een bestandsbrede stijlkeuze en zijn op verzoek van Bo niet aangepast.
 - Conclusions: alleen de mechanische, visueel neutrale delen opgelost. Dashes zijn ` - ` of `-` geworden (een lege waarde toont nu `-`), de pictogrammen zijn woorden ("clear", "confirmed 3", "rejected 1"), zodat betekenis blijft zonder icoon-tekens. Geen logica die op die tekens vergelijkt (gecontroleerd).
 - Actions: `internal/webui/static/index.html` (55 plekken); validated: `check_no_emoji.py` schoon, `go test ./internal/webui` groen. Niet gevalideerd in een browser.
+
+## 2026-11-17 (Models-kaart: dashboard-keuze versus env duidelijker)
+
+- Findings: in Settings > Models toonde een rij met een dashboard-keuze "dashboard hopscotch" en daaronder "env: <model>". Het was daardoor niet te zien welk model echt draait; de env-regel las als een tweede, gelijkwaardige waarde.
+- Conclusions: alleen de labels aangepast, geen logica. Een dashboard-keuze heet nu "dashboard override" met de regel "replaces env default: <model>"; een rij zonder keuze heet "env (in use)". Tooltips leggen uit welke van de twee geldt.
+- Actions: `internal/webui/static/index.html` (renderModelsCard, 3 regels); validated: `go test ./internal/webui` groen, `check_no_emoji.py` schoon. Niet in een browser bekeken.

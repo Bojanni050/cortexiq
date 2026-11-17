@@ -3802,10 +3802,10 @@ async function renderModelsCard() {
   const rows = purposes.map(p => {
     const spec = PURPOSES.find(x => x[0] === p.purpose) || [p.purpose, p.purpose, ''];
     const source = p.source === 'dashboard'
-      ? `<span class="badge pending">dashboard</span> <span class="mono">${esc(p.provider)}</span>`
-      : '<span class="badge active">env</span>';
+      ? `<span class="badge pending" title="A choice made in this dashboard is in use. The environment value below is not used for this purpose.">dashboard override</span> <span class="mono">${esc(p.provider)}</span>`
+      : '<span class="badge active" title="No dashboard choice is set, so the environment configuration is in use.">env (in use)</span>';
     const model = p.model ? `<span class="mono">${esc(p.model)}</span>` : '<span class="muted">not configured</span>';
-    const env = p.source === 'dashboard' && p.env ? `<div class="muted">env: <span class="mono">${esc(p.env)}</span></div>` : '';
+    const env = p.source === 'dashboard' && p.env ? `<div class="muted">replaces env default: <span class="mono">${esc(p.env)}</span></div>` : '';
     const note = p.restart_required ? '<div class="muted">a change here needs a restart</div>' : '';
     // The price in use, wherever it came from: a provider catalogue first, a
     // rate entered here for a model no catalogue prices. A model with neither is
