@@ -329,7 +329,7 @@ func New(pool *pgxpool.Pool, e embedder.Embedder, r reasoner.Reasoner, q *querie
 		writeWake:       make(chan struct{}, 1),
 		scheduleChanged: make(chan struct{}, 1),
 		runNow:          make(chan struct{}, 1),
-		mmRefreshing:   make(map[int64]struct{}),
+		mmRefreshing:    make(map[int64]struct{}),
 	}, nil
 }
 
