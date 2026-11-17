@@ -4,14 +4,14 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-11-16, after the `v0.1.88` deploy.
+Last updated: 2026-11-17, after the `v0.1.89` deploy.
 
 ## Build
 
 | | |
 |---|---|
-| Latest release | `v0.1.88`, 2026-11-16 |
-| Release commit | `e122a71` |
+| Latest release | `v0.1.89`, 2026-11-17 |
+| Release commit | `6f29979` |
 | Every release | tagged and published; `gh release list` is the authoritative list |
 | Schema | `goose_db_version` reads `63`; migrations are append-only |
 | How to check | `docker compose exec -T cortexiq /cortexiq version` — the image has no shell and `cortexiq` is not on `PATH`, so the absolute path matters |
@@ -163,7 +163,7 @@ checkpoint moves on instead of freezing the namespace.
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  a single VPS, in `/opt/cortexiq`, currently `v0.1.88`. That is the version the
+  a single VPS, in `/opt/cortexiq`, currently `v0.1.89`. That is the version the
   binary reports: `docker compose exec -T cortexiq /cortexiq version` (the image is
   distroless, so there is no shell and no `cortexiq` on `PATH`). Postgres 17 with
   pgvector and pg_textsearch, plus a local Ollama for embeddings, sit beside them and
@@ -205,7 +205,7 @@ checkpoint moves on instead of freezing the namespace.
   server, so the running binary is byte-for-byte the one the release workflow
   produced (compare `.Image` with the tag's digest). Rolling back is setting the
   previous tag. Migrations run on startup. Pull with the new tag inline —
-  `CORTEXIQ_IMAGE_TAG=0.1.88 docker compose pull cortexiq cortexiq-ui` — because
+  `CORTEXIQ_IMAGE_TAG=0.1.89 docker compose pull cortexiq cortexiq-ui` — because
   compose reads the tag from `.env`: a plain `pull` after bumping fetches the old
   image and the deploy then looks successful while running last release's binary.
   That is what the first attempt at the `v0.1.85` deploy did.
@@ -218,7 +218,7 @@ checkpoint moves on instead of freezing the namespace.
   tags for fourteen releases, no `latest` and no floating `0.1`. The workflow still
   sets `flavor: latest=false`, so `v0.1.88` published `0.1.88` and no `latest`.
   Past releases are kept rather than deleted, so a rollback can still pull the tag
-  it names; production pulls `0.1.88` today. With a moving tag, "which version runs
+  it names; production pulls `0.1.89` today. With a moving tag, "which version runs
   here" becomes a guess. `CORTEXIQ_IMAGE_TAG` is a required variable in the compose
   file, so a missing value fails the deploy instead of silently pulling
   something old.
@@ -363,7 +363,7 @@ not built.
 | `CORTEXIQ_WRITE_FILTER` | `off` (code default, not in `.env`) | Since `v0.1.8`, opt-in: `warn` logs what it would refuse, `strict` refuses secrets and noise. Left off until the false-positive rate on real writes is known. The hygiene cleaner that shipped beside it was removed in `v0.1.9`: it audited noise the store's own decay already handles, and its archive flag was read by nothing. |
 | `CORTEXIQ_ROUTE_RECALL` | `false` (code default, not in `.env`) | Only widens recall; never measured in production. |
 | `CORTEXIQ_RECALL_MMR_LAMBDA` | `0` (code default, not in `.env`) | Available per call; off by default so ranking stays plain fusion. |
-| `CORTEXIQ_DECAY_PROTECTED_TAGS` | empty (code default, not in `.env`) | Unreleased (2026-11-17). Facts carrying one of these tags are skipped by the decay sweep, so identity and core preferences neither fade nor expire from disuse. Empty protects nothing, so nothing changes until the owner names a tag (for example `kern`) and tags the episodes. See `design-decay-split.md`. |
+| `CORTEXIQ_DECAY_PROTECTED_TAGS` | `kern` | Since `v0.1.89` (2026-11-17), set in `.env` and passed through `docker-compose.prod.yml`. Facts carrying one of these tags are skipped by the decay sweep, so identity and core preferences neither fade nor expire from disuse. Empty (the code default) protects nothing; only facts that carry the tag are skipped, and no fact carries `kern` yet, so nothing is protected until episodes are tagged. See `design-decay-split.md`. |
 
 These are the values read from `/opt/cortexiq/.env` on 2026-11-16, plus the defaults
 that apply to settings the file does not carry (marked above). Also on:
