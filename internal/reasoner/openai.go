@@ -325,7 +325,7 @@ Rules:
 - Every summary MUST be understandable on its own, without the Events and without knowing the conversation: name the project, product or subject explicitly (e.g. "CortexIQ", "Chronicle-Gaia"). Never use "the system", "the plugin", "the app", "it" or "this" as the subject.
 - If the Events contain no durable information worth remembering (small talk, a status update without outcome, an action without subject or result, a bare question), output an empty array: []
 - Turns that only keep the conversation going — picking an option from a list ("2"), confirming ("gedaan", "ok", "zo moet het goed zijn"), announcing a next step ("we gaan het zien") — are not facts about any system. Never describe such a turn as a feature, signal, reminder or design choice, and never make the text of a turn the subject of a fact. If the Events consist only of such turns, output an empty array: []
-- Every summary MUST be specific and detailed. Do NOT echo, quote, or closely paraphrase a single Event sentence; rewrite in your own words.
+- Every summary MUST be specific and detailed. Keep the wording of the Events where it is correct and already self-contained. Rewrite only to remove first-person markers, pronouns such as "it" or "this", and temporary states. Keep subject and object exactly as the Events state them: never swap them.
 - Remove first-person markers ("I", "my", "we") — state facts about subjects, not the narrator.
 - All values MUST come ONLY from the Events. Do not add outside details.
 - If a field is not explicitly stated in the Events, use null for entity, property or value.
@@ -1782,6 +1782,15 @@ func ptrStr(p *looseText) string {
 	return string(*p)
 }
 
+// groundingMaxOverlap is the share of a summary's words that may also occur in one
+// source text before the summary counts as a copy. It was 0.80, which threw away
+// correct, self-contained sentences and pushed the model to paraphrase, where
+// subject and object can swap. A fact-fidelity run on 21 episodes (2026-11-18,
+// eval/fidelity-2026-11-18) showed the gate would reject 24 facts of the most
+// faithful model against 3 and 4 of the others. At 0.95 only a near-literal copy
+// is refused; an exact copy is still caught by the substring check below.
+const groundingMaxOverlap float32 = 0.95
+
 func validateFactGrounding(sf *StructuredFact, texts []string) error {
 	if sf.Summary == "" {
 		return nil
@@ -1809,7 +1818,7 @@ func validateFactGrounding(sf *StructuredFact, texts []string) error {
 				matches++
 			}
 		}
-		if float32(matches)/float32(len(summaryWords)) > 0.80 {
+		if float32(matches)/float32(len(summaryWords)) > groundingMaxOverlap {
 			return fmt.Errorf("summary is too close to a verbatim copy of source text")
 		}
 	}

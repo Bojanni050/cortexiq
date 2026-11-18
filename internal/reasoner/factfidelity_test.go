@@ -5,10 +5,13 @@
 // It runs every episode through two arms against one model and writes a side by
 // side report for a human to read, plus numbers that need no judge:
 //
-//	A  production: the real ReasonStructured (prompt rule "rewrite in your own words"
-//	   and the 80 percent word-overlap grounding gate that drops close copies).
-//	B  variant: the same prompt with that one rule replaced by "keep the wording where
-//	   it is correct and self-contained, never swap subject and object", and no gate.
+//	A  production: the real ReasonStructured (the current prompt and the word-overlap
+//	   grounding gate, groundingMaxOverlap, that drops near-literal copies).
+//	B  the same prompt with no gate, so the difference isolates what the gate costs.
+//
+// History: the first run (2026-11-18, eval/fidelity-2026-11-18) compared the old
+// prompt rule "rewrite in your own words" and a gate at 0.80 (A) with the current
+// rule and no gate (B). The current production code is B's prompt with a gate at 0.95.
 //
 // Nothing here touches production code or a database. It calls an external API and
 // costs money, so it only builds with -tags modeleval.
@@ -33,10 +36,6 @@ import (
 
 	"github.com/openai/openai-go"
 )
-
-const fidelityOldRule = "- Every summary MUST be specific and detailed. Do NOT echo, quote, or closely paraphrase a single Event sentence; rewrite in your own words."
-
-const fidelityNewRule = "- Every summary MUST be specific and detailed. Keep the wording of the Events where it is correct and already self-contained. Rewrite only to remove first-person markers, pronouns such as \"it\" or \"this\", and temporary states. Keep subject and object exactly as the Events state them: never swap them."
 
 // fidelityNumbers matches tokens that carry a digit: versions, ports, dates, counts.
 var fidelityNumbers = regexp.MustCompile(`[0-9][0-9A-Za-z.\-:/]*[0-9A-Za-z]|[0-9]`)
@@ -135,13 +134,6 @@ func TestFactFidelity(t *testing.T) {
 		in.Episodes = in.Episodes[:limit]
 	}
 
-	// The variant is the production prompt with exactly one rule swapped. If the
-	// production prompt changes and the rule is no longer found, fail loudly instead
-	// of comparing a prompt with itself.
-	if !strings.Contains(structuredPrompt([]string{"x"}, ""), fidelityOldRule) {
-		t.Fatal("production prompt no longer contains the rule this harness replaces; update fidelityOldRule")
-	}
-
 	r, err := NewOpenAI(baseURL, key, model, maxTok, jsonMode)
 	if err != nil {
 		t.Fatal(err)
@@ -153,7 +145,7 @@ func TestFactFidelity(t *testing.T) {
 		Subject string `json:"subject"`
 		Content string `json:"content"`
 	}) ([]string, error) {
-		prompt := strings.Replace(structuredPrompt([]string{e.Content}, e.Subject), fidelityOldRule, fidelityNewRule, 1)
+		prompt := structuredPrompt([]string{e.Content}, e.Subject)
 		msgs := []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(systemPrompt),
 			openai.UserMessage(prompt),
@@ -193,7 +185,7 @@ func TestFactFidelity(t *testing.T) {
 	}
 
 	var md strings.Builder
-	fmt.Fprintf(&md, "# Fact fidelity: %s\n\nA = production prompt and gate. B = rule replaced, no gate. Read the facts against the episode: subject and object right? detail kept? anything added?\n\n", model)
+	fmt.Fprintf(&md, "# Fact fidelity: %s\n\nA = production prompt and gate. B = same prompt, no gate. Read the facts against the episode: subject and object right? detail kept? anything added?\n\n", model)
 	var aKept, aTot, bKept, bTot, aInv, bInv, bGate, aN, bN int
 	for _, row := range rows {
 		fmt.Fprintf(&md, "## Episode %d\n\n> %s\n\n", row.ID, strings.ReplaceAll(strings.TrimSpace(row.Episode), "\n", "\n> "))
