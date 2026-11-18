@@ -1,0 +1,9 @@
+# Walkthrough 3
+
+Vervolg op [walkthrough2.md](walkthrough2.md), dat na 1000 regels is afgesloten.
+
+## 2026-11-18 (Fact fidelity: harnas voor "zegt de fact nog wat het episode zegt")
+
+- Findings: de Gaia-spike (16-11) noemde de consolidatie "even dunne facts als Hindsight", en fact 3204 draait het onderwerp om (zegt dat Hindsight de vervanger is, het episode zegt dat CortexIQ dat is). Bij het nalezen van de extractie bleek de regel "rewrite in your own words" (`structuredPrompt`, `internal/reasoner/openai.go`) ook in code afgedwongen: `validateFactGrounding` verwerpt een fact waarvan meer dan 80 procent van de woorden in het episode voorkomt, en een mislukte poging valt terug op alleen de facts die slagen. Een juiste, zelfstandige zin uit het episode wordt dus weggegooid, en het model wordt tot herformuleren gedwongen. Dat komt over als dunheid en geeft kans op verdraaien. Gemeten is dit nog niet.
+- Conclusions: eerst meten, dan pas de prompt of de poort wijzigen ("meten gaat voor bouwen"). Het harnas draait dezelfde episodes door twee armen en laat een mens de facts naast de bron lezen, plus drie getallen die geen rechter nodig hebben: hoeveel cijfertokens (versies, poorten, datums, aantallen) uit het episode in de facts terugkomen, hoeveel er in de facts staan die niet in het episode staan, en hoeveel facts van arm B de productiepoort zou verwerpen. Productiecode is bewust niet aangeraakt.
+- Actions: `internal/reasoner/factfidelity_test.go` (nieuw, build-tag `modeleval`, `TestFactFidelity`; arm A is `ReasonStructured`, arm B is dezelfde prompt met precies die ene regel vervangen en zonder poort; faalt hard als de productieprompt die regel niet meer bevat). `docs/STATUS.md` (open punt). validated: `go vet -tags modeleval ./internal/reasoner/` en `go build ./...` schoon. Niet gedraaid: er is geen `stage_inputs.json` en geen API-sleutel in deze omgeving, dus er zijn nog geen resultaten.

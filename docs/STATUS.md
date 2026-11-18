@@ -650,3 +650,5 @@ What is left:
   decide; the same-fact LLM review that the dedup already uses is the safer judge.
 
 - 2026-11-17: Settings heeft een Run now-knop (`POST /api/v1/consolidation/run`, Postgres-notify `cortexiq_run_now`) die een volledige ronde over alle namespaces start. Gebouwd en unit-getest, nog niet end-to-end of in de browser geprobeerd, niet uitgerold.
+
+- 2026-11-18: `internal/reasoner/factfidelity_test.go` (`-tags modeleval`, `TestFactFidelity`) vergelijkt de productie-extractie met een variant zonder de regel "rewrite in your own words" en zonder de 80-procent-grounding-poort, naast de bron-episodes. Gebouwd en gecompileerd (`go vet`), nog niet gedraaid: er zijn geen invoerbestand en geen API-sleutel. Aanleiding: fact 3204 draait het onderwerp om en de poort verwerpt juiste, zelfstandige zinnen uit het episode.
