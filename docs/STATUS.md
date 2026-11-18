@@ -652,3 +652,5 @@ What is left:
 - 2026-11-17: Settings heeft een Run now-knop (`POST /api/v1/consolidation/run`, Postgres-notify `cortexiq_run_now`) die een volledige ronde over alle namespaces start. Gebouwd en unit-getest, nog niet end-to-end of in de browser geprobeerd, niet uitgerold.
 
 - 2026-11-18: `internal/reasoner/factfidelity_test.go` (`-tags modeleval`, `TestFactFidelity`) vergelijkt de productie-extractie met een variant zonder de regel "rewrite in your own words" en zonder de 80-procent-grounding-poort, naast de bron-episodes. Gebouwd en gecompileerd (`go vet`), nog niet gedraaid: er zijn geen invoerbestand en geen API-sleutel. Aanleiding: fact 3204 draait het onderwerp om en de poort verwerpt juiste, zelfstandige zinnen uit het episode.
+
+- 2026-11-18: eerste meting met `TestFactFidelity` (21 episodes, een run per model): cijfertokens behouden van 171, productie / variant zonder regel en poort: DeepSeek-V4-Flash 139 / 142, gpt-oss-120b 117 / 126, Claude Opus 5.5 156 / 157. Het model weegt zwaarder dan de regel of de 80-procent-poort. Besluit over de reasoner en de poort staat open (doel 1 in CortexIQ); zie `walkthrough3.md`.
