@@ -658,3 +658,5 @@ What is left:
 - 2026-11-18: de extractieregel "rewrite in your own words" is vervangen door "behoud de woorden waar ze juist en zelfstandig zijn" en de grounding-poort in `validateFactGrounding` staat op 0,95 woordoverlap (`groundingMaxOverlap`, was 0,80). Nog niet uitgerold en nog niet hergemeten op productie; de hermeting op 21 episodes loopt. Zie `walkthrough3.md`.
 
 - 2026-11-18: hermeting van `TestFactFidelity` met promptregel en poort 0,95, cijfertokens behouden van 171 (eerste meting tussen haakjes): Opus 5.5 159 (156), DeepSeek-V4-Flash 141 (139), gpt-oss-120b 129 (117), Gemini 2.5 Flash 124 (niet eerder gemeten). Rapporten in `eval/fidelity-2026-11-18/hermeting-poort-095/`. De Hopscotch-route `deepinfra/…` gaf 503 en 402; controleer de reasoner-, triage- en critic-binding als die daarop staat.
+
+- 2026-11-18: de modeldialoog in Settings > Models heeft een doorzoekbare modelkiezer (prijs per miljoen tokens in en uit per rij, sorteren op prijs of naam, beschrijving die uitklapt), in de stijl van NightCompanion. Gebouwd en in de browser geprobeerd op een testpagina met nagebootste data; nog niet tegen de echte API, niet gecommit en niet uitgerold.

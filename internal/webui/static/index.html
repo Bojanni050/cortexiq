@@ -417,6 +417,68 @@ dialog textarea { min-height: 78px; resize: vertical; }
 .cfg-input::placeholder { color: var(--dim); font-family: inherit; }
 dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 dialog .err { color: var(--red); }
+dialog.wide { max-width: 46rem; }
+
+/* ---------- model picker (model dialog) ---------- */
+.mpick { position: relative; }
+.mpick-trigger {
+  display: flex; align-items: center; gap: .75rem; width: 100%; text-align: left;
+  background: var(--panel); color: var(--fg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: .625rem .8rem; cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+}
+.mpick-trigger:hover { border-color: var(--border-2); }
+.mpick-trigger[aria-expanded="true"] { border-color: var(--accent); box-shadow: 0 0 0 .2rem var(--accent-soft); }
+.mpick-price { flex: none; min-width: 7rem; text-align: right; color: var(--accent); font-weight: 600; font-size: .8rem; }
+.mpick-main { flex: 1; min-width: 0; }
+.mpick-name { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mpick-sub { display: block; color: var(--muted); font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mpick-chev {
+  flex: none; width: .45rem; height: .45rem; margin: 0 .2rem .2rem 0;
+  border-right: .125rem solid var(--muted); border-bottom: .125rem solid var(--muted); transform: rotate(45deg);
+  transition: transform .15s;
+}
+.mpick-trigger[aria-expanded="true"] .mpick-chev { transform: rotate(225deg); margin-bottom: 0; margin-top: .2rem; }
+.mpick-panel { margin-top: .5rem; border: 1px solid var(--border-2); border-radius: var(--radius-sm); background: var(--panel-2); padding: .6rem; }
+.mpick-panel[hidden] { display: none; }
+.mpick-bar { display: flex; gap: .5rem; align-items: center; }
+.mpick-bar input { flex: 1; min-width: 0; }
+.mpick-seg { display: inline-flex; flex: none; border: 1px solid var(--border-2); border-radius: var(--radius-sm); overflow: hidden; }
+.mpick-seg button { background: var(--panel); color: var(--muted); border: 0; padding: .6rem .8rem; cursor: pointer; font-weight: 550; font-size: .9rem; }
+.mpick-seg button + button { border-left: 1px solid var(--border-2); }
+.mpick-seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--fg); }
+.mpick-count { margin: .5rem .15rem; color: var(--dim); font-size: .8rem; }
+.mpick-list { display: grid; gap: .5rem; max-height: 22rem; overflow-y: auto; }
+.mpick-opt {
+  display: flex; gap: .75rem; padding: .6rem .75rem; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.mpick-opt.hi { border-color: var(--accent-line); background: var(--panel-3); }
+.mpick-opt[aria-selected="true"] { box-shadow: inset 0 0 0 1px var(--accent-line); }
+.mpick-rate { flex: none; width: 5.5rem; color: var(--muted); font-size: .8rem; line-height: 1.7; }
+.mpick-rate b { color: var(--accent); font-weight: 600; }
+.mpick-body { flex: 1; min-width: 0; padding-left: .75rem; border-left: 1px solid var(--border); }
+.mpick-title { font-weight: 600; overflow-wrap: anywhere; }
+.mpick-tags { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .3rem; }
+.mpick-tag { padding: 0 .5rem; border: 1px solid var(--border-2); border-radius: var(--radius); color: var(--muted); font-size: .72rem; line-height: 1.5; }
+.mpick-tag.prov { color: var(--accent-2); }
+.mpick-tag.warn { color: var(--red); }
+.mpick-desc { margin-top: .4rem; color: var(--muted); font-size: .82rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.mpick-desc.open { display: block; }
+.mpick-more { margin-top: .25rem; padding: 0; background: none; border: 0; color: var(--accent); cursor: pointer; font-size: .78rem; text-decoration: underline; text-underline-offset: .15em; }
+.mpick-empty { padding: .6rem .25rem; color: var(--muted); }
+@media (max-width: 36em) {
+  .mpick-trigger { flex-wrap: wrap; gap: .25rem .75rem; }
+  .mpick-price { min-width: 0; text-align: left; flex-basis: 100%; }
+  .mpick-main { flex-basis: 0; }
+  .mpick-bar { flex-wrap: wrap; }
+  .mpick-bar input { flex-basis: 100%; }
+  .mpick-seg { flex: 1; }
+  .mpick-seg button { flex: 1; }
+  .mpick-opt { flex-direction: column; gap: .35rem; }
+  .mpick-rate { display: flex; gap: .75rem; width: auto; }
+  .mpick-body { padding-left: 0; border-left: 0; }
+}
 #toast {
   position: fixed; bottom: 24px; right: 24px; padding: 12px 18px; border-radius: 12px;
   background: var(--panel-3); border: 1px solid var(--border-2); border-left: 3px solid var(--green);
@@ -2675,6 +2737,9 @@ function dlgClose() {
   // backdrop; put it back so later messages are visible again.
   document.body.appendChild(document.getElementById('toast'));
 }
+// The model dialog is wider than the others; Escape closes a dialog without
+// going through dlgClose, so the width is dropped on the close event.
+document.getElementById('dlg').addEventListener('close', () => document.getElementById('dlg').classList.remove('wide'));
 
 // Lifecycle is the audit trail of the two verbs that leave a record. They are
 // merged into one timeline because the question a reader has is "what happened
@@ -3918,37 +3983,196 @@ async function modelDialog(purpose) {
   let providers = [];
   try { providers = await api('/providers'); } catch (e) { toast(e.message, true); return; }
   if (!providers.length) { toast('Add a provider first', true); return; }
-  const opts = providers.map(p => `<option value="${esc(p.slug)}">${esc(p.name)}</option>`).join('');
+  // A model already chosen in this dashboard for the purpose is shown as picked,
+  // so the dialog opens on what is in use instead of on an empty choice.
+  let current = null;
+  try { current = (await api('/models')).find(p => p.purpose === purpose && p.source === 'dashboard') || null; } catch (e) {}
+  const opts = providers.map(p => `<option value="${esc(p.slug)}"${current && current.provider === p.slug ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
+  Object.assign(mp, { models: [], picked: current ? current.model : '', q: '', hi: 0, open: false });
   const d = document.getElementById('dlg');
+  d.classList.add('wide');
   d.innerHTML = `<h3>${esc(spec[1])} model</h3>
     <p class="muted">${esc(spec[2])}</p>
     <div class="label">Provider</div><select id="md-provider" style="width:100%" onchange="mdLoad()">${opts}</select>
     <div class="actions" style="margin:10px 0"><button onclick="mdLoad(true)">Fetch models</button></div>
-    <div class="label">Model</div><select id="md-model" style="width:100%" onchange="mdDetail()"><option value="">fetch the list first</option></select>
-    <div id="md-detail" class="muted" style="margin-top:10px"></div>
+    <div class="label">Model</div>
+    <div class="mpick" id="md-pick">
+      <input type="hidden" id="md-model" value="">
+      <button type="button" class="mpick-trigger" id="md-trigger" onclick="mpToggle()" aria-haspopup="listbox" aria-expanded="false"></button>
+      <div class="mpick-panel" id="md-panel" hidden>
+        <div class="mpick-bar">
+          <input id="md-q" type="search" placeholder="Search models" aria-label="Search models" autocomplete="off"
+            oninput="mpSearch(this.value)" onkeydown="mpKey(event)">
+          <div class="mpick-seg" role="group" aria-label="Sort models">
+            <button type="button" id="md-sort-cheapest" onclick="mpSort('cheapest')">Cheapest</button>
+            <button type="button" id="md-sort-name" onclick="mpSort('name')">A to Z</button>
+          </div>
+        </div>
+        <div class="mpick-count" id="md-count"></div>
+        <div class="mpick-list" id="md-list" role="listbox" aria-label="Models"></div>
+      </div>
+    </div>
     <div class="actions"><button onclick="dlgClose()">Cancel</button><button class="primary" onclick="mdSave('${purpose}')">Save</button>
       <button onclick="mdClear('${purpose}')">Use env</button></div>`;
   d.showModal();
+  mpTrigger();
   mdLoad();
 }
 async function mdLoad() {
   const slug = document.getElementById('md-provider').value;
-  const sel = document.getElementById('md-model');
   try {
-    const models = await api('/providers/' + encodeURIComponent(slug) + '/models');
-    sel.innerHTML = models.map(m => `<option value="${esc(m.id)}" title="${esc(m.description || '')}">${esc(modelLabel(m))}</option>`).join('') || '<option value="">no models returned</option>';
-    mdDetail();
+    mp.models = await api('/providers/' + encodeURIComponent(slug) + '/models');
   } catch (e) {
-    sel.innerHTML = '<option value="">could not fetch models</option>';
+    mp.models = [];
     toast(e.message, true);
   }
+  // A choice that this provider does not list cannot stay picked.
+  if (!mp.models.some(m => m.id === mp.picked)) mp.picked = '';
+  mp.q = ''; mp.hi = 0;
+  mpTrigger(); mpRender();
 }
-function mdDetail() {
-  const sel = document.getElementById('md-model');
-  const el = document.getElementById('md-detail');
-  const opt = sel.options[sel.selectedIndex];
-  el.textContent = opt ? (opt.title || '') : '';
+
+// The model picker. A <select> holding hundreds of ids cannot be searched or
+// sorted and says nothing about what a model costs, so the dialog uses a list
+// that shows the price per million tokens on every row, sorts by price or by
+// name, and filters as you type. The hidden #md-model carries the choice to Save.
+const mp = { models: [], picked: '', sort: 'cheapest', q: '', hi: 0, open: false, shown: [] };
+const MP_LIMIT = 100;
+function mpPrice(v) { return typeof v === 'number' && v > 0 ? (v < 0.01 ? '<$0.01' : '$' + v.toFixed(2)) : 'n/a'; }
+// A model with no published price sorts last: unpriced is not the same as free.
+function mpCost(m) { const t = (m.input_per_mtok || 0) + (m.output_per_mtok || 0); return t > 0 ? t : Infinity; }
+function mpProvider(id) { const i = id.indexOf('/'); return i > 0 ? id.slice(0, i) : ''; }
+function mpCtx(n) { return n >= 1000000 ? +(n / 1000000).toFixed(1) + 'M' : Math.round(n / 1000) + 'k'; }
+function mpSub(m) {
+  const bits = [];
+  if (mpProvider(m.id)) bits.push(mpProvider(m.id));
+  if (m.context) bits.push(mpCtx(m.context) + ' context');
+  bits.push('per million tokens, in / out');
+  return bits.join(' · ');
 }
+function mpVisible() {
+  const needle = mp.q.trim().toLowerCase();
+  const list = mp.models.filter(m => !needle
+    || m.id.toLowerCase().includes(needle)
+    || (m.description || '').toLowerCase().includes(needle)
+    || (m.capabilities || []).some(c => c.toLowerCase().includes(needle)));
+  return list.sort((a, b) => {
+    if (mp.sort === 'cheapest') {
+      const ca = mpCost(a), cb = mpCost(b);
+      if (ca !== cb) return ca < cb ? -1 : 1;
+    }
+    return a.id.localeCompare(b.id);
+  });
+}
+function mpTrigger() {
+  const t = document.getElementById('md-trigger');
+  if (!t) return;
+  const m = mp.models.find(x => x.id === mp.picked);
+  t.setAttribute('aria-expanded', mp.open ? 'true' : 'false');
+  const price = m ? esc(mpPrice(m.input_per_mtok)) + ' / ' + esc(mpPrice(m.output_per_mtok)) : '';
+  const main = m
+    ? `<span class="mpick-name">${esc(m.id)}</span><span class="mpick-sub">${esc(mpSub(m))}</span>`
+    : (mp.picked
+      ? `<span class="mpick-name">${esc(mp.picked)}</span><span class="mpick-sub">not in the fetched list</span>`
+      : `<span class="mpick-sub">${mp.models.length ? 'Select a model' : 'Fetch the list first'}</span>`);
+  t.innerHTML = `<span class="mpick-price">${price}</span><span class="mpick-main">${main}</span><span class="mpick-chev"></span>`;
+  document.getElementById('md-model').value = mp.picked;
+}
+function mpRender() {
+  const box = document.getElementById('md-list');
+  if (!box) return;
+  document.getElementById('md-sort-cheapest').setAttribute('aria-pressed', mp.sort === 'cheapest');
+  document.getElementById('md-sort-name').setAttribute('aria-pressed', mp.sort === 'name');
+  const all = mpVisible();
+  mp.shown = all.slice(0, MP_LIMIT);
+  if (mp.hi >= mp.shown.length) mp.hi = 0;
+  document.getElementById('md-count').textContent = all.length > MP_LIMIT
+    ? `Showing ${MP_LIMIT} of ${all.length} matches, type to narrow the list`
+    : `${all.length} of ${mp.models.length} models`;
+  box.innerHTML = mp.shown.length ? mp.shown.map((m, i) => {
+    const desc = (m.description || '').trim();
+    const caps = (m.capabilities || []).slice(0, 5).map(c => `<span class="mpick-tag">${esc(c)}</span>`).join('');
+    return `<div class="mpick-opt${i === mp.hi ? ' hi' : ''}" role="option" id="mp-o${i}" aria-selected="${m.id === mp.picked}"
+        onmousedown="mpPick(event, ${i})" onmouseenter="mpHover(${i})">
+      <div class="mpick-rate"><div>in <b>${esc(mpPrice(m.input_per_mtok))}</b></div><div>out <b>${esc(mpPrice(m.output_per_mtok))}</b></div></div>
+      <div class="mpick-body">
+        <div class="mpick-title">${esc(m.id)}</div>
+        <div class="mpick-tags">
+          ${mpProvider(m.id) ? `<span class="mpick-tag prov">${esc(mpProvider(m.id))}</span>` : ''}
+          ${m.context ? `<span class="mpick-tag">${mpCtx(m.context)} ctx</span>` : ''}
+          ${caps}
+          ${m.deprecated ? `<span class="mpick-tag warn">deprecated${m.replaced_by ? ', use ' + esc(m.replaced_by) : ''}</span>` : ''}
+        </div>
+        ${desc ? `<div class="mpick-desc" id="mp-d${i}">${esc(desc)}</div>` : ''}
+        ${desc.length > 110 ? `<button type="button" class="mpick-more" id="mp-m${i}" onmousedown="mpMore(event, ${i})">Read more</button>` : ''}
+      </div>
+    </div>`;
+  }).join('') : '<div class="mpick-empty">No models match</div>';
+}
+function mpToggle() { mp.open ? mpClose() : mpOpen(); }
+function mpOpen() {
+  mp.open = true; mp.q = '';
+  document.getElementById('md-panel').hidden = false;
+  const input = document.getElementById('md-q');
+  input.value = '';
+  // Start on the model already picked, when it is among the rows shown.
+  mp.hi = 0;
+  mpRender();
+  const at = mp.shown.findIndex(m => m.id === mp.picked);
+  if (at > 0) { mp.hi = at; mpRender(); }
+  mpTrigger();
+  input.focus();
+  const row = document.getElementById('mp-o' + mp.hi);
+  if (row) row.scrollIntoView({ block: 'nearest' });
+}
+function mpClose() {
+  mp.open = false;
+  const p = document.getElementById('md-panel');
+  if (p) p.hidden = true;
+  mpTrigger();
+}
+function mpSearch(v) { mp.q = v; mp.hi = 0; mpRender(); }
+function mpSort(mode) { mp.sort = mode; mp.hi = 0; mpRender(); }
+function mpHover(i) {
+  mp.hi = i;
+  document.querySelectorAll('#md-list .mpick-opt').forEach((el, n) => el.classList.toggle('hi', n === i));
+}
+function mpPick(ev, i) {
+  ev.preventDefault();
+  const m = mp.shown[i];
+  if (!m) return;
+  mp.picked = m.id;
+  mpClose();
+}
+function mpMore(ev, i) {
+  ev.preventDefault(); ev.stopPropagation();
+  const d = document.getElementById('mp-d' + i), b = document.getElementById('mp-m' + i);
+  if (!d || !b) return;
+  const open = d.classList.toggle('open');
+  b.textContent = open ? 'Show less' : 'Read more';
+}
+function mpKey(ev) {
+  const n = mp.shown.length;
+  if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+    ev.preventDefault();
+    if (!n) return;
+    mpHover((mp.hi + (ev.key === 'ArrowDown' ? 1 : n - 1)) % n);
+    const row = document.getElementById('mp-o' + mp.hi);
+    if (row) row.scrollIntoView({ block: 'nearest' });
+  } else if (ev.key === 'Enter') {
+    ev.preventDefault();
+    mpPick(ev, mp.hi);
+  } else if (ev.key === 'Escape') {
+    // Close the list, not the dialog around it.
+    ev.preventDefault(); ev.stopPropagation();
+    mpClose();
+    document.getElementById('md-trigger').focus();
+  }
+}
+document.addEventListener('mousedown', ev => {
+  const pick = document.getElementById('md-pick');
+  if (mp.open && pick && !pick.contains(ev.target)) mpClose();
+});
 async function mdSave(purpose) {
   const provider = document.getElementById('md-provider').value;
   const model = document.getElementById('md-model').value;
