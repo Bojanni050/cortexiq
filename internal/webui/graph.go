@@ -63,6 +63,28 @@ func (h *Handler) timeline(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tl)
 }
 
+// relationshipItem acts on one relation from the Clean-up tab.
+// POST /api/v1/relationships/{id}/dismiss removes it (soft delete).
+func (h *Handler) relationshipItem(w http.ResponseWriter, r *http.Request) {
+	id, action, err := pathID(r)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if action != "dismiss" {
+		writeErr(w, http.StatusNotFound, errors.New("unknown action"))
+		return
+	}
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	if !hdl(w, h.Brain.DismissRelationship(r.Context(), id)) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "message": "Relation removed"})
+}
+
 // cleanup reports where the memory is untidy, for the Clean-up tab. Read only.
 // Query: namespaces, min_confidence (relations below it are weak, default 0.8),
 // limit (rows per list).

@@ -136,6 +136,32 @@ func TestCleanupRejectsBadInput(t *testing.T) {
 	}
 }
 
+// Removing a relation is the one write on the Clean-up tab, so everything that is
+// not a well-formed POST to .../dismiss must be refused before it reaches the brain.
+func TestRelationshipItemRejectsBadRequests(t *testing.T) {
+	mux := http.NewServeMux()
+	(&Handler{}).Register(mux)
+
+	tests := []struct {
+		method, path string
+		want         int
+	}{
+		{http.MethodPost, "/api/v1/relationships/abc/dismiss", http.StatusBadRequest},
+		{http.MethodPost, "/api/v1/relationships/0/dismiss", http.StatusBadRequest},
+		{http.MethodPost, "/api/v1/relationships/7/explode", http.StatusNotFound},
+		{http.MethodPost, "/api/v1/relationships/7", http.StatusNotFound},
+		{http.MethodGet, "/api/v1/relationships/7/dismiss", http.StatusMethodNotAllowed},
+		{http.MethodDelete, "/api/v1/relationships/7/dismiss", http.StatusMethodNotAllowed},
+	}
+	for _, tc := range tests {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
+		if rec.Code != tc.want {
+			t.Errorf("%s %s = %d, want %d", tc.method, tc.path, rec.Code, tc.want)
+		}
+	}
+}
+
 func TestPathID(t *testing.T) {
 	tests := []struct {
 		path       string

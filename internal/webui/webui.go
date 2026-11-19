@@ -104,6 +104,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/graph", h.graph)
 	api.HandleFunc("/api/v1/timeline", h.timeline)
 	api.HandleFunc("/api/v1/cleanup", h.cleanup)
+	api.HandleFunc("/api/v1/relationships/", h.relationshipItem)
 	api.HandleFunc("/api/v1/stats", h.stats)
 	api.HandleFunc("/api/v1/settings/schedule", h.schedule)
 	api.HandleFunc("/api/v1/consolidation/run", h.consolidationRun)
@@ -213,7 +214,8 @@ func errStatus(err error) int {
 	case errors.Is(err, brain.ErrAlreadyRetracted),
 		errors.Is(err, brain.ErrExternalKeyExists):
 		return http.StatusConflict
-	case errors.Is(err, brain.ErrExternalKeyNotFound):
+	case errors.Is(err, brain.ErrExternalKeyNotFound),
+		errors.Is(err, brain.ErrRelationshipNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, llmreg.ErrProviderNotFound):
 		return http.StatusNotFound

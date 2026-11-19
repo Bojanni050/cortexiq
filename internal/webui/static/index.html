@@ -3724,6 +3724,21 @@ async function loadCleanup() {
   drawCleanup();
 }
 
+async function cleanupDismiss(id) {
+  const d = cleanupState.data;
+  const w = d && d.weak.find(x => x.id === id);
+  if (!w) return;
+  if (!confirm(`Remove "${w.from} ${w.type} ${w.to}" from the graph? The fact behind it stays.`)) return;
+  try {
+    await api(`/relationships/${id}/dismiss`, { method: 'POST', body: '{}' });
+  } catch (e) { toast(e.message, true); return; }
+  d.weak = d.weak.filter(x => x.id !== id);
+  d.weak_total = Math.max(0, d.weak_total - 1);
+  d.totals.relations = Math.max(0, d.totals.relations - 1);
+  toast('Relation removed');
+  drawCleanup();
+}
+
 function cleanupSet(key, value) {
   cleanupState[key] = value;
   if (key === 'minConf') { loadCleanup(); return; }
@@ -3752,12 +3767,13 @@ function drawCleanup() {
 
   const islandRows = d.islands.map(i => `<tr><td>${esc(i.entity)}</td><td class="num">${i.facts}</td></tr>`);
   const weakRows = d.weak.map(w => `<tr><td>${esc(w.from)}</td><td><span class="mono">${esc(w.type)}</span></td><td>${esc(w.to)}</td><td class="num">${pct(w.confidence)}</td>` +
-    `<td class="cl-fact muted"${w.fact_id ? ` data-id="${w.fact_id}">#${w.fact_id}` : '>none'}</td></tr>`);
+    `<td class="cl-fact muted"${w.fact_id ? ` data-id="${w.fact_id}">#${w.fact_id}` : '>none'}</td>` +
+    `<td><button class="btn" title="Remove this relation from the graph. The fact it came from stays." onclick="cleanupDismiss(${w.id})">Remove</button></td></tr>`);
   const typeRows = d.unmapped.map(u => `<tr><td><span class="mono">${esc(u.type)}</span></td><td class="num">${u.count}</td>` +
     `<td class="muted">${u.spellings.length > 1 ? u.spellings.map(esc).join(', ') : ''}</td></tr>`);
 
   body.innerHTML = `
-    <p class="cl-note">Read only: nothing here changes your data. Spelling cannot find real aliases, such as a person named in full in one place and by first name in another, so those still need your eye.</p>
+    <p class="cl-note">Nothing changes until you press Remove on a weak relation, which takes that one relation out of the graph and leaves the fact behind it alone. Spelling cannot find real aliases, such as a person named in full in one place and by first name in another, so those still need your eye.</p>
     <div class="cl-grid">
       ${tile('Spelled several ways', d.duplicate_total, 'groups of entity names that look like one')}
       ${tile('Entities without relations', d.island_total, `of ${t.fact_entities} entities that facts mention`)}
@@ -3776,7 +3792,7 @@ function drawCleanup() {
     <div class="card"><h3>Weak relations <span class="muted">${of(d.weak.length, d.weak_total)}</span></h3>
       <div class="toolbar"><label class="muted">Below <select onchange="cleanupSet('minConf',Number(this.value))">
         ${[0.6, 0.7, 0.8, 0.9].map(v => `<option value="${v}"${cleanupState.minConf === v ? ' selected' : ''}>${Math.round(v * 100)}%</option>`).join('')}</select></label></div>
-      ${table(['From', 'Type', 'To', 'Confidence', 'Source fact'], weakRows)}</div>
+      ${table(['From', 'Type', 'To', 'Confidence', 'Source fact', ''], weakRows)}</div>
 
     <div class="card"><h3>Relation wordings never normalised <span class="muted">${of(d.unmapped.length, d.unmapped_total)}</span></h3>
       <p class="muted" style="margin:0 0 8px">Wordings that only differ in punctuation (for example "pushed to" and "pushed_to") count as one.</p>

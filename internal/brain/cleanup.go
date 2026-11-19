@@ -2,11 +2,35 @@ package brain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"unicode"
 )
+
+// ErrRelationshipNotFound means there is no live relation with that id: it never
+// existed, or it was already removed.
+var ErrRelationshipNotFound = errors.New("brain: relationship not found")
+
+// DismissRelationship removes one relation from the graph the way consolidation
+// does: it sets deleted_at and leaves the row, so the removal can be undone with
+// `UPDATE relationships SET deleted_at = NULL WHERE id = ...`. The fact the
+// relation came from is not touched; use RetractFact when the fact itself is wrong.
+func (b *Brain) DismissRelationship(ctx context.Context, id int64) error {
+	if err := requireWrite(ctx); err != nil {
+		return err
+	}
+	tag, err := b.pool.Exec(ctx,
+		`UPDATE relationships SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		return fmt.Errorf("dismiss relationship: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrRelationshipNotFound
+	}
+	return nil
+}
 
 const (
 	defaultCleanupLimit = 100
