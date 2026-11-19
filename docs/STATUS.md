@@ -4,7 +4,7 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-11-17, after the `v0.1.90` deploy.
+Last updated: 2026-11-19, after the `v0.1.92` deploy.
 
 ## Build
 
@@ -163,7 +163,7 @@ checkpoint moves on instead of freezing the namespace.
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  a single VPS, in `/opt/cortexiq`, currently `v0.1.90`. That is the version the
+  a single VPS, in `/opt/cortexiq`, currently `v0.1.92`. That is the version the
   binary reports: `docker compose exec -T cortexiq /cortexiq version` (the image is
   distroless, so there is no shell and no `cortexiq` on `PATH`). Postgres 17 with
   pgvector and pg_textsearch, plus a local Ollama for embeddings, sit beside them and
@@ -662,3 +662,5 @@ What is left:
 - 2026-11-18: de modeldialoog in Settings > Models heeft een doorzoekbare modelkiezer (prijs per miljoen tokens in en uit per rij, sorteren op prijs of naam, beschrijving die uitklapt), in de stijl van NightCompanion. Gebouwd en in de browser geprobeerd op een testpagina met nagebootste data; nog niet tegen de echte API, niet gecommit en niet uitgerold.
 
 - 2026-11-19: triage heeft een eigen uitvoerlimiet `CORTEXIQ_TRIAGE_MAX_TOKENS` (standaard 200, ook voor een dashboard-binding); `CORTEXIQ_REASONER_MAX_TOKENS` gold nooit voor triage. De "used all N output tokens"-fout noemt nu de limiet die voor die client geldt. Nog niet uitgerold: de compose op de server moet de variabele eerst doorgeven, en bij een reasoning-model als triage (gpt-5-nano) zet je hem op ~1024 of bind je een model zonder reasoning.
+
+- 2026-11-19: `v0.1.92` uitgerold (de970af). Op de server staat `CORTEXIQ_TRIAGE_MAX_TOKENS=1024` in `.env` en de compose geeft de variabele door; back-ups `.env.bak-pre0.1.92` en `docker-compose.prod.yml.bak-pre0.1.92`, dump `backups/cortexiq-20261119T091802Z.dump`. Nog te zien: of de triage-fout bij `gpt-5-nano` uitblijft in de Runs-tab.
