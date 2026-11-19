@@ -4,7 +4,7 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-11-19, after the `v0.1.93` deploy.
+Last updated: 2026-11-19, after the `v0.1.94` deploy.
 
 ## Build
 
@@ -163,7 +163,7 @@ checkpoint moves on instead of freezing the namespace.
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  a single VPS, in `/opt/cortexiq`, currently `v0.1.93`. That is the version the
+  a single VPS, in `/opt/cortexiq`, currently `v0.1.94`. That is the version the
   binary reports: `docker compose exec -T cortexiq /cortexiq version` (the image is
   distroless, so there is no shell and no `cortexiq` on `PATH`). Postgres 17 with
   pgvector and pg_textsearch, plus a local Ollama for embeddings, sit beside them and
@@ -672,3 +672,5 @@ What is left:
 - 2026-11-19: `v0.1.93` uitgerold (e2d5bf8) met de Remove- en Keep-knoppen op het Clean-up-scherm. Geen nieuwe migratie of omgevingsvariabele. Back-ups: `.env.bak-pre0.1.93`, dump `backups/cortexiq-20261119T102933Z.dump`. De knoppen zijn nog niet in de echte UI geprobeerd.
 
 - 2026-11-19: op het Clean-up-scherm opent een klik op een term (spellingvariant of eiland-entiteit) de contextkolom met de feiten, relaties en bronepisodes van precies die spelling (`GET /api/v1/entities/context`, `Brain.EntityContext`, tot 50 per lijst met het echte totaal). Een feit of episode erin opent de gewone detailweergave. Nog niet uitgerold.
+
+- 2026-11-19: `v0.1.94` uitgerold (a1d995c) met de context van een term op het Clean-up-scherm. Geen migratie of nieuwe omgevingsvariabele. Back-ups: `.env.bak-pre0.1.94`, geverifieerde dump `backups/cortexiq-20261119T104711Z.dump` (genomen direct na de uitrol; er is geen migratie, dus de database was identiek). De eerste dump van deze uitrol is verwijderd omdat mijn eigen `head -1` het script afbrak voor de verificatie.
