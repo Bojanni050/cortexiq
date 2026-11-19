@@ -1041,3 +1041,9 @@ voor de regel dat er na 1000 regels een nieuw walkthrough-bestand komt.
 - Findings: de Remove- en Keep-knoppen op het Clean-up-scherm stonden op main maar nog niet op de server.
 - Conclusions: volgorde als bij v0.1.92 (Release-workflow groen, pull met tag inline, containers stoppen, geverifieerde dump, tag bump, up -d). Er is geen nieuwe configuratie nodig, dus alleen de tag verandert.
 - Actions: release `v0.1.93`, VPS `/opt/cortexiq/.env` (tag), `docs/STATUS.md`; validated: `cortexiq version` meldt v0.1.93 (e2d5bf8), beide containers op 0.1.93, geen fouten in de laatste 40 logregels. De knoppen zelf zijn niet in de draaiende UI geprobeerd.
+
+## 2026-11-19 (Context bij een term op het Clean-up-scherm)
+
+- Findings: om een samenvoeging te controleren moet je kunnen zien wat achter een spelling zit; het scherm toonde alleen aantallen ("5 facts · 5 rel.").
+- Conclusions: de bestaande contextkolom (`ctxShow`, `factMini`, `episodeMini`, `pickFact`) hergebruikt, zodat het er hetzelfde uitziet en werkt als bij feiten en episodes. De zoekopdracht matcht de spelling exact (alleen spaties eraf), anders zouden de aantallen in de lijst niet kloppen met wat de kolom toont en lekt "hermes-agent" in "Hermes agent". Episodes komen via `fact_sources` van de feiten die de spelling noemen en van de feiten waaruit haar relaties zijn gelezen.
+- Actions: `internal/brain/entity_context.go` (EntityContext, ErrEntityNameRequired), `internal/webui/graph.go` (entityContext), `internal/webui/webui.go` (route, 400-koppeling), `internal/webui/static/index.html` (termen als knop, cleanupInspect, tip voor het cleanup-tabblad, twee CSS-regels), `webui_test.go`, `entity_context_integration_test.go`, `docs/STATUS.md`; validated: `go vet` en `go test` op brain en webui groen, `node --check` op het dashboardscript, integratietest loopt in CI. Niet in een browser bekeken.

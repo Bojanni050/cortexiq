@@ -106,6 +106,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/cleanup", h.cleanup)
 	api.HandleFunc("/api/v1/relationships/", h.relationshipItem)
 	api.HandleFunc("/api/v1/entities/merge", h.mergeEntities)
+	api.HandleFunc("/api/v1/entities/context", h.entityContext)
 	api.HandleFunc("/api/v1/stats", h.stats)
 	api.HandleFunc("/api/v1/settings/schedule", h.schedule)
 	api.HandleFunc("/api/v1/consolidation/run", h.consolidationRun)
@@ -207,7 +208,8 @@ func errStatus(err error) int {
 		errors.Is(err, brain.ErrReasonRequired),
 		errors.Is(err, brain.ErrInvalidExternalKey),
 		errors.Is(err, brain.ErrSupersedesNeedsKey),
-		errors.Is(err, brain.ErrMergeInvalid):
+		errors.Is(err, brain.ErrMergeInvalid),
+		errors.Is(err, brain.ErrEntityNameRequired):
 		return http.StatusBadRequest
 	case errors.Is(err, brain.ErrResolutionRequired):
 		return http.StatusBadRequest

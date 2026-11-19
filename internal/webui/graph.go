@@ -85,6 +85,37 @@ func (h *Handler) relationshipItem(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "message": "Relation removed"})
 }
 
+// entityContext returns the facts, relations and source episodes behind one
+// spelling of an entity, for the Clean-up tab's context column.
+// GET /api/v1/entities/context?namespaces=...&name=...&limit=...
+func (h *Handler) entityContext(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	c, err := h.Brain.EntityContext(r.Context(), namespacesParam(r), r.URL.Query().Get("name"), intQuery(r, "limit"))
+	if !hdl(w, err) {
+		return
+	}
+	facts := make([]factJSON, 0, len(c.Facts))
+	for _, f := range c.Facts {
+		facts = append(facts, factToJSON(f))
+	}
+	episodes := make([]episodeJSON, 0, len(c.Episodes))
+	for _, e := range c.Episodes {
+		episodes = append(episodes, episodeToJSON(e))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"name":            c.Name,
+		"facts":           facts,
+		"facts_total":     c.FactsTotal,
+		"relations":       c.Relations,
+		"relations_total": c.RelationsTotal,
+		"episodes":        episodes,
+		"episodes_total":  c.EpisodesTotal,
+	})
+}
+
 // mergeEntities folds spellings of one entity into the one to keep, for the
 // Clean-up tab. POST /api/v1/entities/merge?namespaces=... with
 // {"keep": "...", "variants": ["..."], "dry_run": true|false}. A dry run reports
