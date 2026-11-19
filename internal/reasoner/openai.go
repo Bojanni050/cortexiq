@@ -58,6 +58,16 @@ type OpenAI struct {
 	model     string
 	maxTokens int
 	jsonMode  bool
+	// limitEnv names the setting that governs maxTokens for this client, so the
+	// "raise ..." hint points at the limit that really applies.
+	limitEnv string
+}
+
+// WithLimitEnv names the environment variable that sets this client's output
+// limit; the out-of-tokens error then points at it instead of the reasoner's.
+func (o *OpenAI) WithLimitEnv(name string) *OpenAI {
+	o.limitEnv = name
+	return o
 }
 
 func NewOpenAI(baseURL, apiKey, model string, maxTokens int, jsonMode bool) (*OpenAI, error) {
@@ -135,7 +145,11 @@ func (o *OpenAI) chat(ctx context.Context, stage string, msgs []openai.ChatCompl
 	// hits the same wall.
 	if content == "" && choice.FinishReason == "length" {
 		if o.maxTokens > 0 {
-			return "", fmt.Errorf("reasoner: %s used all %d output tokens without answering (a reasoning model counts its thoughts against max_tokens); raise CORTEXIQ_REASONER_MAX_TOKENS", o.model, o.maxTokens)
+			env := o.limitEnv
+			if env == "" {
+				env = "CORTEXIQ_REASONER_MAX_TOKENS"
+			}
+			return "", fmt.Errorf("reasoner: %s used all %d output tokens without answering (a reasoning model counts its thoughts against max_tokens); raise %s or bind a non-reasoning model", o.model, o.maxTokens, env)
 		}
 		return "", fmt.Errorf("reasoner: %s hit the provider's output limit without answering; raise the model's output limit", o.model)
 	}

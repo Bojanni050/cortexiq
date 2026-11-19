@@ -128,4 +128,15 @@ func TestChatNamesTheBudgetWhenTheModelAnswersNothing(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "1024 output tokens") {
 		t.Fatalf("want an error naming the limit, got %v", err)
 	}
+	if !strings.Contains(err.Error(), "CORTEXIQ_REASONER_MAX_TOKENS") {
+		t.Fatalf("default hint should name the reasoner limit, got %v", err)
+	}
+
+	// A client with its own limit must point at that one: triage ignores the
+	// reasoner's setting, so naming it sent people to a knob that did nothing.
+	o.WithLimitEnv("CORTEXIQ_TRIAGE_MAX_TOKENS")
+	_, err = o.Chat(context.Background(), []ChatMessage{{Role: "user", Content: "hi"}})
+	if err == nil || !strings.Contains(err.Error(), "CORTEXIQ_TRIAGE_MAX_TOKENS") || strings.Contains(err.Error(), "REASONER") {
+		t.Fatalf("want the triage limit named, got %v", err)
+	}
 }

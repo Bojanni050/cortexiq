@@ -59,6 +59,7 @@ x-cortexiq-env: &cortexiq-env
   CORTEXIQ_CONTRADICTION_REVIEW_THRESHOLD: ${CORTEXIQ_CONTRADICTION_REVIEW_THRESHOLD:-0}
   CORTEXIQ_RRF_K: ${CORTEXIQ_RRF_K:-60}
   CORTEXIQ_TRIAGE_LOG: ${CORTEXIQ_TRIAGE_LOG:-false}
+  CORTEXIQ_TRIAGE_MAX_TOKENS: ${CORTEXIQ_TRIAGE_MAX_TOKENS:-200}
 
 services:
   # PostgreSQL 17 + pgvector + pg_textsearch, published by the release workflow

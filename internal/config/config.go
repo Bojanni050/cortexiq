@@ -50,6 +50,12 @@ type Config struct {
 	ReasonerMaxTokens int  `env:"CORTEXIQ_REASONER_MAX_TOKENS" envDefault:"8192"`
 	ReasonerJSONMode  bool `env:"CORTEXIQ_REASONER_JSON_MODE" envDefault:"false"`
 
+	// TriageMaxTokens caps the triage verdict, separately from the reasoner: a
+	// verdict is one short sentence, so the default stays small. A reasoning model
+	// bound to triage (e.g. gpt-5-nano) spends it on thoughts and answers nothing;
+	// raise this (try 1024) or bind a non-reasoning model.
+	TriageMaxTokens int `env:"CORTEXIQ_TRIAGE_MAX_TOKENS" envDefault:"200"`
+
 	// The cost estimate reads its prices from the provider catalogue, so there
 	// is no price table to configure here any more.
 

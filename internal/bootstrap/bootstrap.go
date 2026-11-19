@@ -221,12 +221,12 @@ func New(ctx context.Context) (*Context, error) {
 	// (everything durable) is always a safe degradation — but a bad model name
 	// would fail on every run, so a construction error still stops startup.
 	if cfg.TriageModel != "" {
-		triage, err := reasoner.NewOpenAI(cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.TriageModel, triageMaxTokens, true)
+		triage, err := reasoner.NewOpenAI(cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.TriageModel, triageTokens(cfg), true)
 		if err != nil {
 			pool.Close()
 			return nil, fmt.Errorf("build triage reasoner: %w", err)
 		}
-		br.SetTriage(triage)
+		br.SetTriage(triage.WithLimitEnv(triageLimitEnv))
 	}
 
 	// The critic argues the other side of a hypothesis. It is built from its own
@@ -376,6 +376,17 @@ func buildEmbedder(cfg *config.Config) (embedder.Embedder, error) {
 // sentence. Anything longer is a model that ignored the schema.
 const triageMaxTokens = 200
 
+const triageLimitEnv = "CORTEXIQ_TRIAGE_MAX_TOKENS"
+
+// triageTokens is the configured triage cap, falling back to the built-in
+// default when the setting is absent or not positive.
+func triageTokens(cfg *config.Config) int {
+	if cfg.TriageMaxTokens > 0 {
+		return cfg.TriageMaxTokens
+	}
+	return triageMaxTokens
+}
+
 func buildReasoner(cfg *config.Config) (reasoner.Reasoner, error) {
 	return reasoner.NewOpenAI(
 		cfg.OpenAIBaseURL,
@@ -418,7 +429,7 @@ func applyModelBindings(ctx context.Context, pool *pgxpool.Pool, br *brain.Brain
 		if purpose == llmreg.PurposeTriage {
 			// Triage always asks for JSON: it is a single short verdict, and the
 			// environment path builds it that way too.
-			maxTokens = triageMaxTokens
+			maxTokens = triageTokens(cfg)
 			jsonMode = true
 		}
 		// JSON mode follows the deployment's setting, exactly as the environment
@@ -432,7 +443,7 @@ func applyModelBindings(ctx context.Context, pool *pgxpool.Pool, br *brain.Brain
 		}
 		switch purpose {
 		case llmreg.PurposeTriage:
-			br.SetTriage(client)
+			br.SetTriage(client.WithLimitEnv(triageLimitEnv))
 		case llmreg.PurposeCritic:
 			br.SetCritic(client, b.Model)
 		default:
