@@ -4,7 +4,7 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-11-19, after the `v0.1.92` deploy.
+Last updated: 2026-11-19, after the `v0.1.93` deploy.
 
 ## Build
 
@@ -163,7 +163,7 @@ checkpoint moves on instead of freezing the namespace.
 ## What runs where
 
 - Production: the `cortexiq-cortexiq-1` and `cortexiq-cortexiq-ui-1` containers on
-  a single VPS, in `/opt/cortexiq`, currently `v0.1.92`. That is the version the
+  a single VPS, in `/opt/cortexiq`, currently `v0.1.93`. That is the version the
   binary reports: `docker compose exec -T cortexiq /cortexiq version` (the image is
   distroless, so there is no shell and no `cortexiq` on `PATH`). Postgres 17 with
   pgvector and pg_textsearch, plus a local Ollama for embeddings, sit beside them and
@@ -668,3 +668,5 @@ What is left:
 - 2026-11-19: het Clean-up-scherm is niet meer alleen-lezen: elke rij bij Weak relations heeft een Remove-knop (`POST /api/v1/relationships/{id}/dismiss`, `Brain.DismissRelationship`). Het is een zachte verwijdering (`deleted_at`), het bronfeit blijft staan en terugzetten kan met `UPDATE relationships SET deleted_at = NULL WHERE id = ...`. Alleen-lezen-tokens krijgen 403. Nog niet uitgerold. Samenvoegen van spellingvarianten bestaat niet; dat blijft de CLI-opdracht voor entiteiten.
 
 - 2026-11-19: het Clean-up-scherm kan spellingvarianten samenvoegen: bij elke variant staat een Keep-knop die de andere spellingen van die groep naar deze hernoemt (`POST /api/v1/entities/merge`, `Brain.MergeEntities`). Eerst een dry run voor de bevestiging (aantallen feiten, relaties, duplicaten, zelfverwijzers), dan de echte run in één transactie. Herschreven worden `facts.entity` en beide kanten van `relationships`; identieke relaties vallen samen (zacht verwijderd, de zekerste blijft), relaties van een entiteit naar zichzelf verdwijnen. Feitteksten, embeddings, `contradictions` en `patterns.source_entities` blijven ongemoeid. Niet terug te draaien vanuit het scherm. Nog niet uitgerold.
+
+- 2026-11-19: `v0.1.93` uitgerold (e2d5bf8) met de Remove- en Keep-knoppen op het Clean-up-scherm. Geen nieuwe migratie of omgevingsvariabele. Back-ups: `.env.bak-pre0.1.93`, dump `backups/cortexiq-20261119T102933Z.dump`. De knoppen zijn nog niet in de echte UI geprobeerd.
