@@ -162,6 +162,25 @@ func TestRelationshipItemRejectsBadRequests(t *testing.T) {
 	}
 }
 
+// Merging rewrites facts, so only a well-formed POST may reach the brain.
+func TestMergeEntitiesRejectsBadRequests(t *testing.T) {
+	mux := http.NewServeMux()
+	(&Handler{}).Register(mux)
+
+	for _, m := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(m, "/api/v1/entities/merge", nil))
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s /entities/merge = %d, want 405", m, rec.Code)
+		}
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/entities/merge", strings.NewReader("not json")))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("bad body = %d, want 400", rec.Code)
+	}
+}
+
 func TestPathID(t *testing.T) {
 	tests := []struct {
 		path       string

@@ -85,6 +85,31 @@ func (h *Handler) relationshipItem(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "message": "Relation removed"})
 }
 
+// mergeEntities folds spellings of one entity into the one to keep, for the
+// Clean-up tab. POST /api/v1/entities/merge?namespaces=... with
+// {"keep": "...", "variants": ["..."], "dry_run": true|false}. A dry run reports
+// what would change and changes nothing.
+func (h *Handler) mergeEntities(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+		return
+	}
+	var body struct {
+		Keep     string   `json:"keep"`
+		Variants []string `json:"variants"`
+		DryRun   bool     `json:"dry_run"`
+	}
+	if err := readBody(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	rep, err := h.Brain.MergeEntities(r.Context(), namespacesParam(r), body.Keep, body.Variants, body.DryRun)
+	if !hdl(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, rep)
+}
+
 // cleanup reports where the memory is untidy, for the Clean-up tab. Read only.
 // Query: namespaces, min_confidence (relations below it are weak, default 0.8),
 // limit (rows per list).

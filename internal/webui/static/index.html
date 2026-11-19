@@ -582,6 +582,8 @@ dialog.wide { max-width: 46rem; }
 .cl-kind.q { color: var(--red); border-color: var(--red); }
 .cl-v { padding: 2px 8px; border-radius: 6px; background: var(--hover); font-size: 12.5px; }
 .cl-v small { margin-left: 6px; color: var(--muted); }
+.cl-keep { margin-left: 8px; padding: 0 7px; border: 1px solid var(--border-2); border-radius: 5px; background: transparent; color: var(--accent); font-size: 11px; cursor: pointer; }
+.cl-keep:hover { background: var(--panel-3); }
 .cl-fact { max-width: 420px; }
 .card .none { padding: 8px 0; color: var(--dim); font-size: 13px; }
 .tl-legend { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 10px; font-size: 12px; color: var(--muted); }
@@ -3724,6 +3726,32 @@ async function loadCleanup() {
   drawCleanup();
 }
 
+// cleanupMerge makes the other spellings of a group read as the one whose Keep
+// button was pressed. It asks the server for a dry run first, so the confirmation
+// says how many facts and relations will change before anything does.
+async function cleanupMerge(gi, vi) {
+  const g = cleanupState.data && cleanupState.data.duplicates[gi];
+  if (!g || !g.variants[vi]) return;
+  const keep = g.variants[vi].name;
+  const others = g.variants.filter((_, i) => i !== vi).map(v => v.name);
+  const q = nsQS('');
+  const call = dry => api('/entities/merge' + q, { method: 'POST', body: JSON.stringify({ keep, variants: others, dry_run: dry }) });
+  let plan;
+  try { plan = await call(true); } catch (e) { toast(e.message, true); return; }
+  const lines = [
+    `Rename ${others.map(o => `"${o}"`).join(', ')} to "${keep}"?`,
+    '',
+    `${plan.facts} fact${plan.facts === 1 ? '' : 's'} and ${plan.relations} relation end${plan.relations === 1 ? '' : 's'} change.`,
+  ];
+  if (plan.duplicates || plan.self_loops) lines.push(`${plan.duplicates} duplicate and ${plan.self_loops} self-pointing relation${plan.duplicates + plan.self_loops === 1 ? '' : 's'} are removed.`);
+  if (g.kind === 'qualifier') lines.push('', 'These spellings differ by a note or a leading "the": make sure they are the same thing.');
+  lines.push('', 'Fact texts stay as they are. This cannot be undone from here.');
+  if (!confirm(lines.join('\n'))) return;
+  try { await call(false); } catch (e) { toast(e.message, true); return; }
+  toast(`Merged into "${keep}"`);
+  await loadCleanup();
+}
+
 async function cleanupDismiss(id) {
   const d = cleanupState.data;
   const w = d && d.weak.find(x => x.id === id);
@@ -3761,8 +3789,10 @@ function drawCleanup() {
     .map(([k, label, n]) => `<button class="chip${cleanupState.kind === k ? ' on' : ''}" onclick="cleanupSet('kind','${k}')">${esc(label)} <span class="muted">${n}</span></button>`).join('');
   const dupHtml = shown.map(g => {
     const [label, cls, why] = CLEANUP_KINDS[g.kind];
+    const gi = d.duplicates.indexOf(g);
     return `<div class="cl-group"><span class="cl-kind ${cls}" title="${esc(why)}">${esc(label)}</span>` +
-      g.variants.map(v => `<span class="cl-v">${esc(v.name)}<small>${v.facts} fact${v.facts === 1 ? '' : 's'} · ${v.relations} rel.</small></span>`).join('') + '</div>';
+      g.variants.map((v, vi) => `<span class="cl-v">${esc(v.name)}<small>${v.facts} fact${v.facts === 1 ? '' : 's'} · ${v.relations} rel.</small>` +
+        `<button class="cl-keep" title="Make every other spelling in this group read as this one" onclick="cleanupMerge(${gi},${vi})">Keep</button></span>`).join('') + '</div>';
   }).join('') || '<div class="none">Nothing in this group</div>';
 
   const islandRows = d.islands.map(i => `<tr><td>${esc(i.entity)}</td><td class="num">${i.facts}</td></tr>`);
