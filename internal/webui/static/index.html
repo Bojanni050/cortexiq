@@ -3711,7 +3711,7 @@ window.addEventListener('resize', () => {
    Read only: where the memory is untidy. Entities spelled several ways, entities no
    relation connects, weak relations, relation wordings that were never normalised.
    Nothing here changes data; merging is a decision for a person. */
-const cleanupState = { kind: '', minConf: 0.8, data: null, shown: 25, names: [] };
+const cleanupState = { kind: '', minConf: 0.8, data: null, shown: 25, names: [], bulkQualifier: false, bulking: false };
 const CLEANUP_KINDS = {
   case: ['Capitals', 'c', 'Only capitals differ. The graph already treats these as one entity.'],
   punctuation: ['Punctuation', '', 'Hyphens, slashes, quotes or stray symbols differ. Almost always the same thing.'],
@@ -3753,6 +3753,75 @@ async function cleanupMerge(gi, vi) {
   try { await call(false); } catch (e) { toast(e.message, true); return; }
   toast(`Merged into "${keep}"`);
   await loadCleanup();
+}
+
+// cleanupBulkGroups is the set a Bulk merge acts on: every loaded group in the
+// current view. The "Check first" groups (a note or a leading "the") are left out
+// of the unfiltered view unless ticked, because those may be two different things.
+function cleanupBulkGroups() {
+  const d = cleanupState.data;
+  if (!d) return [];
+  return d.duplicates.filter(g => cleanupState.kind
+    ? g.kind === cleanupState.kind
+    : (cleanupState.bulkQualifier || g.kind !== 'qualifier'));
+}
+
+// cleanupPickKeep is the Bulk rule: keep the spelling that carries the most facts,
+// then the most relations, then the first listed.
+function cleanupPickKeep(g) {
+  return g.variants.reduce((best, v) =>
+    (v.facts > best.facts || (v.facts === best.facts && v.relations > best.relations)) ? v : best, g.variants[0]);
+}
+
+// cleanupBulk merges every group in the view into its most used spelling. Each
+// group is dry-run first and the totals go into ONE confirmation, so nothing
+// changes before the person has seen how much will.
+async function cleanupBulk() {
+  if (cleanupState.bulking) return;
+  const jobs = cleanupBulkGroups().map(g => {
+    const keep = cleanupPickKeep(g);
+    return { g, keep: keep.name, others: g.variants.filter(v => v !== keep).map(v => v.name) };
+  }).filter(j => j.others.length > 0);
+  if (!jobs.length) { toast('No groups to merge in this view', true); return; }
+  const q = nsQS('');
+  const call = (j, dry) => api('/entities/merge' + q, { method: 'POST', body: JSON.stringify({ keep: j.keep, variants: j.others, dry_run: dry }) });
+  cleanupState.bulking = true;
+  drawCleanup();
+  try {
+    const sum = { facts: 0, relations: 0, duplicates: 0, self_loops: 0 };
+    try {
+      for (const j of jobs) {
+        const p = await call(j, true);
+        sum.facts += p.facts; sum.relations += p.relations; sum.duplicates += p.duplicates || 0; sum.self_loops += p.self_loops || 0;
+      }
+    } catch (e) { toast(e.message, true); return; }
+    const sample = jobs.slice(0, 5).map(j => `  ${j.others.map(o => `"${o}"`).join(', ')} → "${j.keep}"`);
+    const lines = [
+      `Merge ${jobs.length} group${jobs.length === 1 ? '' : 's'}, each into its most used spelling?`,
+      '',
+      ...sample,
+      ...(jobs.length > sample.length ? [`  … and ${jobs.length - sample.length} more`] : []),
+      '',
+      `${sum.facts} fact${sum.facts === 1 ? '' : 's'} and ${sum.relations} relation end${sum.relations === 1 ? '' : 's'} change.`,
+    ];
+    if (sum.duplicates || sum.self_loops) lines.push(`${sum.duplicates} duplicate and ${sum.self_loops} self-pointing relation${sum.duplicates + sum.self_loops === 1 ? '' : 's'} are removed.`);
+    if (jobs.some(j => j.g.kind === 'qualifier')) lines.push('', 'This includes "Check first" groups: make sure those spellings are the same thing.');
+    lines.push('', 'Fact texts stay as they are. This cannot be undone from here.');
+    if (!confirm(lines.join('\n'))) return;
+    let done = 0;
+    try {
+      for (const j of jobs) { await call(j, false); done++; }
+    } catch (e) {
+      toast(`Stopped after ${done} of ${jobs.length}: ${e.message}`, true);
+      await loadCleanup();
+      return;
+    }
+    toast(`Merged ${done} group${done === 1 ? '' : 's'}`);
+    await loadCleanup();
+  } finally {
+    cleanupState.bulking = false;
+    drawCleanup();
+  }
 }
 
 // cleanupInspect fills the context column with what the memory holds under one
@@ -3820,8 +3889,9 @@ function drawCleanup() {
   const groups = d.duplicates.filter(g => !cleanupState.kind || g.kind === cleanupState.kind);
   const shown = groups.slice(0, cleanupState.shown);
   const of = (n, total) => n < total ? `showing ${n} of ${total}` : `${total}`;
+  const bulkN = cleanupBulkGroups().length;
 
-  const chips = [['', 'All', d.duplicates.length], ...Object.keys(CLEANUP_KINDS).map(k => [k, CLEANUP_KINDS[k][0], kindCount[k]])]
+  const chips =[['', 'All', d.duplicates.length], ...Object.keys(CLEANUP_KINDS).map(k => [k, CLEANUP_KINDS[k][0], kindCount[k]])]
     .map(([k, label, n]) => `<button class="chip${cleanupState.kind === k ? ' on' : ''}" onclick="cleanupSet('kind','${k}')">${esc(label)} <span class="muted">${n}</span></button>`).join('');
   const dupHtml = shown.map(g => {
     const [label, cls, why] = CLEANUP_KINDS[g.kind];
@@ -3848,7 +3918,10 @@ function drawCleanup() {
     </div>
 
     <div class="card"><h3>Entities spelled several ways <span class="muted">${cleanupState.kind ? `${groups.length} of the ${d.duplicates.length} most used` : `showing ${d.duplicates.length} of ${d.duplicate_total}`}</span></h3>
-      <div class="card-body"><div class="cl-chips">${chips}</div>${dupHtml}
+      <div class="card-body"><div class="cl-chips">${chips}</div>
+      <div class="toolbar filters"><button class="btn" id="cl-bulk"${cleanupState.bulking || !bulkN ? ' disabled' : ''} title="Merge every group in this view into the spelling with the most facts. You see the total and confirm once." onclick="cleanupBulk()">${cleanupState.bulking ? 'Merging…' : `Bulk: keep most used (${bulkN})`}</button>
+        ${cleanupState.kind ? '' : `<label><input type="checkbox"${cleanupState.bulkQualifier ? ' checked' : ''} onchange="cleanupSet('bulkQualifier',this.checked)"> include "Check first"</label>`}</div>
+      ${dupHtml}
       ${groups.length > shown.length ? `<button class="btn" onclick="cleanupState.shown+=25;drawCleanup()">Show ${Math.min(25, groups.length - shown.length)} more</button>` : ''}</div></div>
 
     <div class="card"><h3>Entities no relation mentions <span class="muted">${of(d.islands.length, d.island_total)}</span></h3>
