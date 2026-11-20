@@ -1061,3 +1061,9 @@ voor de regel dat er na 1000 regels een nieuw walkthrough-bestand komt.
 - Actions: `internal/webui/static/index.html` (knop "Bulk: keep most used (n)" met vinkje, `cleanupBulkGroups`, `cleanupPickKeep`, `cleanupBulk`, `bulking`/`bulkQualifier` in de state); validated: `go build ./...` en `go test ./internal/webui` ok, scriptsyntaxis gecontroleerd met `node --check`, de keuzelogica los gecontroleerd op drie groepen (hoofdletters, leestekens, qualifier); niet in een draaiende UI geprobeerd en geen aparte test voor de pagina-JS.
 - Deployment: nog niet uitgerold; de functie staat op main maar niet op de server (zie v0.1.94 voor de uitrolstappen).
 - Open punt: de bulk geldt voor de ingeladen groepen (maximaal de 200 meest gebruikte), niet voor alle `duplicate_total`; na een run laadt het scherm de volgende groepen.
+
+## 2026-11-20 (v0.1.95 uitgerold)
+
+- Findings: de Bulk-knop stond op main maar niet op de server. Prod draait op `strato-vps` (`/opt/cortexiq`), niet op `contabo`; daar bestaat die map niet.
+- Conclusions: volgorde zoals bij v0.1.94 (CI en Release groen, pull met tag inline terwijl 0.1.94 nog draait, app-containers stoppen, geverifieerde dump, tag bump, `up -d`), en de uitvoer van `backup-prod.sh` met `tail`, niet `head`. Geen migratie of configuratie, dus terugdraaien is alleen de tag terugzetten.
+- Actions: release `v0.1.95`, VPS `/opt/cortexiq/.env` (tag), `docs/STATUS.md`; validated: `cortexiq version` meldt v0.1.95 (427a952), beide app-containers op 0.1.95, geen fouten in de logs, dump `cortexiq-20261120T182145Z.dump` geverifieerd met checksum. De knop zelf niet in de draaiende UI geprobeerd (de UI vraagt inloggen en ik heb de pagina niet opgehaald).
