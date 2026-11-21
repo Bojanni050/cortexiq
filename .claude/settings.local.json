@@ -1,5 +1,8 @@
 {
   "permissions": {
-    "allow": ["Bash(gh release create:*)"]
+    "allow": [
+      "Bash(ssh strato-vps:*)",
+      "Bash(scp strato-vps:/opt/cortexiq/backups/:*)"
+    ]
   }
 }
