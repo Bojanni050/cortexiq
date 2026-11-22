@@ -432,14 +432,48 @@ func stripArticle(k string) string {
 	return strings.TrimPrefix(k, "the ")
 }
 
-// canonicalSpelling is the name the system writes for these spellings: what
-// NormalizeEntity makes of them on the way in. A name that rule refuses as a
-// description falls back to its folded form with the noise words gone.
-func canonicalSpelling(names []string) string {
-	for _, n := range names {
-		if c, ok := NormalizeEntity(n); ok {
-			return c
+// plainSpelling is a spelling with only the capitals, the punctuation around it and a
+// leading noise word taken off. It is what a reader would still call the same name.
+// NormalizeEntity goes further and also trims words that say how something is set up
+// or where it sits, which is right at write time but wrong as a merge target for a
+// group that still spells those words out.
+func plainSpelling(name string) string {
+	s := strings.Trim(entityKey(name), " \t.,;:!?'\"`")
+	for {
+		before := s
+		for _, prefix := range entityLeadingNoise {
+			if strings.HasPrefix(s, prefix) {
+				s = strings.TrimSpace(strings.TrimPrefix(s, prefix))
+				break
+			}
+		}
+		if s == before {
+			break
 		}
 	}
-	return stripQualifier(entityKey(names[0]))
+	return strings.Trim(s, " \t.,;:!?'\"`")
+}
+
+// canonicalSpelling is the spelling the system writes for this group, or "" when
+// saying so would take a judgement. The answer has to be a spelling the group already
+// carries once capitals and a leading "the" are off: when NormalizeEntity would trim
+// real words ("Hermes agent config" becomes "hermes"), a merge to its answer welds the
+// group onto a different entity, and when the spellings differ by punctuation as well
+// there is no free choice. Both stay with the reader.
+func canonicalSpelling(names []string) string {
+	plain := make(map[string]bool, len(names))
+	for _, n := range names {
+		plain[plainSpelling(n)] = true
+	}
+	if len(plain) != 1 {
+		return ""
+	}
+	var only string
+	for p := range plain {
+		only = p
+	}
+	if c, ok := NormalizeEntity(only); ok && c == only {
+		return only
+	}
+	return ""
 }

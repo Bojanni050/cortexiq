@@ -108,6 +108,36 @@ func TestBuildCleanupKeepOnlyForDecidableGroups(t *testing.T) {
 	}
 }
 
+// The keep must be a spelling the group already carries. NormalizeEntity trims words
+// such as "config" and "server", so its answer can be shorter than every spelling in
+// the group — merging there would weld the group onto a different entity.
+func TestCanonicalSpellingNeverTrimsWords(t *testing.T) {
+	cases := []struct {
+		names []string
+		want  string
+	}{
+		{[]string{"Monitor", "monitor", "MONITOR"}, "monitor"},
+		{[]string{"aside element", "the aside element"}, "aside element"},
+		{[]string{"The Chronicle-Gaia plugin", "chronicle-gaia plugin"}, "chronicle-gaia plugin"},
+		// NormalizeEntity turns both into "hermes", which is nobody's spelling here.
+		{[]string{"Hermes agent config", "Hermes Agent config", "the Hermes agent config"}, ""},
+		{[]string{"The Hermes agent analytics server", "Hermes agent analytics server"}, ""},
+		// A punctuation difference is a judgement even when one spelling is an article.
+		{[]string{"read endpoint", "read-endpoint", "the read endpoint"}, ""},
+		{[]string{"GTM-server", "GTM server", "the GTM server"}, ""},
+	}
+	for _, c := range cases {
+		if got := canonicalSpelling(c.names); got != c.want {
+			t.Errorf("canonicalSpelling(%q) = %q, want %q", c.names, got, c.want)
+		}
+		// The answer may not depend on the order the spellings arrive in.
+		shuffled := append([]string{c.names[len(c.names)-1]}, c.names[:len(c.names)-1]...)
+		if got := canonicalSpelling(shuffled); got != c.want {
+			t.Errorf("canonicalSpelling(%q) = %q, want %q (order dependent)", shuffled, got, c.want)
+		}
+	}
+}
+
 func TestBuildCleanupIslands(t *testing.T) {
 	c := buildCleanup(
 		map[string]int{"Chronicle-db": 6, "pc-monitor": 6, "Gaia": 10, "oc-mnemoria-v2": 2, "OC-Mnemoria-v2": 3},

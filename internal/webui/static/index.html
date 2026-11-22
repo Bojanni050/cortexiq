@@ -3720,7 +3720,7 @@ const cleanupState = { kind: '', minConf: 0.8, data: null, shown: 25, names: [],
 const CLEANUP_KINDS = {
   case: ['Capitals', 'c', 'Only capitals differ, so there is nothing to decide: the group merges into the spelling the system writes itself.'],
   punctuation: ['Punctuation', '', 'Hyphens, slashes, quotes or stray symbols differ. Almost always the same thing.'],
-  article: ['Article', 'a', 'One spelling has a leading "the". Nothing to decide: the system writes the name without it.'],
+  article: ['Article', 'a', 'One spelling has a leading "the". The system writes names without it, so when that is the only difference the group settles itself.'],
   qualifier: ['Check first', 'q', 'One spelling has a "(note)". Often the same, not always: Foundation and Foundation (Gaia) may be two things.'],
 };
 
@@ -3947,7 +3947,7 @@ function drawCleanup() {
     `<td class="muted">${u.spellings.length > 1 ? u.spellings.map(esc).join(', ') : ''}</td></tr>`);
 
   body.innerHTML = `
-    <p class="cl-note">Nothing changes until you press Remove on a weak relation, which takes that one relation out of the graph and leaves the fact behind it alone. Groups that differ only in capitals need no choice: one press merges them into the spelling the system writes itself. Spelling cannot find real aliases, such as a person named in full in one place and by first name in another, so those still need your eye.</p>
+    <p class="cl-note">Nothing changes until you press Remove on a weak relation, which takes that one relation out of the graph and leaves the fact behind it alone. Groups that differ only in capitals, or only by a leading "the", need no choice: one press merges them into the spelling the system writes itself. Where a hyphen or a "(note)" is in the way, the choice stays yours. Spelling cannot find real aliases, such as a person named in full in one place and by first name in another, so those still need your eye.</p>
     <div class="cl-grid">
       ${tile('Spelled several ways', d.duplicate_total, 'groups of entity names that look like one')}
       ${tile('Entities without relations', d.island_total, `of ${t.fact_entities} entities that facts mention`)}
