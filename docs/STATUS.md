@@ -119,10 +119,19 @@ it landed:
   key stored write-only). No code changed: `GET /v1/models` is the OpenAI envelope
   `parseCatalogue` already reads, and `modelsPath` uses `{base}/models`. Production
   `test` answers 62 models. The catalogue states context length and capabilities
-  (`reasoning`, `function calling`, `completion fim`) but no rates, so those models
-  read "not priced" until a rate is entered under Prices you entered; the provider
-  snapshot the price refresher takes at start-up only gains Mistral after a restart,
-  and it would have nothing to price anyway.
+  (`reasoning`, `function calling`, `completion fim`) but no rates, so the 35 models
+  that matter for text work were priced by hand from the model cards on
+  `docs.mistral.ai/models`: Large 4 $0.7/$2.1, Medium 3.5 $1.5/$7.5, Small 4
+  $0.15/$0.6, Magistral 1.2 $2/$5 and $0.5/$1.5, the Ministral 3 family, Codestral,
+  the Embed models with an input rate only, and the resold DeepSeek and Z.ai models.
+  What stays unpriced cannot be said in dollars per million tokens: OCR is per 1 000
+  pages, Voxtral per minute or per character, Moderation is free (a 0/0 row is
+  refused), and `mistral-code-*` and `mistral-vibe-cli-*` are products whose token
+  rate Mistral does not publish. `mistral-medium`, `mistral-medium-2604` and
+  `mistral-medium-3.5` carry Medium 3.5's rate although the card lists only
+  `mistral-medium-3-5`, `-3` and `-latest` as API names. A rate typed here is
+  re-read every minute, so no restart is needed, and a rate Mistral ever publishes
+  for the same id would outrank it.
 
 ### Earlier: since the 2026-10-30 snapshot
 
