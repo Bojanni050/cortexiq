@@ -44,9 +44,11 @@ func TestDuplicateKind(t *testing.T) {
 		{[]string{"White Vision", "white-vision"}, DupPunctuation},
 		{[]string{"Gaia-Cloud", "Gaia Cloud"}, DupPunctuation},
 		{[]string{"Foundation", "Foundation (Gaia)"}, DupQualifier},
-		{[]string{"Hermes agent", "The Hermes agent"}, DupQualifier},
-		// A qualifier anywhere in the group makes it the less safe kind.
+		{[]string{"Hermes agent", "The Hermes agent"}, DupArticle},
+		// A note anywhere in the group makes it the less safe kind, even when a
+		// leading "the" is the only other difference.
 		{[]string{"Hermes agent", "hermes-agent", "Hermes agent (hermes/desktop)"}, DupQualifier},
+		{[]string{"Foundation", "The Foundation", "Foundation (Gaia)"}, DupQualifier},
 	}
 	for _, tt := range tests {
 		if got := duplicateKind(tt.names); got != tt.want {
@@ -76,11 +78,16 @@ func TestBuildCleanupDuplicatesCountAcrossFactsAndRelations(t *testing.T) {
 	}
 }
 
-// A group that differs by more than capitals can hold two things, so it must not
-// carry a spelling to merge into: that choice stays with the reader.
+// A group that differs by more than capitals or a leading "the" can hold two things,
+// so it must not carry a spelling to merge into: that choice stays with the reader.
 func TestBuildCleanupKeepOnlyForDecidableGroups(t *testing.T) {
 	c := buildCleanup(
-		map[string]int{"Monitor": 3, "monitor": 2, "Hermes agent": 4, "hermes-agent": 3, "Foundation": 2, "Foundation (Gaia)": 1},
+		map[string]int{
+			"Monitor": 3, "monitor": 2,
+			"aside element": 4, "the aside element": 1,
+			"Hermes agent": 4, "hermes-agent": 3,
+			"Foundation": 2, "Foundation (Gaia)": 1,
+		},
 		map[string]int{},
 		100)
 
@@ -90,6 +97,9 @@ func TestBuildCleanupKeepOnlyForDecidableGroups(t *testing.T) {
 	}
 	if got := byKind[DupCase].Keep; got != "monitor" {
 		t.Errorf("case group should carry %q, got %q", "monitor", got)
+	}
+	if got := byKind[DupArticle].Keep; got != "aside element" {
+		t.Errorf("article group should carry %q, got %q", "aside element", got)
 	}
 	for _, kind := range []string{DupPunctuation, DupQualifier} {
 		if got := byKind[kind].Keep; got != "" {

@@ -54,8 +54,12 @@ const (
 	DupCase = "case"
 	// DupPunctuation: they differ in hyphens, slashes, spaces or similar.
 	DupPunctuation = "punctuation"
-	// DupQualifier: one carries a "(note)" or a leading "the". Often the same
-	// thing, not always: "Foundation" and "Foundation (Gaia)" may be two things.
+	// DupArticle: one carries a leading "the", as in "the aside element" next to
+	// "aside element". Dropping the article loses nothing, and the system writes the
+	// name without it, so such a group is decidable like DupCase.
+	DupArticle = "article"
+	// DupQualifier: one carries a "(note)". Often the same thing, not always:
+	// "Foundation" and "Foundation (Gaia)" may be two things.
 	DupQualifier = "qualifier"
 )
 
@@ -72,9 +76,9 @@ type DuplicateGroup struct {
 	Variants []EntityVariant `json:"variants"`
 	// Keep is the spelling the group should be merged into when that needs no
 	// judgement: the form NormalizeEntity writes, which every new fact and
-	// relation will carry. It is set for DupCase only. A punctuation or qualifier
-	// group can hold two different things, so there the choice stays with the
-	// reader and Keep is empty.
+	// relation will carry. It is set for DupCase and DupArticle only. A group that
+	// differs in punctuation or carries a "(note)" can hold two different things,
+	// so there the choice stays with the reader and Keep is empty.
 	Keep      string `json:"keep,omitempty"`
 	Facts     int    `json:"facts"`
 	Relations int    `json:"relations"`
@@ -270,10 +274,11 @@ func buildCleanup(factCounts, relCounts map[string]int, limit int) *Cleanup {
 			continue
 		}
 		g := DuplicateGroup{Kind: duplicateKind(names)}
-		if g.Kind == DupCase {
-			// Every spelling folds to the same key, so the group is decidable: the
-			// form NormalizeEntity writes is the one that survives the next ingest.
-			g.Keep = identityKey(names[0])
+		if g.Kind == DupCase || g.Kind == DupArticle {
+			// Nothing to weigh: capitals and a leading "the" are the same name under
+			// the rule the system writes names with, so the merge target follows from
+			// the group. A note stays a question, because it can name a second thing.
+			g.Keep = canonicalSpelling(names)
 		}
 		for _, n := range names {
 			s := all[n]
@@ -381,22 +386,29 @@ func cleanupKey(s string) string {
 	return sb.String()
 }
 
-// duplicateKind says how far apart the spellings of a group are.
+// duplicateKind says how far apart the spellings of a group are. A note outranks an
+// article: "(Gaia)" may name a second thing, while a "the" in front is only the same
+// name with a word on it.
 func duplicateKind(names []string) string {
 	folded := map[string]bool{}
-	qualified := false
+	note, article := false, false
 	for _, n := range names {
 		k := entityKey(n)
 		folded[k] = true
-		if stripQualifier(k) != k {
-			qualified = true
+		if stripNote(k) != k {
+			note = true
+		}
+		if stripArticle(k) != k {
+			article = true
 		}
 	}
 	switch {
 	case len(folded) == 1:
 		return DupCase
-	case qualified:
+	case note:
 		return DupQualifier
+	case article:
+		return DupArticle
 	default:
 		return DupPunctuation
 	}
@@ -404,8 +416,30 @@ func duplicateKind(names []string) string {
 
 // stripQualifier drops a trailing "(note)" and a leading "the " from a folded name.
 func stripQualifier(k string) string {
+	return stripArticle(stripNote(k))
+}
+
+// stripNote drops a trailing "(note)", which may name a second thing.
+func stripNote(k string) string {
 	if i := strings.LastIndex(k, "("); i > 0 && strings.HasSuffix(k, ")") {
 		k = strings.TrimSpace(k[:i])
 	}
+	return k
+}
+
+// stripArticle drops a leading "the ", which never changes what a name means.
+func stripArticle(k string) string {
 	return strings.TrimPrefix(k, "the ")
+}
+
+// canonicalSpelling is the name the system writes for these spellings: what
+// NormalizeEntity makes of them on the way in. A name that rule refuses as a
+// description falls back to its folded form with the noise words gone.
+func canonicalSpelling(names []string) string {
+	for _, n := range names {
+		if c, ok := NormalizeEntity(n); ok {
+			return c
+		}
+	}
+	return stripQualifier(entityKey(names[0]))
 }

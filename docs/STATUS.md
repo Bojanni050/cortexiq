@@ -92,8 +92,10 @@ it landed:
   `NormalizeEntity` writes — for those groups only (`internal/brain/cleanup.go`,
   `DuplicateGroup.Keep`), the row renders one "Normalise to …" button instead of a
   Keep per variant, and Bulk in a capitals-only view merges straight to that form.
-  Punctuation and qualifier groups are untouched: `Foundation` and
-  `Foundation (Gaia)` can be two things, so those still ask. Not released yet.
+  A group whose only difference is a leading "the" got its own kind (`article`) and
+  the same treatment, because dropping the article loses nothing; a trailing
+  `(note)` stays `qualifier`, where `Foundation` and `Foundation (Gaia)` may be two
+  things. Punctuation still asks. Not released yet.
 
 ### Earlier: since the 2026-10-30 snapshot
 

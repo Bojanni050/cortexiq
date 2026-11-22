@@ -580,6 +580,7 @@ dialog.wide { max-width: 46rem; }
 .cl-kind { padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); cursor: help; }
 .cl-kind.c { color: var(--accent); }
 .cl-kind.q { color: var(--red); border-color: var(--red); }
+.cl-kind.a { color: var(--accent-2); }
 .cl-v { padding: 2px 8px; border-radius: 6px; background: var(--hover); font-size: 12.5px; }
 .cl-v small { margin-left: 6px; color: var(--muted); }
 .cl-name { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: left; }
@@ -3712,13 +3713,15 @@ window.addEventListener('resize', () => {
    Read only: where the memory is untidy. Entities spelled several ways, entities no
    relation connects, weak relations, relation wordings that were never normalised.
    Nothing here changes data until a button is pressed. Merging asks a person
-   wherever the spellings could name two things; a capitals-only group carries the
-   answer itself, because the system writes exactly one form of such a name. */
+   wherever the spellings could name two things; a group that differs only in
+   capitals, or by a leading "the", carries the answer itself, because the system
+   writes exactly one form of such a name. */
 const cleanupState = { kind: '', minConf: 0.8, data: null, shown: 25, names: [], bulkQualifier: false, bulking: false };
 const CLEANUP_KINDS = {
   case: ['Capitals', 'c', 'Only capitals differ, so there is nothing to decide: the group merges into the spelling the system writes itself.'],
   punctuation: ['Punctuation', '', 'Hyphens, slashes, quotes or stray symbols differ. Almost always the same thing.'],
-  qualifier: ['Check first', 'q', 'One spelling has a "(note)" or a leading "the". Often the same, not always: Foundation and Foundation (Gaia) may be two things.'],
+  article: ['Article', 'a', 'One spelling has a leading "the". Nothing to decide: the system writes the name without it.'],
+  qualifier: ['Check first', 'q', 'One spelling has a "(note)". Often the same, not always: Foundation and Foundation (Gaia) may be two things.'],
 };
 
 async function renderCleanup() {
@@ -3733,9 +3736,9 @@ async function loadCleanup() {
 }
 
 // cleanupJob says what merging a group would do: which spelling stays and which
-// ones fold into it. A group that only differs in capitals carries the answer from
-// the server, because the system writes exactly one form of such a name; there is
-// nothing for a reader to weigh.
+// ones fold into it. A group that differs only in capitals or by a leading "the"
+// carries the answer from the server, because the system writes exactly one form of
+// such a name; there is nothing for a reader to weigh.
 function cleanupJob(g) {
   if (g.keep) {
     return { g, keep: g.keep, others: g.variants.filter(v => v.name.trim().toLowerCase() !== g.keep).map(v => v.name) };
@@ -3775,8 +3778,8 @@ function cleanupMerge(gi, vi) {
   return cleanupMergeJob({ g, keep: g.variants[vi].name, others: g.variants.filter((_, i) => i !== vi).map(v => v.name) });
 }
 
-// cleanupNormalise merges a case-only group into the form the system writes, in one
-// press. The group already carries the answer, so no choice is asked.
+// cleanupNormalise merges a decidable group — capitals, or a leading "the" — into the
+// form the system writes, in one press. The group already carries the answer.
 function cleanupNormalise(gi) {
   const g = cleanupState.data && cleanupState.data.duplicates[gi];
   if (!g || !g.keep) return undefined;
@@ -3912,14 +3915,14 @@ function drawCleanup() {
   cleanupState.names = [];
   const nameBtn = n => `<button class="cl-name" title="Show the facts, relations and episodes behind this spelling" onclick="cleanupInspect(${cleanupState.names.push(n) - 1})">${esc(n)}</button>`;
   const tile = (k, v, s) => `<div class="cl-tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
-  const kindCount = { case: 0, punctuation: 0, qualifier: 0 };
+  const kindCount = { case: 0, punctuation: 0, article: 0, qualifier: 0 };
   d.duplicates.forEach(g => { kindCount[g.kind]++; });
   const groups = d.duplicates.filter(g => !cleanupState.kind || g.kind === cleanupState.kind);
   const shown = groups.slice(0, cleanupState.shown);
   const of = (n, total) => n < total ? `showing ${n} of ${total}` : `${total}`;
   const bulkGroups = cleanupBulkGroups();
   const bulkN = bulkGroups.length;
-  // A view of only case groups needs no weighing: every group carries its answer.
+  // A view of only decidable groups needs no weighing: each one carries its answer.
   const bulkAllCase = bulkN > 0 && bulkGroups.every(g => g.keep);
 
   const chips =[['', 'All', d.duplicates.length], ...Object.keys(CLEANUP_KINDS).map(k => [k, CLEANUP_KINDS[k][0], kindCount[k]])]
