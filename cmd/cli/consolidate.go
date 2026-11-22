@@ -95,6 +95,16 @@ func runSchedule(ctx context.Context, bc *bootstrap.Context, interval time.Durat
 	// schedule.
 	go bc.Brain.WatchEpisodeSignals(ctx)
 
+	// The merges that need no judgement run here too: a merge is a write, and
+	// this is the process that owns background writes. It keeps its own clock,
+	// because a consolidation tick means "read new facts" and this pass is not
+	// reacting to episodes.
+	if bc.Config.CleanupSweep {
+		go sweepCleanup(ctx, bc, namespaces, bc.Config.CleanupSweepInterval)
+	} else {
+		log.Printf("Clean-up sweep: off; the dashboard merges only when asked")
+	}
+
 	sched := &schedule.Scheduler{
 		Initial: cfg,
 		Consolidate: func(ctx context.Context, nsID int64) error {
@@ -122,4 +132,45 @@ func runSchedule(ctx context.Context, bc *bootstrap.Context, interval time.Durat
 		Logf:       log.Printf,
 	}
 	return sched.Run(ctx)
+}
+
+// sweepCleanup folds the duplicate spellings that need no judgement, on its own
+// interval. The first pass waits a few minutes: a restart should not put a merge
+// in front of the work the process was restarted for.
+func sweepCleanup(ctx context.Context, bc *bootstrap.Context, namespaces []string, every time.Duration) {
+	if every <= 0 {
+		every = 6 * time.Hour
+	}
+	t := time.NewTimer(5 * time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		rep, err := bc.Brain.SweepCleanup(ctx, namespaces)
+		switch {
+		case ctx.Err() != nil:
+			return
+		case err != nil:
+			log.Printf("Clean-up sweep: cannot read the duplicate groups: %v", err)
+		default:
+			log.Printf("Clean-up sweep: %s", sweepLine(rep))
+		}
+		t.Reset(every)
+	}
+}
+
+// sweepLine words one pass: what changed, and why the rest did not.
+func sweepLine(rep brain.SweepReport) string {
+	if rep.Decidable == 0 {
+		return "nothing to settle"
+	}
+	line := fmt.Sprintf("%d merged of %d groups that needed no judgement; %d facts and %d relations rewritten",
+		rep.Merged, rep.Decidable, rep.Facts, rep.Relations)
+	if rep.Failed > 0 {
+		line += fmt.Sprintf("; %d refused, first: %s", rep.Failed, rep.FirstError)
+	}
+	return line
 }

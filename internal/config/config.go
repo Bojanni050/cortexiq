@@ -131,6 +131,14 @@ type Config struct {
 	// up on eval/dedup_pairs.jsonl); see docs/QUALITY_EVALUATION.md.
 	ConsolidationLexicalFloor float64 `env:"CORTEXIQ_CONSOLIDATION_LEXICAL_FLOOR" envDefault:"0.2"`
 	ConsolidationWindow       string  `env:"CORTEXIQ_CONSOLIDATION_WINDOW" envDefault:"168h"`
+	// CleanupSweep folds duplicate entity spellings that need no judgement —
+	// those that differ only in capitals or by a leading "the" — in the
+	// background, so the Clean-up screen only has the questions left that a
+	// person has to answer. Off leaves every merge to that screen.
+	CleanupSweep bool `env:"CORTEXIQ_CLEANUP_SWEEP" envDefault:"true"`
+	// CleanupSweepInterval is how often that pass runs. The first one waits a few
+	// minutes after start, so a restart does not front-load merges into a boot.
+	CleanupSweepInterval time.Duration `env:"CORTEXIQ_CLEANUP_SWEEP_INTERVAL" envDefault:"6h"`
 	// ExtractionMinChars is the shortest episode the extractor may read facts
 	// from. Below it an episode states nothing — one token, a greeting, a clipped
 	// acknowledgement — and the extractor reads a claim into it that nobody made.

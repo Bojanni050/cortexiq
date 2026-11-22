@@ -4,7 +4,7 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-11-22, working tree; `v0.1.95` is the last deploy.
+Last updated: 2026-11-22, working tree; `v0.1.97` is the last deploy.
 
 ## Build
 
@@ -95,7 +95,24 @@ it landed:
   A group whose only difference is a leading "the" got its own kind (`article`) and
   the same treatment, because dropping the article loses nothing; a trailing
   `(note)` stays `qualifier`, where `Foundation` and `Foundation (Gaia)` may be two
-  things. Punctuation still asks. Not released yet.
+  things. Punctuation still asks.
+- **And the sweep takes it without anyone pressing** — `Brain.SweepCleanup`
+  (`internal/brain/cleanup_sweep.go`) walks the same duplicate groups and merges the
+  decidable ones through `MergeEntities`, one group per transaction, so the rules for
+  what a merge touches are unchanged. It runs beside consolidation in the process that
+  owns background writes, `CORTEXIQ_CLEANUP_SWEEP` (default on) and
+  `CORTEXIQ_CLEANUP_SWEEP_INTERVAL` (default `6h`), first pass five minutes after
+  start. `CORTEXIQ_CLEANUP_SWEEP=false` gives the old behaviour, where only the screen
+  merges. A group that fails is counted and skipped; one log line says how many merged
+  and how much was rewritten.
+- **Correction: a merge target must be a spelling of the group itself** — v0.1.96
+  built `keep` from `NormalizeEntity`, which also trims trailing words (`config`,
+  `server`, `agent`) and cuts at " in " / " on ". On live data that turned `The
+  Hermes agent config` into `hermes` and `GTM server` into `gtm`, i.e. a group welded
+  onto a different entity. `canonicalSpelling` now only returns a spelling that is in
+  the group and survives normalisation unchanged, and the comparison against the kept
+  spelling is exact: with a case-insensitive one every capital group folded nothing,
+  so the button looked right and did nothing. Released as v0.1.97.
 
 ### Earlier: since the 2026-10-30 snapshot
 
