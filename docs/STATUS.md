@@ -114,6 +114,15 @@ it landed:
   the group and survives normalisation unchanged, and the comparison against the kept
   spelling is exact: with a case-insensitive one every capital group folded nothing,
   so the button looked right and did nothing. Released as v0.1.97.
+- **Mistral as a third provider** — Settings → Models → Providers lists `mistral`
+  next to `hopscotch` and `deepinfra` (`slug mistral`, `https://api.mistral.ai/v1`,
+  key stored write-only). No code changed: `GET /v1/models` is the OpenAI envelope
+  `parseCatalogue` already reads, and `modelsPath` uses `{base}/models`. Production
+  `test` answers 62 models. The catalogue states context length and capabilities
+  (`reasoning`, `function calling`, `completion fim`) but no rates, so those models
+  read "not priced" until a rate is entered under Prices you entered; the provider
+  snapshot the price refresher takes at start-up only gains Mistral after a restart,
+  and it would have nothing to price anyway.
 
 ### Earlier: since the 2026-10-30 snapshot
 
