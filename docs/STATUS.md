@@ -4,7 +4,7 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-11-22, working tree; `v0.1.97` is the last deploy.
+Last updated: 2026-11-22, working tree; `v0.1.98` is the last deploy.
 
 ## Build
 
@@ -104,7 +104,8 @@ it landed:
   `CORTEXIQ_CLEANUP_SWEEP_INTERVAL` (default `6h`), first pass five minutes after
   start. `CORTEXIQ_CLEANUP_SWEEP=false` gives the old behaviour, where only the screen
   merges. A group that fails is counted and skipped; one log line says how many merged
-  and how much was rewritten.
+  and how much was rewritten. First production pass (v0.1.98): 50 groups merged, 623
+  facts and 755 relations rewritten, no failures.
 - **Correction: a merge target must be a spelling of the group itself** — v0.1.96
   built `keep` from `NormalizeEntity`, which also trims trailing words (`config`,
   `server`, `agent`) and cuts at " in " / " on ". On live data that turned `The
