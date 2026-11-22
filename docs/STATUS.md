@@ -4,7 +4,7 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-11-20, after the `v0.1.95` deploy.
+Last updated: 2026-11-22, working tree; `v0.1.95` is the last deploy.
 
 ## Build
 
@@ -83,6 +83,17 @@ it landed:
   errors or as runs that silently created nothing. The default is 8192, a bound
   model follows the configured budget and JSON mode instead of a forced one, and
   JSON mode's `{"facts": [...]}` wrapper is unwrapped (`v0.1.86`).
+
+- **Clean-up no longer asks what it can decide** — a group whose spellings differ
+  only in capitals (`Monitor`, `monitor`) holds no information to weigh, yet the
+  screen asked for a Keep press per spelling, and the Bulk rule "keep the spelling
+  with the most facts" would happily keep the capitalised form that the next ingest
+  writes lowercase again. The server now returns `keep` — the spelling
+  `NormalizeEntity` writes — for those groups only (`internal/brain/cleanup.go`,
+  `DuplicateGroup.Keep`), the row renders one "Normalise to …" button instead of a
+  Keep per variant, and Bulk in a capitals-only view merges straight to that form.
+  Punctuation and qualifier groups are untouched: `Foundation` and
+  `Foundation (Gaia)` can be two things, so those still ask. Not released yet.
 
 ### Earlier: since the 2026-10-30 snapshot
 

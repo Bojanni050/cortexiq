@@ -68,10 +68,16 @@ type EntityVariant struct {
 
 // DuplicateGroup is a set of spellings that probably name the same entity.
 type DuplicateGroup struct {
-	Kind      string          `json:"kind"`
-	Variants  []EntityVariant `json:"variants"`
-	Facts     int             `json:"facts"`
-	Relations int             `json:"relations"`
+	Kind     string          `json:"kind"`
+	Variants []EntityVariant `json:"variants"`
+	// Keep is the spelling the group should be merged into when that needs no
+	// judgement: the form NormalizeEntity writes, which every new fact and
+	// relation will carry. It is set for DupCase only. A punctuation or qualifier
+	// group can hold two different things, so there the choice stays with the
+	// reader and Keep is empty.
+	Keep      string `json:"keep,omitempty"`
+	Facts     int    `json:"facts"`
+	Relations int    `json:"relations"`
 }
 
 // Island is an entity that facts talk about but no relation mentions.
@@ -264,6 +270,11 @@ func buildCleanup(factCounts, relCounts map[string]int, limit int) *Cleanup {
 			continue
 		}
 		g := DuplicateGroup{Kind: duplicateKind(names)}
+		if g.Kind == DupCase {
+			// Every spelling folds to the same key, so the group is decidable: the
+			// form NormalizeEntity writes is the one that survives the next ingest.
+			g.Keep = identityKey(names[0])
+		}
 		for _, n := range names {
 			s := all[n]
 			g.Variants = append(g.Variants, EntityVariant{Name: n, Facts: s.facts, Relations: s.rels})

@@ -71,6 +71,31 @@ func TestBuildCleanupDuplicatesCountAcrossFactsAndRelations(t *testing.T) {
 	if g.Variants[0].Name != "CortexIQ" || g.Variants[0].Facts != 400 || g.Variants[0].Relations != 283 {
 		t.Errorf("busiest spelling first, with both counts: %+v", g.Variants[0])
 	}
+	if g.Keep != "cortexiq" {
+		t.Errorf("a case-only group carries the spelling the system writes, got %q", g.Keep)
+	}
+}
+
+// A group that differs by more than capitals can hold two things, so it must not
+// carry a spelling to merge into: that choice stays with the reader.
+func TestBuildCleanupKeepOnlyForDecidableGroups(t *testing.T) {
+	c := buildCleanup(
+		map[string]int{"Monitor": 3, "monitor": 2, "Hermes agent": 4, "hermes-agent": 3, "Foundation": 2, "Foundation (Gaia)": 1},
+		map[string]int{},
+		100)
+
+	byKind := map[string]DuplicateGroup{}
+	for _, g := range c.Duplicates {
+		byKind[g.Kind] = g
+	}
+	if got := byKind[DupCase].Keep; got != "monitor" {
+		t.Errorf("case group should carry %q, got %q", "monitor", got)
+	}
+	for _, kind := range []string{DupPunctuation, DupQualifier} {
+		if got := byKind[kind].Keep; got != "" {
+			t.Errorf("%s group must leave the choice open, got keep %q", kind, got)
+		}
+	}
 }
 
 func TestBuildCleanupIslands(t *testing.T) {

@@ -586,6 +586,7 @@ dialog.wide { max-width: 46rem; }
 .cl-name:hover { color: var(--accent); text-decoration: underline; }
 .cl-keep { margin-left: 8px; padding: 0 7px; border: 1px solid var(--border-2); border-radius: 5px; background: transparent; color: var(--accent); font-size: 11px; cursor: pointer; }
 .cl-keep:hover { background: var(--panel-3); }
+.cl-keep.cl-fix { margin-left: 2px; padding: 1px 10px; background: var(--panel-3); font-weight: 500; }
 .cl-fact { max-width: 420px; }
 .card .none { padding: 8px 0; color: var(--dim); font-size: 13px; }
 .tl-legend { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 10px; font-size: 12px; color: var(--muted); }
@@ -3710,10 +3711,12 @@ window.addEventListener('resize', () => {
 /* ---------- Clean-up tab ----------
    Read only: where the memory is untidy. Entities spelled several ways, entities no
    relation connects, weak relations, relation wordings that were never normalised.
-   Nothing here changes data; merging is a decision for a person. */
+   Nothing here changes data until a button is pressed. Merging asks a person
+   wherever the spellings could name two things; a capitals-only group carries the
+   answer itself, because the system writes exactly one form of such a name. */
 const cleanupState = { kind: '', minConf: 0.8, data: null, shown: 25, names: [], bulkQualifier: false, bulking: false };
 const CLEANUP_KINDS = {
-  case: ['Capitals', 'c', 'Only capitals differ. The graph already treats these as one entity.'],
+  case: ['Capitals', 'c', 'Only capitals differ, so there is nothing to decide: the group merges into the spelling the system writes itself.'],
   punctuation: ['Punctuation', '', 'Hyphens, slashes, quotes or stray symbols differ. Almost always the same thing.'],
   qualifier: ['Check first', 'q', 'One spelling has a "(note)" or a leading "the". Often the same, not always: Foundation and Foundation (Gaia) may be two things.'],
 };
@@ -3729,14 +3732,22 @@ async function loadCleanup() {
   drawCleanup();
 }
 
-// cleanupMerge makes the other spellings of a group read as the one whose Keep
-// button was pressed. It asks the server for a dry run first, so the confirmation
-// says how many facts and relations will change before anything does.
-async function cleanupMerge(gi, vi) {
-  const g = cleanupState.data && cleanupState.data.duplicates[gi];
-  if (!g || !g.variants[vi]) return;
-  const keep = g.variants[vi].name;
-  const others = g.variants.filter((_, i) => i !== vi).map(v => v.name);
+// cleanupJob says what merging a group would do: which spelling stays and which
+// ones fold into it. A group that only differs in capitals carries the answer from
+// the server, because the system writes exactly one form of such a name; there is
+// nothing for a reader to weigh.
+function cleanupJob(g) {
+  if (g.keep) {
+    return { g, keep: g.keep, others: g.variants.filter(v => v.name.trim().toLowerCase() !== g.keep).map(v => v.name) };
+  }
+  const best = cleanupPickKeep(g);
+  return { g, keep: best.name, others: g.variants.filter(v => v !== best).map(v => v.name) };
+}
+
+// cleanupMergeJob merges one job. It asks the server for a dry run first, so the
+// confirmation says how many facts and relations change before anything does.
+async function cleanupMergeJob(job, extra) {
+  const { g, keep, others } = job;
   const q = nsQS('');
   const call = dry => api('/entities/merge' + q, { method: 'POST', body: JSON.stringify({ keep, variants: others, dry_run: dry }) });
   let plan;
@@ -3748,11 +3759,31 @@ async function cleanupMerge(gi, vi) {
   ];
   if (plan.duplicates || plan.self_loops) lines.push(`${plan.duplicates} duplicate and ${plan.self_loops} self-pointing relation${plan.duplicates + plan.self_loops === 1 ? '' : 's'} are removed.`);
   if (g.kind === 'qualifier') lines.push('', 'These spellings differ by a note or a leading "the": make sure they are the same thing.');
+  if (extra) lines.push('', extra);
   lines.push('', 'Fact texts stay as they are. This cannot be undone from here.');
   if (!confirm(lines.join('\n'))) return;
   try { await call(false); } catch (e) { toast(e.message, true); return; }
   toast(`Merged into "${keep}"`);
   await loadCleanup();
+}
+
+// cleanupMerge makes the other spellings of a group read as the one whose Keep
+// button was pressed.
+function cleanupMerge(gi, vi) {
+  const g = cleanupState.data && cleanupState.data.duplicates[gi];
+  if (!g || !g.variants[vi]) return undefined;
+  return cleanupMergeJob({ g, keep: g.variants[vi].name, others: g.variants.filter((_, i) => i !== vi).map(v => v.name) });
+}
+
+// cleanupNormalise merges a case-only group into the form the system writes, in one
+// press. The group already carries the answer, so no choice is asked.
+function cleanupNormalise(gi) {
+  const g = cleanupState.data && cleanupState.data.duplicates[gi];
+  if (!g || !g.keep) return undefined;
+  const job = cleanupJob(g);
+  if (!job.others.length) return loadCleanup();
+  return cleanupMergeJob(job,
+    `New memories write "${g.keep}", so a merge to any other spelling would split again on the next fact.`);
 }
 
 // cleanupBulkGroups is the set a Bulk merge acts on: every loaded group in the
@@ -3778,10 +3809,7 @@ function cleanupPickKeep(g) {
 // changes before the person has seen how much will.
 async function cleanupBulk() {
   if (cleanupState.bulking) return;
-  const jobs = cleanupBulkGroups().map(g => {
-    const keep = cleanupPickKeep(g);
-    return { g, keep: keep.name, others: g.variants.filter(v => v !== keep).map(v => v.name) };
-  }).filter(j => j.others.length > 0);
+  const jobs = cleanupBulkGroups().map(cleanupJob).filter(j => j.others.length > 0);
   if (!jobs.length) { toast('No groups to merge in this view', true); return; }
   const q = nsQS('');
   const call = (j, dry) => api('/entities/merge' + q, { method: 'POST', body: JSON.stringify({ keep: j.keep, variants: j.others, dry_run: dry }) });
@@ -3797,7 +3825,7 @@ async function cleanupBulk() {
     } catch (e) { toast(e.message, true); return; }
     const sample = jobs.slice(0, 5).map(j => `  ${j.others.map(o => `"${o}"`).join(', ')} → "${j.keep}"`);
     const lines = [
-      `Merge ${jobs.length} group${jobs.length === 1 ? '' : 's'}, each into its most used spelling?`,
+      `Merge ${jobs.length} group${jobs.length === 1 ? '' : 's'}${jobs.every(j => j.g.keep) ? ' into the spelling the system writes' : ', each into its most used spelling'}?`,
       '',
       ...sample,
       ...(jobs.length > sample.length ? [`  … and ${jobs.length - sample.length} more`] : []),
@@ -3889,16 +3917,23 @@ function drawCleanup() {
   const groups = d.duplicates.filter(g => !cleanupState.kind || g.kind === cleanupState.kind);
   const shown = groups.slice(0, cleanupState.shown);
   const of = (n, total) => n < total ? `showing ${n} of ${total}` : `${total}`;
-  const bulkN = cleanupBulkGroups().length;
+  const bulkGroups = cleanupBulkGroups();
+  const bulkN = bulkGroups.length;
+  // A view of only case groups needs no weighing: every group carries its answer.
+  const bulkAllCase = bulkN > 0 && bulkGroups.every(g => g.keep);
 
   const chips =[['', 'All', d.duplicates.length], ...Object.keys(CLEANUP_KINDS).map(k => [k, CLEANUP_KINDS[k][0], kindCount[k]])]
     .map(([k, label, n]) => `<button class="chip${cleanupState.kind === k ? ' on' : ''}" onclick="cleanupSet('kind','${k}')">${esc(label)} <span class="muted">${n}</span></button>`).join('');
   const dupHtml = shown.map(g => {
     const [label, cls, why] = CLEANUP_KINDS[g.kind];
     const gi = d.duplicates.indexOf(g);
+    const keepBtn = vi => `<button class="cl-keep" title="Make every other spelling in this group read as this one" onclick="cleanupMerge(${gi},${vi})">Keep</button>`;
+    const fix = g.keep
+      ? `<button class="cl-keep cl-fix" title="Merge every spelling above into this one; nothing to decide" onclick="cleanupNormalise(${gi})">Normalise to "${esc(g.keep)}"</button>`
+      : '';
     return `<div class="cl-group"><span class="cl-kind ${cls}" title="${esc(why)}">${esc(label)}</span>` +
       g.variants.map((v, vi) => `<span class="cl-v">${nameBtn(v.name)}<small>${v.facts} fact${v.facts === 1 ? '' : 's'} · ${v.relations} rel.</small>` +
-        `<button class="cl-keep" title="Make every other spelling in this group read as this one" onclick="cleanupMerge(${gi},${vi})">Keep</button></span>`).join('') + '</div>';
+        (g.keep ? '' : keepBtn(vi)) + '</span>').join('') + fix + '</div>';
   }).join('') || '<div class="none">Nothing in this group</div>';
 
   const islandRows = d.islands.map(i => `<tr><td>${nameBtn(i.entity)}</td><td class="num">${i.facts}</td></tr>`);
@@ -3909,7 +3944,7 @@ function drawCleanup() {
     `<td class="muted">${u.spellings.length > 1 ? u.spellings.map(esc).join(', ') : ''}</td></tr>`);
 
   body.innerHTML = `
-    <p class="cl-note">Nothing changes until you press Remove on a weak relation, which takes that one relation out of the graph and leaves the fact behind it alone. Spelling cannot find real aliases, such as a person named in full in one place and by first name in another, so those still need your eye.</p>
+    <p class="cl-note">Nothing changes until you press Remove on a weak relation, which takes that one relation out of the graph and leaves the fact behind it alone. Groups that differ only in capitals need no choice: one press merges them into the spelling the system writes itself. Spelling cannot find real aliases, such as a person named in full in one place and by first name in another, so those still need your eye.</p>
     <div class="cl-grid">
       ${tile('Spelled several ways', d.duplicate_total, 'groups of entity names that look like one')}
       ${tile('Entities without relations', d.island_total, `of ${t.fact_entities} entities that facts mention`)}
@@ -3919,7 +3954,7 @@ function drawCleanup() {
 
     <div class="card"><h3>Entities spelled several ways <span class="muted">${cleanupState.kind ? `${groups.length} of the ${d.duplicates.length} most used` : `showing ${d.duplicates.length} of ${d.duplicate_total}`}</span></h3>
       <div class="card-body"><div class="cl-chips">${chips}</div>
-      <div class="toolbar filters"><button class="btn" id="cl-bulk"${cleanupState.bulking || !bulkN ? ' disabled' : ''} title="Merge every group in this view into the spelling with the most facts. You see the total and confirm once." onclick="cleanupBulk()">${cleanupState.bulking ? 'Merging…' : `Bulk: keep most used (${bulkN})`}</button>
+      <div class="toolbar filters"><button class="btn" id="cl-bulk"${cleanupState.bulking || !bulkN ? ' disabled' : ''} title="${bulkAllCase ? 'Merge every group here into the spelling the system writes itself. You see the total and confirm once.' : 'Merge every group in this view into the spelling with the most facts. You see the total and confirm once.'}" onclick="cleanupBulk()">${cleanupState.bulking ? 'Merging…' : `${bulkAllCase ? 'Bulk: normalise' : 'Bulk: keep most used'} (${bulkN})`}</button>
         ${cleanupState.kind ? '' : `<label><input type="checkbox"${cleanupState.bulkQualifier ? ' checked' : ''} onchange="cleanupSet('bulkQualifier',this.checked)"> include "Check first"</label>`}</div>
       ${dupHtml}
       ${groups.length > shown.length ? `<button class="btn" onclick="cleanupState.shown+=25;drawCleanup()">Show ${Math.min(25, groups.length - shown.length)} more</button>` : ''}</div></div>
