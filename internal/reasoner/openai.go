@@ -138,6 +138,18 @@ func (o *OpenAI) chat(ctx context.Context, stage string, msgs []openai.ChatCompl
 	observability.RecordReasonerCall(stage, o.model, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, true)
 	choice := resp.Choices[0]
 	content := strings.TrimSpace(choice.Message.Content)
+	// A provider can send the whole message as content blocks: a reasoning block
+	// followed by the answer. The SDK reads content as a string and only loosely
+	// reports the mismatch, so the block list arrives stringified and every stage
+	// that asked for JSON sees a list of blocks instead of its answer.
+	if text, reasoningOnly, ok := flattenContentBlocks(content); ok {
+		content = text
+		// Nothing but reasoning came back. How long the model thought is not the
+		// answer, so this is an answer problem, not something to parse further.
+		if reasoningOnly && choice.FinishReason != "length" {
+			return "", &ReasoningOnlyError{Model: o.model}
+		}
+	}
 	// A reasoning model spends max_tokens on its thoughts before it writes an
 	// answer. Capped below what it thinks, it stops at the limit with nothing to
 	// show; that used to surface as "no JSON array or object in the response"

@@ -4,7 +4,7 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-11-22, working tree; `v0.1.98` is the last deploy.
+Last updated: 2026-11-23, working tree; `v0.1.98` is the last deploy.
 
 ## Build
 
@@ -83,6 +83,18 @@ it landed:
   errors or as runs that silently created nothing. The default is 8192, a bound
   model follows the configured budget and JSON mode instead of a forced one, and
   JSON mode's `{"facts": [...]}` wrapper is unwrapped (`v0.1.86`).
+- **The answer can arrive as content blocks** — a reasoning provider sends the whole
+  message as `[{"type":"thinking","thinking":[…]} {"type":"text","text":"[…]"}]`. The
+  OpenAI SDK reads `content` as a string, stores the raw array there and reports the
+  mismatch only loosely, so every stage that asked for JSON was handed a block list
+  instead of its answer: the shape sweep died on `unreadable answer to 1 shape
+  candidates: [{"type":"thinking"…`. `chat` now flattens blocks before any stage sees
+  the content — reasoning is dropped, the text blocks are the answer — and an answer
+  with nothing but a thinking block is a `ReasoningOnlyError`, which counts as an
+  answer problem so the relationship stage gives up on a batch that keeps arriving
+  that way. When `finish_reason` is `length` the trace ran out of budget and the
+  existing budget error stands. It cost 13 runs since 2026-11-08 and every one of the
+  6 failing runs after the 2026-11-23 model switch.
 
 - **Clean-up no longer asks what it can decide** — a group whose spellings differ
   only in capitals (`Monitor`, `monitor`) holds no information to weigh, yet the

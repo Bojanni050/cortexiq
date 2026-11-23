@@ -69,11 +69,21 @@ func providerContentError(output string) *ProviderContentError {
 	return &ProviderContentError{Message: message}
 }
 
+// ReasoningOnlyError is an answer that held the model's reasoning and nothing
+// else: the provider sent a thinking block and no text block. There is no
+// answer to parse, and picking JSON out of the trace would be inventing one.
+type ReasoningOnlyError struct{ Model string }
+
+func (e *ReasoningOnlyError) Error() string {
+	return "reasoner: " + e.Model + " answered with its reasoning trace and no answer (the provider sent content blocks without a complete text block)"
+}
+
 // IsAnswerError reports whether err is about the shape of the answer instead of
 // about the call. A transport failure, a timeout and a budget that ran out are
 // not answer errors: the same batch may well be extracted on the next run.
 func IsAnswerError(err error) bool {
 	var answer *AnswerError
 	var content *ProviderContentError
-	return errors.As(err, &answer) || errors.As(err, &content)
+	var reasoningOnly *ReasoningOnlyError
+	return errors.As(err, &answer) || errors.As(err, &content) || errors.As(err, &reasoningOnly)
 }
