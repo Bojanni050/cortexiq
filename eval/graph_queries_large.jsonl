@@ -1,0 +1,52 @@
+{"id": "l01", "kind": "direct", "query": "Wat verkoopt de Webshop?", "expect": ["x009"]}
+{"id": "l02", "kind": "direct", "query": "Hoe lang gaat de accu van de Groepset mee?", "expect": ["x025"]}
+{"id": "l03", "kind": "direct", "query": "Wanneer gaan de Tomatenplanten de grond in?", "expect": ["x039"]}
+{"id": "l04", "kind": "direct", "query": "Waarin is de Android-app geschreven?", "expect": ["x017"]}
+{"id": "l05", "kind": "direct", "query": "Hoe lang moet Zuurdesembrood rijzen?", "expect": ["x053"]}
+{"id": "l06", "kind": "direct", "query": "Hoe groot is de Studiokamer?", "expect": ["x035"]}
+{"id": "l07", "kind": "direct", "query": "Hoeveel schijven zitten er in de NAS?", "expect": ["x067"]}
+{"id": "l08", "kind": "direct", "query": "Hoe lang duurt de Japanreis?", "expect": ["x045"]}
+{"id": "l09", "kind": "neighbour", "query": "Welke dienst int het geld in de Webshop?", "expect": ["x011"]}
+{"id": "l10", "kind": "neighbour", "query": "Via welk onderdeel praat Home Assistant met de apparaatjes in huis?", "expect": ["x003"]}
+{"id": "l11", "kind": "neighbour", "query": "Welke dienst regelt de toegang tot de Android-app?", "expect": ["x018"]}
+{"id": "l12", "kind": "neighbour", "query": "Waarmee wordt de gist van Zuurdesembrood gevoed?", "expect": ["x054"]}
+{"id": "l13", "kind": "neighbour", "query": "Hoe dik zijn de onderdelen die de Racefiets afremmen?", "expect": ["x026"]}
+{"id": "l14", "kind": "neighbour", "query": "Wat kost de ruimte waar de Schaakclub speelt?", "expect": ["x064"]}
+{"id": "l15", "kind": "neighbour", "query": "Wie checkt de scores van de Competitie?", "expect": ["x062"]}
+{"id": "l16", "kind": "neighbour", "query": "Wat gebeurt er als een schijf van de NAS stukgaat?", "expect": ["x071"]}
+{"id": "l17", "kind": "hop2", "query": "Wat is er nodig om bij het berichtensysteem van Home Assistant binnen te komen?", "expect": ["x004"]}
+{"id": "l18", "kind": "hop2", "query": "Hoe snel moet de Webshop reageren op het signaal van de kassadienst?", "expect": ["x012"]}
+{"id": "l19", "kind": "hop2", "query": "Waarom komen alerts van de Android-app niet los maar in groepjes?", "expect": ["x019"]}
+{"id": "l20", "kind": "hop2", "query": "Hoe lang kan ik met de Racefiets rijden voordat het wrijvingsmateriaal van de remmen op is?", "expect": ["x027"]}
+{"id": "l21", "kind": "hop2", "query": "Waar belandt het spul uit de keuken dat de Moestuin later voedt?", "expect": ["x044"]}
+{"id": "l22", "kind": "hop2", "query": "Waar komt het water vandaan voor de Moestuin?", "expect": ["x041"]}
+{"id": "l23", "kind": "hop2", "query": "Wie zorgt dat de resultaten van de Schaakclub bij de bond terechtkomen?", "expect": ["x062"]}
+{"id": "l24", "kind": "hop2", "query": "Hoe lang duurt het voordat muziek van Ableton te beluisteren is op Spotify?", "expect": ["x037"]}
+{"id": "l25", "kind": "hop2", "query": "Waar in de kamer zijn de luidsprekers geplaatst bij het werken in Ableton?", "expect": ["x033"]}
+{"id": "l26", "kind": "hop2", "query": "Wat gebeurt er met de structuur van de gegevensopslag van de Tijdregistratie-tool als een nieuwe versie start?", "expect": ["x079"]}
+{"id": "l27", "kind": "hop2", "query": "Welke etiquette geldt bij het baden op de Japanreis?", "expect": ["x049"]}
+{"id": "l28", "kind": "hop2", "query": "Hoe lang zit ik in de hogesnelheidslijn tijdens de Japanreis?", "expect": ["x047"]}
+{"id": "l29", "kind": "hop2", "query": "Wat moet er van mijn identiteitsbewijs kloppen voor de Japanreis?", "expect": ["x051"]}
+{"id": "l30", "kind": "hop2", "query": "Hoe snel is de internetlijn onder de NAS?", "expect": ["x073"]}
+{"id": "l31", "kind": "hop3", "query": "Hoeveel RAM zit er in de computer onder Home Assistant?", "expect": ["x005"]}
+{"id": "l32", "kind": "hop3", "query": "Waar staan de nog niet verwerkte klussen na een aankoop in de Webshop?", "expect": ["x013"]}
+{"id": "l33", "kind": "hop3", "query": "Kan ik per onderwerp de volume-instelling van signalen van de Android-app aanpassen?", "expect": ["x020"]}
+{"id": "l34", "kind": "hop3", "query": "Wie beslist over het geld van de organisatie achter de Android-app?", "expect": ["x023"]}
+{"id": "l35", "kind": "hop3", "query": "Hoe actueel zijn de speelsterktecijfers van de leden van de Schaakclub?", "expect": ["x063"]}
+{"id": "l36", "kind": "hop3", "query": "Wanneer legt de Schaakclub verantwoording af over de financiën?", "expect": ["x066"]}
+{"id": "l37", "kind": "hop3", "query": "Wat kan ik doen bij de herkomst van de grondstoffen voor Zuurdesembrood?", "expect": ["x056"]}
+{"id": "l38", "kind": "hop3", "query": "Wie kan erbij als ik mijn wachtwoord voor de offsite kopieën van de NAS kwijtraak?", "expect": ["x075"]}
+{"id": "l39", "kind": "hop3", "query": "Wanneer kan ik bellen met de partij die de verbinding van de NAS levert?", "expect": ["x074"]}
+{"id": "l40", "kind": "hop3", "query": "Hoe krijg ik de Tijdregistratie-tool op mijn MacBook?", "expect": ["x082"]}
+{"id": "l41", "kind": "hop3", "query": "Waar kan ik zien hoe mijn laatste loopje zich verhoudt tot vorige sessies bij het Hardloopschema?", "expect": ["x086"]}
+{"id": "l42", "kind": "hop3", "query": "Op welke avond kan ik mijn identiteitsbewijs laten vernieuwen voor de Japanreis?", "expect": ["x052"]}
+{"id": "l43", "kind": "hop3", "query": "Waar ligt het bewijs van het jaarlijkse onderhoud van de Racefiets?", "expect": ["x030"]}
+{"id": "l44", "kind": "hop3", "query": "Is het dakwerk recent opgeknapt bij het wateropvangsysteem van de Moestuin?", "expect": ["x042"]}
+{"id": "l45", "kind": "hop3", "query": "Waarmee wordt de akoestiek verbeterd in de opstelling van Ableton?", "expect": ["x034"]}
+{"id": "l46", "kind": "control", "query": "Welke regels gelden er voor het warme bad?", "expect": ["x049"]}
+{"id": "l47", "kind": "control", "query": "Hoeveel foto's staan er in de collectie?", "expect": ["x067"]}
+{"id": "l48", "kind": "control", "query": "Hoe lang gaat de batterij mee bij continu gebruik van gps?", "expect": ["x085"]}
+{"id": "l49", "kind": "control", "query": "Wat is de capaciteit van de regenopvang?", "expect": ["x041"]}
+{"id": "l50", "kind": "control", "query": "Waar worden de facturen elke week ingelezen?", "expect": ["x015"]}
+{"id": "l51", "kind": "control", "query": "Hoe laat is de klantenservice bereikbaar?", "expect": ["x074"]}
+{"id": "l52", "kind": "control", "query": "Wanneer komt het bestuur bijeen?", "expect": ["x023"]}

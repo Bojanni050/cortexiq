@@ -1,0 +1,170 @@
+{"kind": "fact", "id": "x001", "entity": "Home Assistant", "content": "De centrale draait automatiseringen voor verlichting en verwarming in het huis."}
+{"kind": "fact", "id": "x002", "entity": "Home Assistant", "content": "Het dashboard is alleen bereikbaar via de interne reverse proxy."}
+{"kind": "fact", "id": "x003", "entity": "Zigbee2MQTT", "content": "Sensoren melden zich aan via een USB-stick met een Zigbee-radio."}
+{"kind": "fact", "id": "x004", "entity": "Mosquitto", "content": "De broker accepteert alleen verbindingen met gebruikersnaam en wachtwoord."}
+{"kind": "fact", "id": "x005", "entity": "Raspberry Pi 5", "content": "Het bordje heeft 8 GB werkgeheugen en wordt passief gekoeld."}
+{"kind": "fact", "id": "x006", "entity": "NVMe-schijf", "content": "Een schijf van 256 GB vervangt de oude SD-kaart voor een langere levensduur."}
+{"kind": "fact", "id": "x007", "entity": "UPS", "content": "De noodstroomvoorziening overbrugt een stroomuitval van ongeveer twintig minuten."}
+{"kind": "fact", "id": "x008", "entity": "Meterkast", "content": "De kast bevat de groepenverdeling en een aparte aansluiting voor netwerkapparatuur."}
+{"kind": "fact", "id": "x009", "entity": "Webshop", "content": "De winkel verkoopt handgemaakte keramiek aan klanten in Nederland en België."}
+{"kind": "fact", "id": "x010", "entity": "Webshop", "content": "Bestellingen boven vijftig euro worden gratis verzonden."}
+{"kind": "fact", "id": "x011", "entity": "Mollie", "content": "Betalingen via iDEAL en creditcard worden hier afgehandeld."}
+{"kind": "fact", "id": "x012", "entity": "Betaalwebhook", "content": "Een melding bevestigt de betaling en moet binnen vijf seconden worden beantwoord."}
+{"kind": "fact", "id": "x013", "entity": "Redis", "content": "De cache bewaart sessies en houdt een wachtrij van openstaande taken bij."}
+{"kind": "fact", "id": "x014", "entity": "Factuurservice", "content": "Na elke betaling wordt automatisch een pdf-factuur gegenereerd en gemaild."}
+{"kind": "fact", "id": "x015", "entity": "Boekhoudpakket", "content": "Facturen worden elke week als export ingelezen voor de btw-aangifte."}
+{"kind": "fact", "id": "x016", "entity": "Accountant", "content": "Elk kwartaal volgt een gesprek over omzet en voorlopige aanslagen."}
+{"kind": "fact", "id": "x017", "entity": "Android-app", "content": "De app is geschreven in Kotlin en ondersteunt Android 10 en hoger."}
+{"kind": "fact", "id": "x018", "entity": "Firebase", "content": "Het platform regelt het inloggen en bewaart gebruikersvoorkeuren in de cloud."}
+{"kind": "fact", "id": "x019", "entity": "Pushmeldingen", "content": "Berichten worden gebundeld verstuurd om de batterij van telefoons te sparen."}
+{"kind": "fact", "id": "x020", "entity": "Notificatiekanaal", "content": "Gebruikers kunnen per categorie kiezen of een melding geluid mag maken."}
+{"kind": "fact", "id": "x021", "entity": "Playstore", "content": "Elke release gaat eerst een week naar een besloten testgroep."}
+{"kind": "fact", "id": "x022", "entity": "Ontwikkelaarsaccount", "content": "De registratie kostte een eenmalig bedrag en staat op naam van de stichting."}
+{"kind": "fact", "id": "x023", "entity": "Stichting", "content": "Het bestuur komt vier keer per jaar bijeen om de begroting te bespreken."}
+{"kind": "fact", "id": "x024", "entity": "Racefiets", "content": "Het frame is van koolstof en weegt minder dan acht kilo."}
+{"kind": "fact", "id": "x025", "entity": "Groepset", "content": "De versnellingen schakelen elektronisch en de accu gaat ongeveer zestig uur mee."}
+{"kind": "fact", "id": "x026", "entity": "Remschijven", "content": "De schijven zijn zes millimeter dik en moeten bij slijtage worden vervangen."}
+{"kind": "fact", "id": "x027", "entity": "Remblokjes", "content": "Een nieuwe set gaat bij droog weer ongeveer drieduizend kilometer mee."}
+{"kind": "fact", "id": "x028", "entity": "Fietswerkplaats", "content": "De monteur heeft op zaterdag een inloopspreekuur zonder afspraak."}
+{"kind": "fact", "id": "x029", "entity": "Servicebeurt", "content": "Jaarlijks worden kabels, lagers en de ketting nagelopen."}
+{"kind": "fact", "id": "x030", "entity": "Garantiebewijs", "content": "Het papier is bewaard in de map met aankoopbonnen."}
+{"kind": "fact", "id": "x031", "entity": "Ableton", "content": "Het programma bevat de projecten van alle nummers uit het afgelopen jaar."}
+{"kind": "fact", "id": "x032", "entity": "Audio-interface", "content": "De kaart heeft twee ingangen en werkt met een samplefrequentie van 48 kHz."}
+{"kind": "fact", "id": "x033", "entity": "Studiomonitors", "content": "De speakers staan op een afstand van een meter van de achterwand."}
+{"kind": "fact", "id": "x034", "entity": "Akoestische panelen", "content": "Absorptiepanelen aan het plafond dempen het echoën van lage tonen."}
+{"kind": "fact", "id": "x035", "entity": "Studiokamer", "content": "De ruimte meet drie bij vier meter en ligt op de eerste verdieping."}
+{"kind": "fact", "id": "x036", "entity": "Mastering", "content": "Het eindresultaat wordt genormaliseerd op min veertien LUFS."}
+{"kind": "fact", "id": "x037", "entity": "Distributeur", "content": "Nummers verschijnen na ongeveer twee weken op de streamingdiensten."}
+{"kind": "fact", "id": "x038", "entity": "Moestuin", "content": "Het terrein is twaalf vierkante meter groot en ligt op het zuiden."}
+{"kind": "fact", "id": "x039", "entity": "Tomatenplanten", "content": "De struiken worden eind mei uitgeplant en regelmatig uitgeknepen."}
+{"kind": "fact", "id": "x040", "entity": "Druppelslang", "content": "Een timer geeft elke ochtend tien minuten water."}
+{"kind": "fact", "id": "x041", "entity": "Regenton", "content": "De ton van tweehonderd liter is verbonden met de dakgoot van het schuurtje."}
+{"kind": "fact", "id": "x042", "entity": "Schuurtje", "content": "Het houten gebouwtje heeft een dak met bitumen dat vorig jaar is vernieuwd."}
+{"kind": "fact", "id": "x043", "entity": "Compost", "content": "De hoop wordt elke maand omgezet en levert in het najaar bruikbare grond."}
+{"kind": "fact", "id": "x044", "entity": "Keukenafval", "content": "Groente en fruitresten gaan in een emmer met deksel naast de gootsteen."}
+{"kind": "fact", "id": "x045", "entity": "Japanreis", "content": "De reis duurt drie weken en begint in oktober in Tokio."}
+{"kind": "fact", "id": "x046", "entity": "JR Pass", "content": "Het treinkaartje geldt voor veertien aaneengesloten dagen op de meeste lijnen."}
+{"kind": "fact", "id": "x047", "entity": "Shinkansen", "content": "De sneltrein naar Kyoto doet er ruim twee uur over."}
+{"kind": "fact", "id": "x048", "entity": "Ryokan", "content": "Een traditioneel logement in Kyoto biedt een maaltijd en tatami-matten."}
+{"kind": "fact", "id": "x049", "entity": "Onsen", "content": "Het warme bad heeft strikte regels over tatoeages en wassen vooraf."}
+{"kind": "fact", "id": "x050", "entity": "Visum", "content": "Voor een verblijf korter dan negentig dagen is geen visum nodig."}
+{"kind": "fact", "id": "x051", "entity": "Paspoort", "content": "Het document is nog drie jaar geldig en moet bij aankomst minstens zes maanden geldig zijn."}
+{"kind": "fact", "id": "x052", "entity": "Gemeente", "content": "Het loket is geopend op donderdagavond en een afspraak is verplicht."}
+{"kind": "fact", "id": "x053", "entity": "Zuurdesembrood", "content": "Het deeg rijst twaalf uur in de koelkast en wordt bij 240 graden gebakken."}
+{"kind": "fact", "id": "x054", "entity": "Zuurdesemstarter", "content": "De gist wordt dagelijks gevoed met gelijke delen bloem en water."}
+{"kind": "fact", "id": "x055", "entity": "Roggebloem", "content": "Het volkoren meel komt van een molen in Groningen."}
+{"kind": "fact", "id": "x056", "entity": "Molen", "content": "De molenaar draait op zaterdag een open dag met rondleidingen."}
+{"kind": "fact", "id": "x057", "entity": "Dutch oven", "content": "De gietijzeren pan houdt de stoom vast en geeft een knapperige korst."}
+{"kind": "fact", "id": "x058", "entity": "Oven", "content": "De binnenruimte is te klein voor twee broden naast elkaar."}
+{"kind": "fact", "id": "x059", "entity": "Keukenweegschaal", "content": "De digitale schaal meet tot op één gram nauwkeurig."}
+{"kind": "fact", "id": "x060", "entity": "Schaakclub", "content": "De leden spelen elke dinsdagavond in een zaal in de wijk."}
+{"kind": "fact", "id": "x061", "entity": "Competitie", "content": "Het eerste team speelt in de derde klasse van de regionale bond."}
+{"kind": "fact", "id": "x062", "entity": "Wedstrijdleider", "content": "Een vrijwilliger controleert de uitslagen en meldt ze door aan de bond."}
+{"kind": "fact", "id": "x063", "entity": "Ratinglijst", "content": "De lijst wordt twee keer per jaar ververst op basis van gespeelde partijen."}
+{"kind": "fact", "id": "x064", "entity": "Buurthuis", "content": "De zaal wordt verhuurd voor een vast bedrag per avond."}
+{"kind": "fact", "id": "x065", "entity": "Gemeentesubsidie", "content": "De bijdrage dekt ongeveer de helft van de zaalhuur."}
+{"kind": "fact", "id": "x066", "entity": "Penningmeester", "content": "De boekhouding wordt elk jaar in maart gepresenteerd aan de leden."}
+{"kind": "fact", "id": "x067", "entity": "NAS", "content": "Het apparaat heeft vier schijven en bewaart ruim zestigduizend foto's."}
+{"kind": "fact", "id": "x068", "entity": "Fotobibliotheek", "content": "De opnames zijn gesorteerd per jaar en gebeurtenis."}
+{"kind": "fact", "id": "x069", "entity": "Back-upkluis", "content": "Een versleutelde kopie staat bij een externe aanbieder in een ander land."}
+{"kind": "fact", "id": "x070", "entity": "Versleuteling", "content": "De sleutel is lang en wordt alleen offline bewaard."}
+{"kind": "fact", "id": "x071", "entity": "Schijfarray", "content": "Als één schijf uitvalt blijft de data beschikbaar tot de vervanging."}
+{"kind": "fact", "id": "x072", "entity": "Netwerkswitch", "content": "De gigabit-switch verbindt de opslag met de werkkamer."}
+{"kind": "fact", "id": "x073", "entity": "Glasvezelmodem", "content": "De verbinding levert driehonderd megabit omhoog en omlaag."}
+{"kind": "fact", "id": "x074", "entity": "Internetprovider", "content": "De klantenservice is op werkdagen bereikbaar tot negen uur 's avonds."}
+{"kind": "fact", "id": "x075", "entity": "Familielid", "content": "De zus woont in Zwolle en bewaart een enveloppe met een reservesleutel."}
+{"kind": "fact", "id": "x076", "entity": "Tijdregistratie-tool", "content": "Het commandoregelprogramma houdt per project bij hoeveel uur eraan is gewerkt."}
+{"kind": "fact", "id": "x077", "entity": "Rust", "content": "De code gebruikt de stabiele compiler en een strikte lintconfiguratie."}
+{"kind": "fact", "id": "x078", "entity": "SQLite", "content": "Alle registraties staan in één bestand naast het configuratiebestand."}
+{"kind": "fact", "id": "x079", "entity": "Migraties", "content": "Schemawijzigingen worden bij het opstarten automatisch toegepast in volgorde."}
+{"kind": "fact", "id": "x080", "entity": "GitHub Actions", "content": "Bij elke push draaien de tests op Linux, macOS en Windows."}
+{"kind": "fact", "id": "x081", "entity": "Releaseproces", "content": "Een versietag bouwt binaire bestanden en zet ze als download klaar."}
+{"kind": "fact", "id": "x082", "entity": "Homebrew-tap", "content": "Gebruikers op macOS installeren het programma met één opdracht."}
+{"kind": "fact", "id": "x083", "entity": "Hardloopschema", "content": "Het schema telt twaalf weken en eindigt met een wedstrijd van tien kilometer."}
+{"kind": "fact", "id": "x084", "entity": "Hartslagmeter", "content": "De borstband koppelt via Bluetooth met de horloge-app."}
+{"kind": "fact", "id": "x085", "entity": "Horloge", "content": "De batterij gaat bij continu gebruik van gps ongeveer veertig uur mee."}
+{"kind": "fact", "id": "x086", "entity": "Trainingsapp", "content": "Elke run wordt automatisch geüpload en met eerdere trainingen vergeleken."}
+{"kind": "fact", "id": "x087", "entity": "Herstelmeting", "content": "De score gebruikt de hartslagvariatie in rust, gemeten na het opstaan."}
+{"kind": "fact", "id": "x088", "entity": "Slaapritme", "content": "Het doel is zeven en een half uur per nacht met vaste bedtijden."}
+{"kind": "fact", "id": "x089", "entity": "Fysiotherapeut", "content": "Bij kuitklachten volgt een behandeling van een half uur met oefeningen."}
+{"kind": "rel", "from": "Home Assistant", "type": "uses", "to": "Zigbee2MQTT", "confidence": 0.85}
+{"kind": "rel", "from": "Zigbee2MQTT", "type": "publishes_to", "to": "Mosquitto", "confidence": 0.85}
+{"kind": "rel", "from": "Mosquitto", "type": "runs_on", "to": "Raspberry Pi 5", "confidence": 0.85}
+{"kind": "rel", "from": "Raspberry Pi 5", "type": "boots_from", "to": "NVMe-schijf", "confidence": 0.85}
+{"kind": "rel", "from": "Raspberry Pi 5", "type": "powered_by", "to": "UPS", "confidence": 0.85}
+{"kind": "rel", "from": "UPS", "type": "located_in", "to": "Meterkast", "confidence": 0.85}
+{"kind": "rel", "from": "Webshop", "type": "pays_with", "to": "Mollie", "confidence": 0.85}
+{"kind": "rel", "from": "Mollie", "type": "calls", "to": "Betaalwebhook", "confidence": 0.85}
+{"kind": "rel", "from": "Betaalwebhook", "type": "enqueues_in", "to": "Redis", "confidence": 0.85}
+{"kind": "rel", "from": "Betaalwebhook", "type": "triggers", "to": "Factuurservice", "confidence": 0.85}
+{"kind": "rel", "from": "Factuurservice", "type": "exports_to", "to": "Boekhoudpakket", "confidence": 0.85}
+{"kind": "rel", "from": "Boekhoudpakket", "type": "reviewed_by", "to": "Accountant", "confidence": 0.85}
+{"kind": "rel", "from": "Android-app", "type": "signs_in_with", "to": "Firebase", "confidence": 0.85}
+{"kind": "rel", "from": "Firebase", "type": "sends", "to": "Pushmeldingen", "confidence": 0.85}
+{"kind": "rel", "from": "Pushmeldingen", "type": "grouped_in", "to": "Notificatiekanaal", "confidence": 0.85}
+{"kind": "rel", "from": "Android-app", "type": "published_on", "to": "Playstore", "confidence": 0.85}
+{"kind": "rel", "from": "Playstore", "type": "requires", "to": "Ontwikkelaarsaccount", "confidence": 0.85}
+{"kind": "rel", "from": "Ontwikkelaarsaccount", "type": "owned_by", "to": "Stichting", "confidence": 0.85}
+{"kind": "rel", "from": "Racefiets", "type": "has", "to": "Groepset", "confidence": 0.85}
+{"kind": "rel", "from": "Racefiets", "type": "has", "to": "Remschijven", "confidence": 0.85}
+{"kind": "rel", "from": "Remschijven", "type": "wears_with", "to": "Remblokjes", "confidence": 0.85}
+{"kind": "rel", "from": "Racefiets", "type": "serviced_by", "to": "Fietswerkplaats", "confidence": 0.85}
+{"kind": "rel", "from": "Fietswerkplaats", "type": "performs", "to": "Servicebeurt", "confidence": 0.85}
+{"kind": "rel", "from": "Servicebeurt", "type": "recorded_in", "to": "Garantiebewijs", "confidence": 0.85}
+{"kind": "rel", "from": "Ableton", "type": "records_via", "to": "Audio-interface", "confidence": 0.85}
+{"kind": "rel", "from": "Audio-interface", "type": "drives", "to": "Studiomonitors", "confidence": 0.85}
+{"kind": "rel", "from": "Studiomonitors", "type": "treated_by", "to": "Akoestische panelen", "confidence": 0.85}
+{"kind": "rel", "from": "Akoestische panelen", "type": "installed_in", "to": "Studiokamer", "confidence": 0.85}
+{"kind": "rel", "from": "Ableton", "type": "exports_to", "to": "Mastering", "confidence": 0.85}
+{"kind": "rel", "from": "Mastering", "type": "delivered_to", "to": "Distributeur", "confidence": 0.85}
+{"kind": "rel", "from": "Moestuin", "type": "grows", "to": "Tomatenplanten", "confidence": 0.85}
+{"kind": "rel", "from": "Moestuin", "type": "watered_by", "to": "Druppelslang", "confidence": 0.85}
+{"kind": "rel", "from": "Druppelslang", "type": "fed_from", "to": "Regenton", "confidence": 0.85}
+{"kind": "rel", "from": "Regenton", "type": "collects_from", "to": "Schuurtje", "confidence": 0.85}
+{"kind": "rel", "from": "Moestuin", "type": "enriched_with", "to": "Compost", "confidence": 0.85}
+{"kind": "rel", "from": "Compost", "type": "made_from", "to": "Keukenafval", "confidence": 0.85}
+{"kind": "rel", "from": "Japanreis", "type": "travels_by", "to": "JR Pass", "confidence": 0.85}
+{"kind": "rel", "from": "JR Pass", "type": "covers", "to": "Shinkansen", "confidence": 0.85}
+{"kind": "rel", "from": "Japanreis", "type": "stays_in", "to": "Ryokan", "confidence": 0.85}
+{"kind": "rel", "from": "Ryokan", "type": "offers", "to": "Onsen", "confidence": 0.85}
+{"kind": "rel", "from": "Japanreis", "type": "requires", "to": "Visum", "confidence": 0.85}
+{"kind": "rel", "from": "Visum", "type": "needs", "to": "Paspoort", "confidence": 0.85}
+{"kind": "rel", "from": "Paspoort", "type": "renewed_at", "to": "Gemeente", "confidence": 0.85}
+{"kind": "rel", "from": "Zuurdesembrood", "type": "rises_with", "to": "Zuurdesemstarter", "confidence": 0.85}
+{"kind": "rel", "from": "Zuurdesemstarter", "type": "fed_with", "to": "Roggebloem", "confidence": 0.85}
+{"kind": "rel", "from": "Roggebloem", "type": "milled_at", "to": "Molen", "confidence": 0.85}
+{"kind": "rel", "from": "Zuurdesembrood", "type": "baked_in", "to": "Dutch oven", "confidence": 0.85}
+{"kind": "rel", "from": "Dutch oven", "type": "heated_in", "to": "Oven", "confidence": 0.85}
+{"kind": "rel", "from": "Zuurdesembrood", "type": "measured_on", "to": "Keukenweegschaal", "confidence": 0.85}
+{"kind": "rel", "from": "Schaakclub", "type": "plays_in", "to": "Competitie", "confidence": 0.85}
+{"kind": "rel", "from": "Competitie", "type": "run_by", "to": "Wedstrijdleider", "confidence": 0.85}
+{"kind": "rel", "from": "Wedstrijdleider", "type": "updates", "to": "Ratinglijst", "confidence": 0.85}
+{"kind": "rel", "from": "Schaakclub", "type": "meets_in", "to": "Buurthuis", "confidence": 0.85}
+{"kind": "rel", "from": "Buurthuis", "type": "rent_covered_by", "to": "Gemeentesubsidie", "confidence": 0.85}
+{"kind": "rel", "from": "Gemeentesubsidie", "type": "reported_by", "to": "Penningmeester", "confidence": 0.85}
+{"kind": "rel", "from": "NAS", "type": "stores", "to": "Fotobibliotheek", "confidence": 0.85}
+{"kind": "rel", "from": "NAS", "type": "backed_up_to", "to": "Back-upkluis", "confidence": 0.85}
+{"kind": "rel", "from": "Back-upkluis", "type": "protected_by", "to": "Versleuteling", "confidence": 0.85}
+{"kind": "rel", "from": "NAS", "type": "uses", "to": "Schijfarray", "confidence": 0.85}
+{"kind": "rel", "from": "NAS", "type": "connected_via", "to": "Netwerkswitch", "confidence": 0.85}
+{"kind": "rel", "from": "Netwerkswitch", "type": "uplinked_to", "to": "Glasvezelmodem", "confidence": 0.85}
+{"kind": "rel", "from": "Glasvezelmodem", "type": "provided_by", "to": "Internetprovider", "confidence": 0.85}
+{"kind": "rel", "from": "Versleuteling", "type": "escrowed_with", "to": "Familielid", "confidence": 0.85}
+{"kind": "rel", "from": "Tijdregistratie-tool", "type": "written_in", "to": "Rust", "confidence": 0.85}
+{"kind": "rel", "from": "Tijdregistratie-tool", "type": "stores_in", "to": "SQLite", "confidence": 0.85}
+{"kind": "rel", "from": "SQLite", "type": "evolves_via", "to": "Migraties", "confidence": 0.85}
+{"kind": "rel", "from": "Tijdregistratie-tool", "type": "tested_by", "to": "GitHub Actions", "confidence": 0.85}
+{"kind": "rel", "from": "GitHub Actions", "type": "triggers", "to": "Releaseproces", "confidence": 0.85}
+{"kind": "rel", "from": "Releaseproces", "type": "publishes_to", "to": "Homebrew-tap", "confidence": 0.85}
+{"kind": "rel", "from": "Hardloopschema", "type": "measured_with", "to": "Hartslagmeter", "confidence": 0.85}
+{"kind": "rel", "from": "Hartslagmeter", "type": "pairs_with", "to": "Horloge", "confidence": 0.85}
+{"kind": "rel", "from": "Horloge", "type": "syncs_to", "to": "Trainingsapp", "confidence": 0.85}
+{"kind": "rel", "from": "Trainingsapp", "type": "computes", "to": "Herstelmeting", "confidence": 0.85}
+{"kind": "rel", "from": "Herstelmeting", "type": "depends_on", "to": "Slaapritme", "confidence": 0.85}
+{"kind": "rel", "from": "Hardloopschema", "type": "supervised_by", "to": "Fysiotherapeut", "confidence": 0.85}
+{"kind": "rel", "from": "UPS", "type": "powers", "to": "NAS", "confidence": 0.85}
+{"kind": "rel", "from": "Gemeentesubsidie", "type": "granted_by", "to": "Gemeente", "confidence": 0.85}
+{"kind": "rel", "from": "Accountant", "type": "advises", "to": "Stichting", "confidence": 0.85}
+{"kind": "rel", "from": "Trainingsapp", "type": "runs_on", "to": "Android-app", "confidence": 0.85}
+{"kind": "rel", "from": "Keukenweegschaal", "type": "sold_by", "to": "Webshop", "confidence": 0.85}
+{"kind": "rel", "from": "Ableton", "type": "backed_up_to", "to": "NAS", "confidence": 0.85}

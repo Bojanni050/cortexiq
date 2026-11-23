@@ -210,3 +210,143 @@ func TestUnionGraphFactsKeepsOneHopOrderAndAppendsOnlyNewFacts(t *testing.T) {
 		t.Errorf("an empty walk keeps the one-hop result: %v", got)
 	}
 }
+
+// namedEntities lists every corpus entity (lower case) a question names as a
+// whole word.
+func namedEntities(facts []GraphFact, query string) []string {
+	found := map[string]bool{}
+	for _, f := range facts {
+		re := regexp.MustCompile(`(?i)(^|[^[:alnum:]])` + regexp.QuoteMeta(f.Entity) + `([^[:alnum:]]|$)`)
+		if re.MatchString(query) {
+			found[lower(f.Entity)] = true
+		}
+	}
+	var out []string
+	for e := range found {
+		out = append(out, e)
+	}
+	return out
+}
+
+// sharedContentWords counts the words of six letters or more that a question
+// shares with a fact, matching on a common six-letter start so that "vernieuwd"
+// and "vernieuwen" or "werkgeheugen" and "geheugen" count as one word.
+func sharedContentWords(query, fact string) int {
+	words := func(s string) []string {
+		var out []string
+		for _, w := range regexp.MustCompile(`[\p{L}\p{N}]+`).FindAllString(strings.ToLower(s), -1) {
+			if len([]rune(w)) >= 6 {
+				out = append(out, w)
+			}
+		}
+		return out
+	}
+	n := 0
+	fw := words(fact)
+	for _, q := range words(query) {
+		for _, f := range fw {
+			if q == f || strings.Contains(q, f) || strings.Contains(f, q) || string([]rune(q)[:6]) == string([]rune(f)[:6]) {
+				n++
+				break
+			}
+		}
+	}
+	return n
+}
+
+// TestShippedLargeGraphSetShape guards eval/graph_corpus_large.jsonl and
+// eval/graph_queries_large.jsonl: every question sits exactly as many
+// relationships from the entity it names as its kind says, a control names no
+// entity, and three relationships reach only a small part of the graph, which the
+// 26-fact corpus could not offer.
+func TestShippedLargeGraphSetShape(t *testing.T) {
+	cf, err := os.Open("../../eval/graph_corpus_large.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cf.Close()
+	facts, rels, err := LoadGraphCorpus(cf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	qf, err := os.Open("../../eval/graph_queries_large.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer qf.Close()
+	qs, err := LoadGraphQueries(qf, facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entities := map[string]bool{}
+	entityOf := map[string]string{}
+	for _, f := range facts {
+		entities[lower(f.Entity)] = true
+		entityOf[f.ID] = lower(f.Entity)
+	}
+	dist := entityDistances(rels)
+	want := map[string]int{GraphQueryDirect: 0, GraphQueryNeighbour: 1, GraphQueryHop2: 2, GraphQueryHop3: 3}
+
+	kinds := map[string]int{}
+	for _, q := range qs {
+		kinds[q.Kind]++
+		named := namedEntities(facts, q.Query)
+		if q.Kind == GraphQueryControl {
+			if len(named) != 0 {
+				t.Errorf("%s is a control but names %v", q.ID, named)
+			}
+			continue
+		}
+		if len(named) != 1 {
+			t.Errorf("%s must name exactly one corpus entity, names %v", q.ID, named)
+			continue
+		}
+		seed := named[0]
+		best := -1
+		for _, id := range q.Expect {
+			d, ok := dist[seed][entityOf[id]]
+			if entityOf[id] == seed {
+				d, ok = 0, true
+			}
+			if ok && (best < 0 || d < best) {
+				best = d
+			}
+		}
+		if best != want[q.Kind] {
+			t.Errorf("%s (%s): nearest expected fact is %d relationships from %s, want %d", q.ID, q.Kind, best, seed, want[q.Kind])
+		}
+		if q.Kind == GraphQueryHop2 || q.Kind == GraphQueryHop3 {
+			// A question that repeats the answer's words is solved by the vector arm and
+			// says nothing about the graph: allow one shared word at most.
+			content := map[string]string{}
+			for _, f := range facts {
+				content[f.ID] = f.Content
+			}
+			for _, id := range q.Expect {
+				if n := sharedContentWords(q.Query, content[id]); n > 1 {
+					t.Errorf("%s shares %d long words with its answer %s; rephrase it", q.ID, n, id)
+				}
+			}
+		}
+		if q.Kind == GraphQueryHop3 {
+			within := 0
+			for _, d := range dist[seed] {
+				if d <= 3 {
+					within++
+				}
+			}
+			if share := float64(within) / float64(len(entities)); share > 0.25 {
+				t.Errorf("%s: %d of %d entities lie within three relationships of %s (%.0f%%); the walk would reach a quarter of the graph or more", q.ID, within, len(entities), seed, 100*share)
+			}
+		}
+	}
+	for _, k := range []string{GraphQueryDirect, GraphQueryNeighbour, GraphQueryHop2, GraphQueryHop3, GraphQueryControl} {
+		if kinds[k] < 6 {
+			t.Errorf("the large set needs at least six %s questions, has %d", k, kinds[k])
+		}
+	}
+	if len(entities) < 80 {
+		t.Errorf("the large corpus should hold at least 80 entities, has %d", len(entities))
+	}
+}

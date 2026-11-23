@@ -568,6 +568,36 @@ The cap of three was a guess, not swept. Open: a sweep of the cap and of the wal
 constants, and a corpus large enough that three hops is not the whole graph; until then
 the one-hop routing stays as production runs it.
 
+Larger corpus, same day: `eval/graph_corpus_large.jsonl` (87 entities, 89 facts, 81
+relationships in twelve topics with six cross-links) and `eval/graph_queries_large.jsonl`
+(52 questions: 8 direct, 8 neighbour, 14 hop2, 15 hop3, 7 control). Run with
+`cortexiq eval graph --corpus eval/graph_corpus_large.jsonl --queries eval/graph_queries_large.jsonl`.
+`TestShippedLargeGraphSetShape` pins each question to its hop distance, requires
+controls to name no entity, caps three-hop reach at a quarter of the graph, and allows a
+hop question at most one long word in common with its answer. The first version of the
+questions failed that last check: with shared words the vector arm alone scored hop2
+hit@3 0.93, so the set could not show anything. Written by one person, synthetic Dutch,
+one run per cell.
+
+| hit@3 / MRR | without graph | routed (production) | routed + ppr | routed + union |
+|---|---|---|---|---|
+| direct (8) | 0.88 / 0.76 | 0.88 / 0.76 | 0.88 / 0.76 | 0.88 / 0.76 |
+| neighbour (8) | 1.00 / 0.79 | 1.00 / 0.79 | 1.00 / 0.79 | 1.00 / 0.79 |
+| hop2 (14) | 0.79 / 0.62 | 0.57 / 0.44 | 0.86 / 0.63 | 0.86 / 0.63 |
+| hop3 (15) | 0.67 / 0.48 | 0.47 / 0.30 | 0.67 / 0.48 | 0.53 / 0.39 |
+| control (7) | 1.00 / 0.90 | 1.00 / 0.90 | 1.00 / 0.90 | 1.00 / 0.90 |
+| overall (52) | 0.83 / 0.67 | 0.71 / 0.57 | 0.85 / 0.67 | 0.81 / 0.64 |
+
+Reading: the walk now equals no graph (one more hop2 question in the top 3) and is
+clearly better than routing, but it still reaches nothing the vector arm misses: hop3
+is unchanged. The union is worse than the walk alone. The surprise is production
+routing: on this corpus the one-hop arm costs 0.10 MRR overall against no graph and
+helps no direct or neighbour question, while on the 26-fact corpus it gained (0.79
+against 0.74). The one-hop arm adds a flat rank bonus to every neighbour fact, which
+pays when the corpus is tiny and costs when there are many similar facts. Worth
+checking against real recall before trusting the 2026-11-13 result; `CORTEXIQ_GRAPH_ROUTE`
+is not changed here.
+
 
 Fixed alongside it: a recall that asked for facts *and* episodes returned facts
 only. Episodes were handed whatever slots the facts left over, and facts fill the
