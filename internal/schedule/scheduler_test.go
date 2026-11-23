@@ -24,6 +24,9 @@ type harness struct {
 	// work is what Pending reports: the namespaces a failed run left behind.
 	work      []int64
 	tickEvery time.Duration
+
+	// status is the last state the loop published.
+	status Status
 }
 
 func newHarness(cfg Config, namespaces ...int64) *harness {
@@ -99,6 +102,18 @@ func (h *harness) setBlock(ch chan struct{}) {
 	h.mu.Unlock()
 }
 
+func (h *harness) recordStatus(st Status) {
+	h.mu.Lock()
+	h.status = st
+	h.mu.Unlock()
+}
+
+func (h *harness) statusNow() Status {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.status
+}
+
 func (h *harness) scheduler() *Scheduler {
 	return &Scheduler{
 		Initial:     h.cfg,
@@ -130,6 +145,7 @@ func (h *harness) scheduler() *Scheduler {
 			}
 			return time.NewTicker(d)
 		},
+		Status: h.recordStatus,
 	}
 }
 
@@ -165,6 +181,20 @@ func waitCall(t *testing.T, h *harness) int64 {
 		t.Fatal("scheduler did not run within 2s")
 		return 0
 	}
+}
+
+// waitStatus blocks until the loop publishes a state the caller is waiting for.
+func waitStatus(t *testing.T, h *harness, want func(Status) bool) Status {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if st := h.statusNow(); want(st) {
+			return st
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("scheduler never published the expected state; last was %+v", h.statusNow())
+	return Status{}
 }
 
 func expectCalls(t *testing.T, h *harness, want ...int64) {
@@ -335,5 +365,68 @@ func TestSchedulerDoesNotRetryWhenNothingIsWaiting(t *testing.T) {
 	case id := <-h.ran:
 		t.Fatalf("namespace %d ran although nothing was pending", id)
 	case <-time.After(80 * time.Millisecond):
+	}
+}
+
+// A run row is written when a run ends, so the dashboard cannot see a round in
+// flight in the database. The loop publishes that state instead, together with
+// the next tick, which only this process knows.
+func TestSchedulerReportsRunningRoundAndNextTick(t *testing.T) {
+	h := newHarness(Config{Mode: ModeInterval, IntervalSeconds: 300}, 7)
+	h.setTickEvery(time.Hour) // the catch-up round is the only one
+	gate := make(chan struct{})
+	h.setBlock(gate)
+	run(t, h.scheduler())
+
+	running := waitStatus(t, h, func(st Status) bool { return st.Running })
+	if running.Namespace != 7 {
+		t.Errorf("namespace = %d, want 7", running.Namespace)
+	}
+	if running.RunningSince.IsZero() {
+		t.Error("running_since is zero during a round")
+	}
+	if running.Mode != ModeInterval || running.Interval != 5*time.Minute {
+		t.Errorf("mode = %s interval = %s, want interval every 5m", running.Mode, running.Interval)
+	}
+	if !running.NextRun.After(time.Now()) {
+		t.Errorf("next run = %s, want a moment in the future", running.NextRun)
+	}
+
+	close(gate)
+	idle := waitStatus(t, h, func(st Status) bool { return !st.Running })
+	if idle.Namespace != 0 || !idle.RunningSince.IsZero() {
+		t.Errorf("idle status = %+v, want no namespace and no start time", idle)
+	}
+}
+
+// An events-only schedule has no next tick, and saying "now" would make the page
+// count down to nothing.
+func TestSchedulerReportsNoNextTickWithoutATimer(t *testing.T) {
+	h := newHarness(Config{Mode: ModeEvents, IntervalSeconds: 300}, 1)
+	run(t, h.scheduler())
+	waitCall(t, h)
+
+	if st := h.statusNow(); !st.NextRun.IsZero() {
+		t.Fatalf("next run = %s, want none in events-only mode", st.NextRun)
+	}
+}
+
+// A retry armed because work is waiting behind a failed batch is a run the reader
+// is waiting for too, so it is published as well.
+func TestSchedulerReportsArmedRetry(t *testing.T) {
+	h := newHarness(ConfigFromInterval(time.Hour), 1)
+	h.setTickEvery(time.Hour)
+	h.setWork(1)
+
+	s := h.scheduler()
+	s.RetryDelay = time.Hour
+	run(t, s)
+
+	if id := waitCall(t, h); id != 1 {
+		t.Fatalf("first run = %d, want 1", id)
+	}
+	st := waitStatus(t, h, func(st Status) bool { return !st.RetryAt.IsZero() })
+	if !st.RetryAt.After(time.Now()) {
+		t.Fatalf("retry at %s, want a moment in the future", st.RetryAt)
 	}
 }

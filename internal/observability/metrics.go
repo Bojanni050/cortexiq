@@ -4,6 +4,7 @@ package observability
 import (
 	"time"
 
+	"github.com/Bojanni050/cortexiq/internal/schedule"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -88,6 +89,52 @@ var (
 			Help: "Cross-encoder rerank requests made by recall; status error means recall fell back to the fused order",
 		}, []string{"status"},
 	)
+	// The loop's own state. A run row is only written when a run ends, so a run
+	// in flight is invisible in the database; the dashboard reads these from the
+	// consolidator's metrics endpoint to say "running" and to count down to the
+	// next round.
+	scheduleInfo = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "consolidation_schedule_info",
+			Help: "The configured consolidation schedule; the value is always 1 and the mode is the label",
+		}, []string{"mode"},
+	)
+	scheduleIntervalSeconds = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "consolidation_schedule_interval_seconds",
+			Help: "Timer period of the consolidation schedule; 0 in events-only mode",
+		},
+	)
+	runActive = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "consolidation_run_active",
+			Help: "1 while a consolidation round is in progress, 0 otherwise",
+		},
+	)
+	runStartedAt = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "consolidation_run_started_timestamp_seconds",
+			Help: "Unix time the current consolidation round started; 0 when idle",
+		},
+	)
+	runNamespace = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "consolidation_run_namespace_id",
+			Help: "Namespace being consolidated right now; 0 when idle",
+		},
+	)
+	nextRunAt = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "consolidation_next_run_timestamp_seconds",
+			Help: "Unix time the timer starts the next round; 0 when no timer is armed",
+		},
+	)
+	retryAt = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "consolidation_retry_timestamp_seconds",
+			Help: "Unix time a run is retried because work is waiting behind a failed batch; 0 when none is armed",
+		},
+	)
 )
 
 var reasonerStages = []string{
@@ -140,6 +187,40 @@ type Observation struct {
 	LLMCalls           int
 	Duration           time.Duration
 	Errors             int
+}
+
+// RecordScheduleStatus publishes the loop's live state: whether a round is
+// running, which namespace it is on, and when the timer fires next. The
+// dashboard in the split deployment reads these gauges from this process,
+// because the timer exists here and nowhere else.
+func RecordScheduleStatus(st schedule.Status) {
+	scheduleInfo.Reset()
+	scheduleInfo.WithLabelValues(string(st.Mode)).Set(1)
+	interval := st.Interval.Seconds()
+	if st.Mode == schedule.ModeEvents {
+		interval = 0
+	}
+	scheduleIntervalSeconds.Set(interval)
+	nextRunAt.Set(unixSeconds(st.NextRun))
+	retryAt.Set(unixSeconds(st.RetryAt))
+	if st.Running {
+		runActive.Set(1)
+		runStartedAt.Set(unixSeconds(st.RunningSince))
+		runNamespace.Set(float64(st.Namespace))
+		return
+	}
+	runActive.Set(0)
+	runStartedAt.Set(0)
+	runNamespace.Set(0)
+}
+
+// unixSeconds renders a moment as a Prometheus timestamp, and the zero time as
+// 0 so a reader can tell "no timer armed" from 1970.
+func unixSeconds(t time.Time) float64 {
+	if t.IsZero() {
+		return 0
+	}
+	return float64(t.UnixNano()) / float64(time.Second)
 }
 
 // RecordConsolidation exports the provided observation to Prometheus.

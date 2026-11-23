@@ -221,6 +221,10 @@ button.danger:hover { background: color-mix(in srgb, var(--red) 10%, var(--panel
 .card > p { padding: 0 20px; }
 .card > .card-body { padding: 16px 20px; }
 .card > .actions { padding: 0 20px 18px; margin-top: 0; }
+/* The live run strip on the Runs tab: one line, the clock first. */
+.live { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; padding: 15px 20px; }
+.live .grow { flex: 1 1 240px; min-width: 0; }
+.live .mono { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .tablewrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 .tablewrap, .card table { background: transparent; }
@@ -262,6 +266,9 @@ td.nsname { padding-left: calc(16px + var(--depth, 0) * 18px); }
 .badge.abandoned, .badge.rejected { --badge-c: var(--red); }
 .badge.pending, .badge.proposed { --badge-c: var(--yellow); }
 .badge.testing { --badge-c: var(--blue); }
+.badge.running { --badge-c: var(--green); }
+.badge.running::before { animation: livepulse 1.4s ease-in-out infinite; }
+@keyframes livepulse { 0%, 100% { opacity: 1; } 50% { opacity: .2; } }
 
 /* ---------- tags, confidence, row actions ---------- */
 .tagbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
@@ -2989,6 +2996,91 @@ async function renderPatterns() {
   });
 }
 
+/* ---------- live run state (Runs tab) ---------- */
+// The runs table is written when a round ends, so on its own it cannot answer
+// "is one going on now" — the question a reader has exactly while waiting. The
+// consolidator's loop publishes that state as gauges; this strip reads it from
+// /consolidation/live. A one-second tick moves the clock and a two-second poll
+// corrects it: a countdown that jumps in five-second steps reads as broken, and
+// "did my Run now start" should not take that long to answer either.
+const liveRuns = {poll: null, tick: null, snap: null, at: 0};
+
+function liveStop() {
+  clearInterval(liveRuns.poll); clearInterval(liveRuns.tick);
+  liveRuns.poll = liveRuns.tick = liveRuns.snap = null;
+}
+
+function clockText(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  const two = n => String(n).padStart(2, '0');
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h ? `${h}:${two(m)}:${two(s % 60)}` : `${m}:${two(s % 60)}`;
+}
+
+// liveLeft turns the server's countdown into an on-screen one: the snapshot is
+// the base, the time since it arrived is the subtraction. Negative means "no
+// such moment", which is not the same as zero.
+function liveLeft(seconds) {
+  if (!(seconds >= 0)) return -1;
+  return Math.max(0, seconds - (performance.now() - liveRuns.at) / 1000);
+}
+
+function livePaint() {
+  const host = document.getElementById('live-runs');
+  if (!host) return;
+  const s = liveRuns.snap;
+  let bits;
+  if (!s) {
+    bits = `<span class="badge">…</span><span class="grow muted">Reading the consolidator’s state…</span>`;
+  } else if (!s.available) {
+    bits = `<span class="badge">unknown</span><span class="grow muted">${esc(s.error
+      ? 'Cannot read the consolidator’s state: ' + s.error
+      : 'No live state from the consolidator: it publishes that as metrics, and none came back, so whether a round is running cannot be told from here.')}</span>`;
+  } else if (s.running) {
+    bits = `<span class="badge running">running</span>` +
+      `<span class="grow">${s.namespace_id ? 'Consolidating <span class="mono">' + esc(nsSlug(s.namespace_id)) + '</span>' : 'A round is running'}` +
+      ` <span class="muted">for <b class="mono">${clockText(liveLeft(s.running_for_seconds))}</b></span></span>` +
+      (s.next_run_in_seconds >= 0
+        ? `<span class="muted">next scheduled run in <b class="mono">${clockText(liveLeft(s.next_run_in_seconds))}</b></span>`
+        : `<span class="muted">no timer: a new remember starts the next round</span>`);
+  } else if (s.mode === 'events') {
+    bits = `<span class="badge">idle</span><span class="grow">Waiting for a new remember: this schedule has no timer.</span>` +
+      `<button onclick="runConsolidationNow()" title="Start a full round now instead of waiting">Run now</button>`;
+  } else if (s.next_run_in_seconds >= 0) {
+    bits = `<span class="badge">idle</span>` +
+      `<span class="grow">Next run in <b class="mono">${clockText(liveLeft(s.next_run_in_seconds))}</b>` +
+      (s.interval_seconds ? ` <span class="muted">· every ${secs(Number(s.interval_seconds))}</span>` : '') + `</span>` +
+      `<button onclick="runConsolidationNow()" title="Start a full round now instead of waiting">Run now</button>`;
+  } else {
+    bits = `<span class="badge">idle</span><span class="grow muted">The consolidator has no timer armed.</span>` +
+      `<button onclick="runConsolidationNow()" title="Start a full round now">Run now</button>`;
+  }
+  if (s && s.available && s.retry_in_seconds >= 0) {
+    bits += `<span class="muted">work still waiting: retry in <b class="mono">${clockText(liveLeft(s.retry_in_seconds))}</b></span>`;
+  }
+  const html = `<div class="live">${bits}</div>`;
+  if (host.dataset.html !== html) { host.dataset.html = html; host.innerHTML = html; }
+}
+
+async function livePoll() {
+  try {
+    liveRuns.snap = await api('/consolidation/live');
+  } catch (e) {
+    liveRuns.snap = {available: false, error: e.message};
+  }
+  liveRuns.at = performance.now();
+  livePaint();
+}
+
+function liveStart() {
+  liveStop();
+  liveRuns.at = performance.now();
+  livePaint();
+  livePoll();
+  liveRuns.poll = setInterval(livePoll, 2000);
+  liveRuns.tick = setInterval(livePaint, 1000);
+}
+
 async function renderRuns() {
   const dur = ms => ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : (ms || 0) + 'ms';
   const n = v => v ? String(v) : '<span class="muted">-</span>';
@@ -3025,7 +3117,7 @@ async function renderRuns() {
     path: o => '/runs' + qs(o),
     headers: ['Started', 'Namespace', 'Duration', 'Episodes', 'Skipped', 'Facts', 'Dedup', 'Near-miss', 'Rels', 'Patterns', 'Contra', 'Hyp', 'LLM calls', 'Errors'],
     fields: ['id', 'namespace_slug', 'error_sample'],
-    above: stuckBlock,
+    above: `<div class="card" style="margin:0 0 16px"><div id="live-runs"></div></div>` + stuckBlock,
     row: r => `<tr>
       <td class="muted">${ts(r.started_at)}</td>
       <td class="mono">${esc(r.namespace_slug || nsSlug(r.namespace_id))}</td>
@@ -3043,6 +3135,9 @@ async function renderRuns() {
       <td>${r.errors ? `<span class="badge abandoned">${r.errors}</span>${r.error_sample ? `<div class="muted">${esc(r.error_sample)}</div>` : ''}` : '<span class="muted">-</span>'}</td>
     </tr>`,
   });
+  // The strip above the table runs its own clock for as long as this tab is on
+  // screen; refresh() stops it when the tab changes.
+  liveStart();
 }
 /* ---------- Graph tab (Cytoscape.js, bundled under /ui/vendor) ---------- */
 const GRAPH_LIBS = ['cytoscape.min.js', 'layout-base.js', 'cose-base.js', 'cytoscape-fcose.js'];
@@ -4491,6 +4586,7 @@ async function refresh(opts) {
   const c = document.getElementById('content');
   if (!quiet) document.getElementById('loading').style.display = 'block';
   destroyGraph();
+  liveStop();
   try {
     // Namespaces only change through this dashboard, so load them on the first
     // paint (and after a mutation), not on every refresh or poll.

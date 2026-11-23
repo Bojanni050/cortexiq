@@ -46,8 +46,46 @@ type Scheduler struct {
 	// NewTicker makes the periodic timer; nil means time.NewTicker. Tests
 	// replace it to get a fast clock without waiting minutes.
 	NewTicker func(time.Duration) *time.Ticker
+	// Status reports the loop's live state every time it changes: whether a run
+	// is in progress and when the next one is due. The timer exists in this
+	// process only, so the dashboard cannot read the next tick from the
+	// database; it is told here instead. nil disables it.
+	Status func(Status)
 	// Logf reports what happened; nil discards.
 	Logf func(format string, args ...any)
+
+	// status is the loop's own view, kept on the scheduler so run() can update
+	// it without threading it through every call site.
+	status Status
+}
+
+// Status is what the loop is doing right now. It is not stored: a restarted
+// process arms a fresh timer, so a saved next run would be a lie.
+type Status struct {
+	Mode     Mode
+	Interval time.Duration
+	// Running is true while Consolidate is executing.
+	Running bool
+	// RunningSince is when the current batch of namespaces started.
+	RunningSince time.Time
+	// Namespace is the namespace being consolidated, 0 when idle.
+	Namespace int64
+	// NextRun is when the timer fires; zero when no timer is armed.
+	NextRun time.Time
+	// RetryAt is when a run is retried because work is waiting behind a failed
+	// batch; zero when no retry is armed.
+	RetryAt time.Time
+}
+
+// publish hands the loop's state to the Status hook. Every change goes through
+// it, so a reader never sees a half-updated view.
+func (s *Scheduler) publish(change func(*Status)) {
+	if change != nil {
+		change(&s.status)
+	}
+	if s.Status != nil {
+		s.Status(s.status)
+	}
 }
 
 // Run blocks until ctx is cancelled. It always does one catch-up run first:
@@ -60,6 +98,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		s.logf("schedule: invalid initial config (%v); falling back to %s every %s", err, DefaultConfig().Mode, DefaultInterval)
 		cfg = DefaultConfig()
 	}
+	s.status = Status{Mode: cfg.Mode, Interval: cfg.Interval()}
 
 	episodes := s.Episodes()
 	changes := s.Changes()
@@ -80,9 +119,17 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			ticker.Stop()
 			ticker, ticks = nil, nil
 		}
+		// The countdown the dashboard shows starts at the moment the timer is
+		// armed, which is the only place the next tick is known.
+		s.publish(func(st *Status) {
+			st.Mode = cfg.Mode
+			st.Interval = cfg.Interval()
+			st.NextRun = time.Time{}
+		})
 		if cfg.UsesTimer() {
 			ticker = newTicker(cfg.Interval())
 			ticks = ticker.C
+			s.publish(func(st *Status) { st.NextRun = time.Now().Add(cfg.Interval()) })
 		}
 	}
 	arm()
@@ -101,6 +148,9 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		if s.Pending == nil || s.RetryDelay <= 0 {
 			return
 		}
+		// A retry armed by the previous run is spent by now; the dashboard
+		// should stop counting it down while this one is decided.
+		s.publish(func(st *Status) { st.RetryAt = time.Time{} })
 		ids, err := s.Pending(ctx)
 		if err != nil {
 			s.logf("schedule: cannot read pending work: %v", err)
@@ -114,6 +164,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		}
 		retryT = time.NewTimer(s.RetryDelay)
 		retryC = retryT.C
+		s.publish(func(st *Status) { st.RetryAt = time.Now().Add(s.RetryDelay) })
 		s.logf("schedule: %d namespace(s) still have work waiting; retrying in %s", len(ids), s.RetryDelay)
 	}
 	defer func() {
@@ -140,12 +191,26 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			s.logf("schedule: stopped")
 			return nil
 		case <-ticks:
+			// The ticker keeps its own clock: the following tick is one
+			// interval after this one, not after the run that follows it. A run
+			// that overran leaves its tick waiting, and then the next round
+			// starts as soon as this one ends.
+			s.publish(func(st *Status) {
+				if st.NextRun.IsZero() {
+					return
+				}
+				st.NextRun = st.NextRun.Add(cfg.Interval())
+				if st.NextRun.Before(time.Now()) {
+					st.NextRun = time.Now()
+				}
+			})
 			s.runAll(ctx)
 			armRetry(ctx)
 		case <-retryC:
 			// One attempt: whatever is still behind after this waits for the next
 			// tick, so a permanently failing batch cannot spin.
 			retryC = nil
+			s.publish(func(st *Status) { st.RetryAt = time.Time{} })
 			left, err := s.Pending(ctx)
 			if err != nil {
 				s.logf("schedule: cannot read pending work: %v", err)
@@ -219,13 +284,26 @@ func (s *Scheduler) runNamespaces(ctx context.Context, ids []int64) {
 }
 
 func (s *Scheduler) run(ctx context.Context, ids []int64) {
-	if s.Consolidate == nil {
+	if s.Consolidate == nil || len(ids) == 0 {
 		return
 	}
+	// One batch of namespaces counts as one run for a reader: the run rows are
+	// written per namespace, but "is it running" is a question about the loop.
+	s.publish(func(st *Status) {
+		st.Running = true
+		st.RunningSince = time.Now()
+		st.Namespace = ids[0]
+	})
+	defer s.publish(func(st *Status) {
+		st.Running = false
+		st.RunningSince = time.Time{}
+		st.Namespace = 0
+	})
 	for _, id := range ids {
 		if ctx.Err() != nil {
 			return
 		}
+		s.publish(func(st *Status) { st.Namespace = id })
 		if err := s.Consolidate(ctx, id); err != nil {
 			s.logf("schedule: consolidation failed for namespace %d: %v", id, err)
 		}

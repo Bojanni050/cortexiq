@@ -13,6 +13,7 @@ import (
 
 	"github.com/Bojanni050/cortexiq/internal/bootstrap"
 	"github.com/Bojanni050/cortexiq/internal/brain"
+	"github.com/Bojanni050/cortexiq/internal/observability"
 	"github.com/Bojanni050/cortexiq/internal/schedule"
 	"github.com/urfave/cli/v3"
 )
@@ -137,6 +138,7 @@ func runSchedule(ctx context.Context, bc *bootstrap.Context, interval time.Durat
 		// schedule is a day.
 		Pending:    bc.Brain.NamespacesWithPendingWork,
 		RetryDelay: 2 * time.Minute,
+		Status:     observability.RecordScheduleStatus,
 		Logf:       log.Printf,
 	}
 	return sched.Run(ctx)

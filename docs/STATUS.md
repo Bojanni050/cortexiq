@@ -95,6 +95,18 @@ it landed:
   that way. When `finish_reason` is `length` the trace ran out of budget and the
   existing budget error stands. It cost 13 runs since 2026-11-08 and every one of the
   6 failing runs after the 2026-11-23 model switch.
+- **Dashboard: is a round running right now** — the Runs table is written when a
+  round ends, so a run in flight was invisible exactly while a reader waited for it.
+  The scheduler publishes its own state as gauges (`consolidation_run_active`,
+  `consolidation_run_started_timestamp_seconds`, `consolidation_run_namespace_id`,
+  `consolidation_next_run_timestamp_seconds`, `consolidation_retry_timestamp_seconds`,
+  `consolidation_schedule_info{mode}`), `/api/v1/consolidation/live` reads them and the
+  Runs tab shows a live strip: running for how long, which namespace, and a countdown to
+  the next round on the configured interval — with no countdown in events-only mode and
+  a second countdown when work is waiting behind a failed batch and a retry is armed.
+  The gauges come from the consolidator's metrics endpoint because the timer exists in
+  that process only; when it cannot be reached the strip says so instead of inventing a
+  time (unreleased).
 
 - **Clean-up no longer asks what it can decide** — a group whose spellings differ
   only in capitals (`Monitor`, `monitor`) holds no information to weigh, yet the

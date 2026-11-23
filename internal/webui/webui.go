@@ -101,6 +101,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	api.HandleFunc("/api/v1/purge-log", h.purgeLog)
 	api.HandleFunc("/api/v1/consolidation", h.consolidation)
 	api.HandleFunc("/api/v1/consolidation/stages", h.consolidationStages)
+	api.HandleFunc("/api/v1/consolidation/live", h.consolidationLive)
 	api.HandleFunc("/api/v1/graph", h.graph)
 	api.HandleFunc("/api/v1/timeline", h.timeline)
 	api.HandleFunc("/api/v1/cleanup", h.cleanup)
