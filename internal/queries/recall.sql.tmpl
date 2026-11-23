@@ -260,7 +260,7 @@ GROUP BY 1, 2
 {{end}}
 {{define "recall_facts_ppr"}}
 WITH ppr(name, score, is_seed) AS (
-    SELECT * FROM unnest({{.Bind .Args.entities}}::text[], {{.Bind .Args.scores}}::real[], {{.Bind .Args.seeds}}::boolean[])
+    SELECT * FROM unnest(ARRAY[{{.Bind .Args.entities}}]::text[], ARRAY[{{.Bind .Args.scores}}]::real[], ARRAY[{{.Bind .Args.seeds}}]::boolean[])
 ),
 ranked AS (
     SELECT f.id, f.namespace_id, f.content, f.confidence, f.created_at, f.importance, f.tags,

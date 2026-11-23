@@ -498,7 +498,7 @@ easy for a cross-encoder. The weights come from a sweep on 36 labels I wrote mys
 so they are a hypothesis. Production keeps the routing on because it is neutral at
 worst with a working reranker and better than equal weight when the reranker fails.
 
-### PageRank walk for the graph arm (built 2026-11-23, off, not measured)
+### PageRank walk for the graph arm (built and measured 2026-11-23, off, keep it off)
 
 `CORTEXIQ_GRAPH_PPR=true` swaps the arm's one-hop expansion for a personalized
 PageRank over the relationship graph, after HippoRAG (arXiv:2405.14831). The arm
@@ -517,8 +517,26 @@ Measure it with `cortexiq eval graph --queries eval/multihop_queries.jsonl`: the
 report gains a "routed + ppr" column next to "routed", and 14 questions (10 at two
 hops, 4 at three) that the corpus check proves are that far away. Run the standard
 set too, to see whether the walk costs topic questions what the equal-weight arm did.
-Not run yet: no Docker on this pc, so the SQL and the new integration test
-(`TestIntegrationGraphPPRReachesTwoHopsAndCapsAHub`) wait for CI or a pc with Docker.
+
+Measured 2026-11-23 (bge-m3, 26 facts, k=10, one run each; the PPR SQL and its
+integration test now pass against PostgreSQL 17 too):
+
+| | without graph | routed (production) | routed + ppr |
+|---|---|---|---|
+| multihop, 14 questions, hit@3 / MRR | 0.57 / 0.43 | 0.50 / 0.31 | 0.57 / 0.44 |
+| standard, 22 questions, hit@3 / MRR | 0.86 / 0.74 | 0.95 / 0.79 | 0.86 / 0.74 |
+
+Reading: on multi-hop the PPR arm is no better than having no graph arm at all
+(hop3 unchanged at hit@3 0.75; hop2 hit@1 0.30 against 0.30). Its only gain is
+that it does not do the damage the one-hop arm does on these questions (routed
+MRR 0.31). On the standard set it gives up what the one-hop arm gains
+(direct hit@3 1.00 → 0.67, neighbour g09/g10 back to baseline), so it is a
+regression against production routing. The hypothesis that the walk reaches two
+and three hops here is not supported. Caveats: 14 questions, a 26-fact corpus that
+leaves top-10 almost always containing the answer, questions written by the same
+person who wrote the walk. Do not switch it on. If this is pursued, the next
+experiment is the walk *added to* the one-hop arm (union) rather than replacing
+it, and a sweep of the constants; neither is done.
 
 
 Fixed alongside it: a recall that asked for facts *and* episodes returned facts
