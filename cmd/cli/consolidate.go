@@ -108,6 +108,14 @@ func runSchedule(ctx context.Context, bc *bootstrap.Context, interval time.Durat
 	sched := &schedule.Scheduler{
 		Initial: cfg,
 		Consolidate: func(ctx context.Context, nsID int64) error {
+			// A model chosen in the dashboard reaches this process only through the
+			// database, so read it before every run. A failure keeps the models
+			// already running: one unreadable row should not stop consolidation.
+			if changed, err := bc.ReloadModelBindings(ctx); err != nil {
+				log.Printf("Consolidation: cannot reload model bindings, keeping the current models: %v", err)
+			} else if changed {
+				log.Printf("Consolidation: model bindings changed in the database, now using the new models")
+			}
 			result, err := bc.Brain.ConsolidateByID(ctx, nsID)
 			if err != nil {
 				return err

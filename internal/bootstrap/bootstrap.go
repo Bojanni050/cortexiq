@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +45,12 @@ type Context struct {
 	// warmOnce makes sure the warm-up runs at most once per process, however
 	// many servers call it.
 	warmOnce sync.Once
+
+	// bindingsMu guards bindingsSig, the fingerprint of the model bindings this
+	// process has applied. ReloadModelBindings compares against it so a run that
+	// finds nothing changed leaves the running models untouched.
+	bindingsMu  sync.Mutex
+	bindingsSig string
 }
 
 // MustNew panics on bootstrap failure.
@@ -256,17 +263,19 @@ func New(ctx context.Context) (*Context, error) {
 	// after a restart or it lasts only as long as the process that accepted it.
 	// The database therefore wins over the environment at startup, exactly as it
 	// does when the change is made live.
-	if err := applyModelBindings(ctx, pool, br, cfg); err != nil {
+	bindingsSig, _, err := applyModelBindings(ctx, pool, br, cfg, "")
+	if err != nil {
 		pool.Close()
 		return nil, err
 	}
 
 	return &Context{
-		Config: cfg,
-		Brain:  br,
-		Pool:   pool,
-		Logger: logger,
-		Auth:   tokenSet,
+		bindingsSig: bindingsSig,
+		Config:      cfg,
+		Brain:       br,
+		Pool:        pool,
+		Logger:      logger,
+		Auth:        tokenSet,
 		// Prices is the refresher this process already runs, handed to the
 		// dashboard so a saved rate is republished here without a restart.
 		Prices: prices,
@@ -400,21 +409,30 @@ func buildReasoner(cfg *config.Config) (reasoner.Reasoner, error) {
 // applyModelBindings points the brain at the models the dashboard stored. Only
 // the purposes that can change under a running process are applied; embedding and
 // reranker are deliberately left to their startup configuration.
-func applyModelBindings(ctx context.Context, pool *pgxpool.Pool, br *brain.Brain, cfg *config.Config) error {
+//
+// It returns a fingerprint of what it read. When that equals last nothing is
+// applied and applied is false, so a caller that polls does not rebuild the
+// clients (and race the readers of the old ones) for a binding that has not
+// moved. Pass "" to apply unconditionally.
+func applyModelBindings(ctx context.Context, pool *pgxpool.Pool, br *brain.Brain, cfg *config.Config, last string) (sig string, applied bool, err error) {
 	bindings, err := llmreg.NewStore(pool).Bindings(ctx)
 	if err != nil {
-		return fmt.Errorf("load model bindings: %w", err)
+		return "", false, fmt.Errorf("load model bindings: %w", err)
 	}
 	if len(bindings) == 0 {
-		return nil
+		return "", false, nil
 	}
 	providers, err := llmreg.NewStore(pool).Providers(ctx)
 	if err != nil {
-		return fmt.Errorf("load providers: %w", err)
+		return "", false, fmt.Errorf("load providers: %w", err)
 	}
 	bySlug := make(map[string]llmreg.Provider, len(providers))
 	for _, p := range providers {
 		bySlug[p.Slug] = p
+	}
+	sig = bindingsFingerprint(bindings, bySlug)
+	if sig == last {
+		return sig, false, nil
 	}
 	for purpose, b := range bindings {
 		if purpose != llmreg.PurposeReasoner && purpose != llmreg.PurposeTriage && purpose != llmreg.PurposeCritic {
@@ -422,7 +440,7 @@ func applyModelBindings(ctx context.Context, pool *pgxpool.Pool, br *brain.Brain
 		}
 		p, ok := bySlug[b.Provider]
 		if !ok {
-			return fmt.Errorf("model binding for %s names provider %q, which does not exist", purpose, b.Provider)
+			return "", false, fmt.Errorf("model binding for %s names provider %q, which does not exist", purpose, b.Provider)
 		}
 		maxTokens := cfg.ReasonerMaxTokens
 		jsonMode := cfg.ReasonerJSONMode
@@ -439,7 +457,7 @@ func applyModelBindings(ctx context.Context, pool *pgxpool.Pool, br *brain.Brain
 		// an empty message — neither of which the parser could read.
 		client, err := reasoner.NewOpenAI(p.BaseURL, p.APIKey, b.Model, maxTokens, jsonMode)
 		if err != nil {
-			return fmt.Errorf("build %s model %q: %w", purpose, b.Model, err)
+			return "", false, fmt.Errorf("build %s model %q: %w", purpose, b.Model, err)
 		}
 		switch purpose {
 		case llmreg.PurposeTriage:
@@ -450,5 +468,47 @@ func applyModelBindings(ctx context.Context, pool *pgxpool.Pool, br *brain.Brain
 			br.SetReasoner(client)
 		}
 	}
-	return nil
+	return sig, true, nil
+}
+
+// bindingsFingerprint identifies the bindings that applyModelBindings acts on,
+// together with the endpoint and key of the provider each one names, so a
+// rotated key or a changed base URL counts as a change like a new model does.
+// The key is compared in memory only; it is never logged.
+func bindingsFingerprint(bindings map[string]llmreg.Binding, bySlug map[string]llmreg.Provider) string {
+	purposes := make([]string, 0, len(bindings))
+	for purpose := range bindings {
+		if purpose == llmreg.PurposeReasoner || purpose == llmreg.PurposeTriage || purpose == llmreg.PurposeCritic {
+			purposes = append(purposes, purpose)
+		}
+	}
+	sort.Strings(purposes)
+	var sb strings.Builder
+	for _, purpose := range purposes {
+		b := bindings[purpose]
+		p := bySlug[b.Provider]
+		fmt.Fprintf(&sb, "%s\x1f%s\x1f%s\x1f%s\x1f%s\x1e", purpose, b.Provider, b.Model, p.BaseURL, p.APIKey)
+	}
+	return sb.String()
+}
+
+// ReloadModelBindings applies the model choices stored in the database to this
+// process when they differ from what it runs. The dashboard swaps the models of
+// its own process the moment a binding is saved, but the process that
+// consolidates is a different one and would otherwise keep the old model until
+// it restarted — which is how a retired provider kept being called after the
+// switch. It reports whether anything changed.
+//
+// Embedding and reranker stay as they are: they cannot change under a running
+// instance. A binding that was cleared in the dashboard keeps the model the
+// process already runs until the next restart.
+func (c *Context) ReloadModelBindings(ctx context.Context) (bool, error) {
+	c.bindingsMu.Lock()
+	defer c.bindingsMu.Unlock()
+	sig, applied, err := applyModelBindings(ctx, c.Pool, c.Brain, c.Config, c.bindingsSig)
+	if err != nil {
+		return false, err
+	}
+	c.bindingsSig = sig
+	return applied, nil
 }
