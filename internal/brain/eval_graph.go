@@ -23,6 +23,11 @@ const (
 	// GraphQueryDistractor names an entity with many facts, of which exactly one
 	// answers: the arm must not bury it under the others.
 	GraphQueryDistractor = "distractor"
+	// GraphQueryHop2 and GraphQueryHop3 name one entity; the answer is a fact about
+	// an entity two or three relationships away (eval/multihop_queries.jsonl). The
+	// one-hop arm cannot reach it; the PageRank walk (GraphPPR) can.
+	GraphQueryHop2 = "hop2"
+	GraphQueryHop3 = "hop3"
 )
 
 // GraphFact is one fact of the graph corpus, with the entity it is about.
@@ -117,9 +122,9 @@ func LoadGraphQueries(r io.Reader, facts []GraphFact) ([]RecallQuery, error) {
 			return err
 		}
 		switch q.Kind {
-		case GraphQueryDirect, GraphQueryNeighbour, GraphQueryControl, GraphQueryDistractor:
+		case GraphQueryDirect, GraphQueryNeighbour, GraphQueryControl, GraphQueryDistractor, GraphQueryHop2, GraphQueryHop3:
 		default:
-			return fmt.Errorf("%s: kind %q is not direct, neighbour, control or distractor", q.ID, q.Kind)
+			return fmt.Errorf("%s: kind %q is not direct, neighbour, control, distractor, hop2 or hop3", q.ID, q.Kind)
 		}
 		if q.ID == "" || strings.TrimSpace(q.Query) == "" || len(q.Expect) == 0 {
 			return fmt.Errorf("id, query and expect are required")
@@ -157,6 +162,10 @@ type GraphEvalReport struct {
 	// Routed is the third run: the graph arm on for every question, weighted by the
 	// question's shape (GraphRoute), at the weights of the running configuration.
 	Routed RecallEvalReport `json:"routed"`
+	// PPR is the fourth run: graph routing as in Routed, but with the arm walking the
+	// graph with personalized PageRank (GraphPPR). Routed against PPR is the
+	// comparison that matters, because routing is what production runs.
+	PPR RecallEvalReport `json:"ppr"`
 	// Changes lists the questions whose rank differs, with both ranks, so a gain
 	// or a regression can be read question by question.
 	Changes []GraphChange `json:"changes,omitempty"`
@@ -171,6 +180,8 @@ type GraphChange struct {
 	RankWith    int    `json:"rank_with"`
 	// RankRouted is the rank under graph routing; it is only set by EvalGraph.
 	RankRouted int `json:"rank_routed,omitempty"`
+	// RankPPR is the rank under graph routing with the PageRank walk; only EvalGraph sets it.
+	RankPPR int `json:"rank_ppr,omitempty"`
 }
 
 // CompareGraphRuns pairs the outcomes of the two runs. It is pure.
@@ -242,12 +253,12 @@ func (b *Brain) EvalGraph(ctx context.Context, facts []GraphFact, rels []GraphRe
 		}
 	}
 
-	run := func(graph, route bool) (RecallEvalReport, error) {
+	run := func(graph, route, ppr bool) (RecallEvalReport, error) {
 		rankings := make([][]string, len(qs))
 		for i, q := range qs {
-			// Graph and GraphRoute are both set on every call, so the run does not
-			// depend on what the server's configuration says.
-			res, err := b.RecallWith(ctx, []string{slug}, q.Query, limit, RecallOptions{Types: []string{"fact"}, Graph: &graph, GraphRoute: &route})
+			// Graph, GraphRoute and GraphPPR are all set on every call, so the run does
+			// not depend on what the server's configuration says.
+			res, err := b.RecallWith(ctx, []string{slug}, q.Query, limit, RecallOptions{Types: []string{"fact"}, Graph: &graph, GraphRoute: &route, GraphPPR: &ppr})
 			if err != nil {
 				return RecallEvalReport{}, fmt.Errorf("recall %s: %w", q.ID, err)
 			}
@@ -262,36 +273,46 @@ func (b *Brain) EvalGraph(ctx context.Context, facts []GraphFact, rels []GraphRe
 		return rep, nil
 	}
 
-	without, err := run(false, false)
+	without, err := run(false, false, false)
 	if err != nil {
 		return GraphEvalReport{}, err
 	}
-	with, err := run(true, false)
+	with, err := run(true, false, false)
 	if err != nil {
 		return GraphEvalReport{}, err
 	}
-	routed, err := run(false, true)
+	routed, err := run(false, true, false)
+	if err != nil {
+		return GraphEvalReport{}, err
+	}
+	ppr, err := run(false, true, true)
 	if err != nil {
 		return GraphEvalReport{}, err
 	}
 	changes := CompareGraphRuns(without, with)
-	// A question also counts as moved when only the routed run moved it.
-	routedByID := map[string]QueryOutcome{}
+	// A question also counts as moved when only the routed or the PageRank run
+	// moved it.
+	routedByID, pprByID := map[string]QueryOutcome{}, map[string]QueryOutcome{}
 	for _, o := range routed.Outcomes {
 		routedByID[o.ID] = o
+	}
+	for _, o := range ppr.Outcomes {
+		pprByID[o.ID] = o
 	}
 	seen := map[string]bool{}
 	for i := range changes {
 		seen[changes[i].ID] = true
 		changes[i].RankRouted = routedByID[changes[i].ID].Rank
+		changes[i].RankPPR = pprByID[changes[i].ID].Rank
 	}
 	for _, o := range without.Outcomes {
-		if r := routedByID[o.ID]; r.Rank != o.Rank && !seen[o.ID] {
-			changes = append(changes, GraphChange{ID: o.ID, Kind: o.Kind, Query: o.Query, RankWithout: o.Rank, RankWith: o.Rank, RankRouted: r.Rank})
+		r, p := routedByID[o.ID], pprByID[o.ID]
+		if (r.Rank != o.Rank || p.Rank != o.Rank) && !seen[o.ID] {
+			changes = append(changes, GraphChange{ID: o.ID, Kind: o.Kind, Query: o.Query, RankWithout: o.Rank, RankWith: o.Rank, RankRouted: r.Rank, RankPPR: p.Rank})
 		}
 	}
 	return GraphEvalReport{
 		Model: b.embedder.Model(), Limit: limit, Facts: len(facts), Rels: len(rels),
-		Without: without, With: with, Routed: routed, Changes: changes,
+		Without: without, With: with, Routed: routed, PPR: ppr, Changes: changes,
 	}, nil
 }

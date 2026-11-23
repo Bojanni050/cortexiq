@@ -192,6 +192,7 @@ func New(ctx context.Context) (*Context, error) {
 		GraphRoute:                     cfg.GraphRoute,
 		GraphWeightTopic:               cfg.GraphWeightTopic,
 		GraphWeightRelational:          cfg.GraphWeightRelational,
+		GraphPPR:                       cfg.GraphPPR,
 		RouteRecall:                    cfg.RouteRecall,
 		TemporalRecall:                 cfg.TemporalRecall,
 		TemporalArm:                    cfg.TemporalArm,

@@ -498,6 +498,29 @@ easy for a cross-encoder. The weights come from a sweep on 36 labels I wrote mys
 so they are a hypothesis. Production keeps the routing on because it is neutral at
 worst with a working reranker and better than equal weight when the reranker fails.
 
+### PageRank walk for the graph arm (built 2026-11-23, off, not measured)
+
+`CORTEXIQ_GRAPH_PPR=true` swaps the arm's one-hop expansion for a personalized
+PageRank over the relationship graph, after HippoRAG (arXiv:2405.14831). The arm
+keeps its name and its routing weight; only the facts it proposes change. It loads
+the relationships within three hops of the entities the question names, walks them
+(damping 0.5, 30 iterations, edges weighted by confidence), keeps the twelve
+best-scoring entities and takes at most three facts per entity, closest to the
+question first. Constants live in `internal/brain/ppr.go` and are starting values.
+
+What it is for: a fact two or three relationships from the named entity, which the
+one-hop arm cannot reach. What it is not: HippoRAG's passage nodes, its LLM
+recognition filter or its seed weighting by specificity. Episodes still carry no
+entity, so the arm never ranks them.
+
+Measure it with `cortexiq eval graph --queries eval/multihop_queries.jsonl`: the
+report gains a "routed + ppr" column next to "routed", and 14 questions (10 at two
+hops, 4 at three) that the corpus check proves are that far away. Run the standard
+set too, to see whether the walk costs topic questions what the equal-weight arm did.
+Not run yet: no Docker on this pc, so the SQL and the new integration test
+(`TestIntegrationGraphPPRReachesTwoHopsAndCapsAHub`) wait for CI or a pc with Docker.
+
+
 Fixed alongside it: a recall that asked for facts *and* episodes returned facts
 only. Episodes were handed whatever slots the facts left over, and facts fill the
 limit. Each type now searches with its own budget and the merged list is sorted

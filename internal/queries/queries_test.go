@@ -151,6 +151,54 @@ func TestRecallAsOfTemplatesRender(t *testing.T) {
 	}
 }
 
+// The PageRank templates must bind every argument exactly where it is used, with
+// and without namespaces, a time window, tags and the similarity floor. There is no
+// database here, so this guards the placeholders; the SQL itself runs in
+// `eval graph`.
+func TestRecallPPRTemplatesRender(t *testing.T) {
+	q, err := New()
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	vec := pgvector.NewVector([]float32{1, 0})
+	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+	asOf := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+
+	builders := map[string]func() (string, []any, error){
+		"edges":              func() (string, []any, error) { return q.RecallGraphEdges([]int64{1, 2}, "pgvector en postgresql", 3) },
+		"edges no namespace": func() (string, []any, error) { return q.RecallGraphEdges(nil, "pgvector", 3) },
+		"facts": func() (string, []any, error) {
+			return q.RecallFactsPPR([]int64{7}, []string{"a", "b"}, []float32{0.5, 0.2}, []bool{true, false}, vec, 30, 3, 0, nil, nil, nil, Known{}, TagFilter{})
+		},
+		"facts all filters": func() (string, []any, error) {
+			return q.RecallFactsPPR([]int64{7, 8}, []string{"a"}, []float32{1}, []bool{true}, vec, 30, 3, 0.4, &asOf, &from, &to, Known{}, TagFilter{All: []string{"x"}, Any: []string{"y", "z"}})
+		},
+	}
+	for name, build := range builders {
+		t.Run(name, func(t *testing.T) {
+			sql, args, err := build()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := range args {
+				if !strings.Contains(sql, "$"+itoa(i+1)) {
+					t.Errorf("argument %d is never used:\n%s", i+1, sql)
+				}
+			}
+			if strings.Contains(sql, "$"+itoa(len(args)+1)) {
+				t.Errorf("placeholder beyond the %d arguments:\n%s", len(args), sql)
+			}
+			if strings.HasPrefix(name, "edges") && !strings.Contains(sql, "WITH RECURSIVE") {
+				t.Errorf("the edge query should walk the graph recursively:\n%s", sql)
+			}
+			if strings.HasPrefix(name, "facts") && !strings.Contains(sql, "row_number()") {
+				t.Errorf("the fact query should cap the facts per entity:\n%s", sql)
+			}
+		})
+	}
+}
+
 // The graph templates share one entity-matching template; placeholders and
 // args must stay in step with and without namespaces and a point in time.
 func TestRecallGraphTemplatesRender(t *testing.T) {

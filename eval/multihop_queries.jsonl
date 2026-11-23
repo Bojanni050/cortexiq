@@ -1,0 +1,14 @@
+{"id":"h01","kind":"hop2","query":"Wat gebeurt er met pgvector als de machine opnieuw opstart?","expect":["f22"]}
+{"id":"h02","kind":"hop2","query":"Op welke poort bereik ik de server die pgvector gebruikt?","expect":["f09","f10"]}
+{"id":"h03","kind":"hop2","query":"Wat gebeurt er met bge-m3 na een herstart van de server?","expect":["f22"]}
+{"id":"h04","kind":"hop2","query":"Waar slaat het systeem dat Prometheus bewaakt zijn gegevens op?","expect":["f03","f04"]}
+{"id":"h05","kind":"hop2","query":"Hoe worden de berichten van Hermes doorzoekbaar gemaakt?","expect":["f06"]}
+{"id":"h06","kind":"hop2","query":"Waar liggen de gegevens achter de dienst die Tailscale ontsluit?","expect":["f03"]}
+{"id":"h07","kind":"hop2","query":"Hoe wordt de gezondheid van wat Caddy doorstuurt bijgehouden?","expect":["f18"]}
+{"id":"h08","kind":"hop2","query":"Waarop is het geheugenontwerp van Gaia gebaseerd?","expect":["f26"]}
+{"id":"h09","kind":"hop2","query":"Welke poort is de bron van de gegevens in Grafana?","expect":["f09"]}
+{"id":"h10","kind":"hop2","query":"Welke certificaten krijgt de dienst waar Gaia op draait?","expect":["f19"]}
+{"id":"h11","kind":"hop3","query":"Hoe is de omgeving van pgvector van buitenaf beschermd?","expect":["f19","f20"]}
+{"id":"h12","kind":"hop3","query":"Welke agent profiteert van Ollama?","expect":["f23","f24"]}
+{"id":"h13","kind":"hop3","query":"Welk project draait mee in het systeem dat Grafana toont?","expect":["f25"]}
+{"id":"h14","kind":"hop3","query":"Hoe vaak wordt de monitoring van pgvector ververst?","expect":["f18"]}

@@ -620,6 +620,88 @@ func TestIntegrationGraphRecallDropsDistantNeighbours(t *testing.T) {
 	}
 }
 
+// The PageRank walk reaches a fact two relationships from the named entity, which
+// the one-hop arm cannot, and it caps how many facts one entity adds.
+func TestIntegrationGraphPPRReachesTwoHopsAndCapsAHub(t *testing.T) {
+	setup := func(e *testEnv) (twoHop int64) {
+		e.insertEntityFact(t, "pgvector", "De extensie levert HNSW-indexen voor nabijheidszoeken.", 0.8)
+		e.insertEntityFact(t, "PostgreSQL", "Versie zestien draait op de productieserver.", 0.8)
+		twoHop = e.insertEntityFact(t, "Docker Compose", "Services herstarten automatisch na een crash.", 0.8)
+		e.insertEntityFact(t, "Grafana", "Panelen staan op de monitoringpagina.", 0.8)
+		e.insertRelationship(t, "pgvector", "extends", "PostgreSQL", 0.9)
+		e.insertRelationship(t, "PostgreSQL", "part_of", "Docker Compose", 0.9)
+		return twoHop
+	}
+	has := func(res []RecallResult, id int64) *RecallResult {
+		for i := range res {
+			if res[i].FactID != nil && *res[i].FactID == id {
+				return &res[i]
+			}
+		}
+		return nil
+	}
+
+	off := newEnv(t, func(c *Config) { c.GraphRecall = true })
+	twoOff := setup(off)
+	res, trace, err := off.b.RecallDetailed(off.ctx, []string{off.ns}, "wat doet pgvector eigenlijk", 10, RecallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trace.GraphPPR {
+		t.Error("the walk ran with the flag off")
+	}
+	if r := has(res, twoOff); r != nil && r.Trace.GraphRank != 0 {
+		t.Errorf("the one-hop arm reached a two-hop fact: %+v", r.Trace)
+	}
+
+	on := newEnv(t, func(c *Config) { c.GraphRecall = true; c.GraphPPR = true })
+	twoOn := setup(on)
+	res, trace, err = on.b.RecallDetailed(on.ctx, []string{on.ns}, "wat doet pgvector eigenlijk", 10, RecallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !trace.GraphPPR {
+		t.Error("the trace does not say the walk ran")
+	}
+	r := has(res, twoOn)
+	if r == nil || r.Trace.GraphRank == 0 {
+		t.Fatalf("the walk did not reach the two-hop fact: %+v", res)
+	}
+	for _, x := range res {
+		if x.Content == "Panelen staan op de monitoringpagina." && x.Trace.GraphRank != 0 {
+			t.Errorf("an unconnected entity was reached: %+v", x.Trace)
+		}
+	}
+
+	// A per-call override beats the configuration in both directions.
+	no := false
+	_, trace, err = on.b.RecallDetailed(on.ctx, []string{on.ns}, "wat doet pgvector eigenlijk", 10, RecallOptions{GraphPPR: &no})
+	if err != nil || trace.GraphPPR {
+		t.Errorf("GraphPPR=false must force the one-hop arm: %v, ppr=%v", err, trace.GraphPPR)
+	}
+
+	// A hub adds at most pprFactsPerEntity facts.
+	hub := newEnv(t, func(c *Config) { c.GraphRecall = true; c.GraphPPR = true })
+	hub.insertEntityFact(t, "pgvector", "De extensie levert HNSW-indexen voor nabijheidszoeken.", 0.8)
+	hub.insertRelationship(t, "pgvector", "extends", "PostgreSQL", 0.9)
+	for i := 0; i < pprFactsPerEntity+3; i++ {
+		hub.insertEntityFact(t, "PostgreSQL", fmt.Sprintf("Feit %d over de database.", i), 0.8)
+	}
+	res, _, err = hub.b.RecallDetailed(hub.ctx, []string{hub.ns}, "wat doet pgvector eigenlijk", 20, RecallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var viaGraph int
+	for _, x := range res {
+		if strings.HasPrefix(x.Content, "Feit ") && x.Trace.GraphRank != 0 {
+			viaGraph++
+		}
+	}
+	if viaGraph > pprFactsPerEntity {
+		t.Errorf("a hub added %d facts through the graph arm, cap is %d", viaGraph, pprFactsPerEntity)
+	}
+}
+
 // With the flag off, the graph arm does not run and the ranking is the old one.
 func TestIntegrationGraphRecallOffIsTheOldBehaviour(t *testing.T) {
 	e := newEnv(t, nil)

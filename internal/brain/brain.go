@@ -143,6 +143,12 @@ type Config struct {
 	GraphRoute            bool
 	GraphWeightTopic      float64
 	GraphWeightRelational float64
+	// GraphPPR swaps the graph arm's one-hop expansion for a personalized PageRank
+	// over the relationship graph (see ppr.go), so facts two or three relationships
+	// from a named entity can rank. The arm keeps its name and its weight; it only
+	// changes which facts it proposes. Needs the graph arm (GraphRecall or
+	// GraphRoute). Off by default until measured with `eval graph`.
+	GraphPPR bool
 	// RouteRecall widens a recall that names no types with failures and/or goals
 	// when the query's wording points to them (see routeTypes). Off by default
 	// until it has been measured.

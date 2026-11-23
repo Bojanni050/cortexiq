@@ -190,6 +190,11 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 	}
 	graph := (graphOn || graphRoute) && b.config.HybridRecall
 	graphRoute = graphRoute && graph
+	graphPPR := b.config.GraphPPR
+	if opts.GraphPPR != nil {
+		graphPPR = *opts.GraphPPR
+	}
+	graphPPR = graphPPR && graph
 	if err := validateContent(query); err != nil {
 		return nil, err
 	}
@@ -287,6 +292,7 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 
 	if tr != nil {
 		tr.Query, tr.KeywordQuery, tr.Hybrid, tr.Graph, tr.Limit, tr.Candidates = query, kwQuery, kwQuery != "", graph, limit, candidates
+		tr.GraphPPR = graphPPR
 		tr.Namespaces, tr.NamespaceIDs, tr.Routed = namespaces, len(nsIDs), routed
 		tr.Tags, tr.TagsAny = tagAll, tagAny
 		if asOf != nil {
@@ -350,12 +356,18 @@ func (b *Brain) recall(ctx context.Context, namespaces []string, query string, l
 			stage("facts_keyword", len(factKw))
 		}
 		if graph {
-			graphSQL, graphArgs, err := b.queries.RecallFactsGraphWindow(nsIDs, query, pgVec, candidates, minSimilarity, asOf, opts.From, opts.To, known, tags)
-			if err != nil {
-				return nil, fmt.Errorf("build fact graph query: %w", err)
-			}
-			if factGraph, err = b.runRecall(ctx, graphSQL, graphArgs, "fact"); err != nil {
-				return nil, fmt.Errorf("graph query facts: %w", err)
+			if graphPPR {
+				if factGraph, err = b.pprFactArm(ctx, nsIDs, query, pgVec, candidates, minSimilarity, asOf, opts.From, opts.To, known, tags); err != nil {
+					return nil, fmt.Errorf("graph ppr facts: %w", err)
+				}
+			} else {
+				graphSQL, graphArgs, err := b.queries.RecallFactsGraphWindow(nsIDs, query, pgVec, candidates, minSimilarity, asOf, opts.From, opts.To, known, tags)
+				if err != nil {
+					return nil, fmt.Errorf("build fact graph query: %w", err)
+				}
+				if factGraph, err = b.runRecall(ctx, graphSQL, graphArgs, "fact"); err != nil {
+					return nil, fmt.Errorf("graph query facts: %w", err)
+				}
 			}
 			stage("facts_graph", len(factGraph))
 			if tr != nil {

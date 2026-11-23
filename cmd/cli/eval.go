@@ -230,21 +230,24 @@ func evalGraphCmd(ctx context.Context, cmd *cli.Command) error {
 func printGraphSummary(rep brain.GraphEvalReport) {
 	w := os.Stderr
 	fmt.Fprintf(w, "\nmodel %s, %d facts, %d relationships, k=%d\n\n", rep.Model, rep.Facts, rep.Rels, rep.Limit)
-	fmt.Fprintf(w, "%-11s %3s | %18s | %18s | %18s\n", "", "n", "without graph", "with graph", "routed")
-	fmt.Fprintf(w, "%-11s %3s | %5s %5s %5s | %5s %5s %5s | %5s %5s %5s\n", "kind", "", "@1", "@3", "MRR", "@1", "@3", "MRR", "@1", "@3", "MRR")
-	row := func(name string, a, b, c brain.RecallStats) {
-		fmt.Fprintf(w, "%-11s %3d | %5.2f %5.2f %5.2f | %5.2f %5.2f %5.2f | %5.2f %5.2f %5.2f\n", name, a.Questions, a.HitAt1, a.HitAt3, a.MRR, b.HitAt1, b.HitAt3, b.MRR, c.HitAt1, c.HitAt3, c.MRR)
+	fmt.Fprintf(w, "%-11s %3s | %18s | %18s | %18s | %18s\n", "", "n", "without graph", "with graph", "routed", "routed + ppr")
+	fmt.Fprintf(w, "%-11s %3s | %5s %5s %5s | %5s %5s %5s | %5s %5s %5s | %5s %5s %5s\n", "kind", "", "@1", "@3", "MRR", "@1", "@3", "MRR", "@1", "@3", "MRR", "@1", "@3", "MRR")
+	row := func(name string, a, b, c, d brain.RecallStats) {
+		if a.Questions == 0 {
+			return // a kind the question set does not use
+		}
+		fmt.Fprintf(w, "%-11s %3d | %5.2f %5.2f %5.2f | %5.2f %5.2f %5.2f | %5.2f %5.2f %5.2f | %5.2f %5.2f %5.2f\n", name, a.Questions, a.HitAt1, a.HitAt3, a.MRR, b.HitAt1, b.HitAt3, b.MRR, c.HitAt1, c.HitAt3, c.MRR, d.HitAt1, d.HitAt3, d.MRR)
 	}
-	for _, k := range []string{brain.GraphQueryDirect, brain.GraphQueryNeighbour, brain.GraphQueryDistractor, brain.GraphQueryControl} {
-		row(k, rep.Without.Kinds[k], rep.With.Kinds[k], rep.Routed.Kinds[k])
+	for _, k := range []string{brain.GraphQueryDirect, brain.GraphQueryNeighbour, brain.GraphQueryHop2, brain.GraphQueryHop3, brain.GraphQueryDistractor, brain.GraphQueryControl} {
+		row(k, rep.Without.Kinds[k], rep.With.Kinds[k], rep.Routed.Kinds[k], rep.PPR.Kinds[k])
 	}
-	row("overall", rep.Without.Overall, rep.With.Overall, rep.Routed.Overall)
+	row("overall", rep.Without.Overall, rep.With.Overall, rep.Routed.Overall, rep.PPR.Overall)
 	if len(rep.Changes) == 0 {
 		fmt.Fprintln(w, "\nno question changed rank")
 		return
 	}
 	fmt.Fprintf(w, "\nquestions that moved (rank 0 = not in the top %d):\n", rep.Limit)
 	for _, c := range rep.Changes {
-		fmt.Fprintf(w, "  %-5s %-10s %2d -> %2d (routed %2d)  %s\n", c.ID, c.Kind, c.RankWithout, c.RankWith, c.RankRouted, c.Query)
+		fmt.Fprintf(w, "  %-5s %-10s %2d -> %2d (routed %2d, ppr %2d)  %s\n", c.ID, c.Kind, c.RankWithout, c.RankWith, c.RankRouted, c.RankPPR, c.Query)
 	}
 }

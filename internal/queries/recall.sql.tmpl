@@ -232,6 +232,79 @@ WHERE f.deleted_at IS NULL
 ORDER BY c.hop, COALESCE(1 - (f.embedding <=> {{.Bind .Args.vector}}), -1) DESC, c.confidence DESC, c.id DESC
 LIMIT {{.Bind .Args.limit}}
 {{end}}
+{{define "recall_graph_edges"}}
+WITH RECURSIVE matched AS (
+{{template "graph_matched" .}}
+),
+reach(name, depth) AS (
+    SELECT name, 0 FROM matched
+    UNION
+    SELECT lower(CASE WHEN lower(r.from_entity) = reach.name THEN r.to_entity ELSE r.from_entity END), reach.depth + 1
+    FROM reach
+    JOIN relationships r ON (lower(r.from_entity) = reach.name OR lower(r.to_entity) = reach.name)
+    WHERE r.deleted_at IS NULL
+{{if .Args.namespace_ids}}
+        AND r.namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
+{{end}}
+        AND reach.depth < {{.Bind .Args.hops}}
+)
+SELECT lower(r.from_entity), lower(r.to_entity), max(r.confidence)::real
+FROM relationships r
+WHERE r.deleted_at IS NULL
+{{if .Args.namespace_ids}}
+    AND r.namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
+{{end}}
+    AND lower(r.from_entity) IN (SELECT name FROM reach)
+    AND lower(r.to_entity) IN (SELECT name FROM reach)
+GROUP BY 1, 2
+{{end}}
+{{define "recall_facts_ppr"}}
+WITH ppr(name, score, is_seed) AS (
+    SELECT * FROM unnest({{.Bind .Args.entities}}::text[], {{.Bind .Args.scores}}::real[], {{.Bind .Args.seeds}}::boolean[])
+),
+ranked AS (
+    SELECT f.id, f.namespace_id, f.content, f.confidence, f.created_at, f.importance, f.tags,
+           p.score AS arm_score,
+           row_number() OVER (
+               PARTITION BY p.name
+               ORDER BY COALESCE(1 - (f.embedding <=> {{.Bind .Args.vector}}), -1) DESC, f.confidence DESC, f.id DESC
+           ) AS rn
+    FROM facts f
+    JOIN ppr p ON lower(f.entity) = p.name
+    WHERE f.deleted_at IS NULL
+{{if or .Args.from .Args.to}}
+        AND COALESCE(f.valid_from, f.created_at) < {{if .Args.to}}{{.Bind .Args.to}}{{else}}'infinity'::timestamptz{{end}}
+{{end}}
+{{if or .Args.to .Args.from}}
+        AND (f.valid_until IS NULL OR f.valid_until > {{if .Args.from}}{{.Bind .Args.from}}{{else}}'-infinity'::timestamptz{{end}})
+{{end}}
+{{if .Args.as_of}}
+        AND f.created_at <= {{.Bind .Args.as_of}}
+        AND (f.known_until IS NULL OR f.known_until > {{.Bind .Args.as_of}})
+{{end}}
+{{if .Args.known_to}}
+        AND f.created_at < {{.Bind .Args.known_to}}
+{{end}}
+{{if .Args.known_from}}
+        AND (f.known_until IS NULL OR f.known_until > {{.Bind .Args.known_from}})
+{{end}}
+{{if not (or .Args.as_of .Args.known_from .Args.known_to .Args.from .Args.to)}}
+        AND (f.valid_until IS NULL OR f.valid_until > now())
+{{end}}
+{{if .Args.namespace_ids}}
+        AND f.namespace_id IN ({{range $i, $id := .Args.namespace_ids}}{{if $i}}, {{end}}{{$.Bind $id}}{{end}})
+{{end}}
+{{if .Args.min_similarity}}
+        AND (p.is_seed OR (f.embedding IS NOT NULL AND (1 - (f.embedding <=> {{.Bind .Args.vector}})) >= {{.Bind .Args.min_similarity}}))
+{{end}}
+{{template "tag_filter_f" .}}
+)
+SELECT id, namespace_id, content, confidence, created_at, importance, tags, arm_score AS score
+FROM ranked
+WHERE rn <= {{.Bind .Args.per_entity}}
+ORDER BY arm_score DESC, rn, id DESC
+LIMIT {{.Bind .Args.limit}}
+{{end}}
 {{/*
   Knowledge time (what the system held) and valid time (what was true) are
   separate axes. as_of is the point form of the knowledge axis; known_from and

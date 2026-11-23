@@ -43,6 +43,10 @@ type RecallOptions struct {
 	// the graph arm and weighs it by the question's shape, false keeps the arm as
 	// Graph and the configuration say. nil keeps the configuration.
 	GraphRoute *bool
+	// GraphPPR overrides the configured PageRank walk of the graph arm for this
+	// call: true forces it on, false forces the one-hop expansion, nil keeps the
+	// configuration. It has no effect when the graph arm does not run.
+	GraphPPR *bool
 	// Route overrides the configured routing for this call, like Graph: true
 	// forces it on, false forces it off, nil keeps the configuration. Routing only
 	// applies when Types is empty.
@@ -88,7 +92,9 @@ type RecallTrace struct {
 	// GraphRoute says the graph arm's weight came from the question's shape;
 	// GraphRelational is how the question was profiled and GraphWeight the weight
 	// the arm then counted with.
-	GraphRoute      bool    `json:"graph_route,omitempty"`
+	GraphRoute bool `json:"graph_route,omitempty"`
+	// GraphPPR says the graph arm walked the graph with PageRank instead of one hop.
+	GraphPPR        bool    `json:"graph_ppr,omitempty"`
 	GraphRelational bool    `json:"graph_relational,omitempty"`
 	GraphWeight     float64 `json:"graph_weight,omitempty"`
 	// Routed lists the extra types the query's wording added ("failure", "goal").

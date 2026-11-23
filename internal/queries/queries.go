@@ -185,6 +185,38 @@ func (q *Queries) RecallFactsGraphWindow(namespaceIDs []int64, query string, vec
 	return q.tpl.Execute("recall_facts_graph", args)
 }
 
+// RecallGraphEdges returns SQL + args for the relationships among the entities
+// within hops relationships of the entities the query names. Rows are from_entity,
+// to_entity (both lower case) and confidence. It is the subgraph the personalized
+// PageRank of the graph arm walks.
+func (q *Queries) RecallGraphEdges(namespaceIDs []int64, query string, hops int) (string, []any, error) {
+	args := keywordArgs(namespaceIDs, query, 0, nil)
+	args["hops"] = hops
+	return q.tpl.Execute("recall_graph_edges", args)
+}
+
+// RecallFactsPPR returns SQL + args for the facts of the entities a personalized
+// PageRank scored: entities and scores are parallel slices, seeds says which of
+// them the query named. An entity adds at most perEntity facts, the ones closest to
+// vector; a non-seed entity's fact must also reach minSimilarity when that is
+// positive, as in RecallFactsGraphWindow. Rows have the columns of RecallFacts and
+// come ordered by entity score, which is the only thing fusion uses.
+func (q *Queries) RecallFactsPPR(namespaceIDs []int64, entities []string, scores []float32, seeds []bool, vector pgvector.Vector, limit, perEntity int, minSimilarity float32, asOf, from, to *time.Time, known Known, tags TagFilter) (string, []any, error) {
+	args := keywordArgs(namespaceIDs, "", limit, asOf)
+	args["entities"] = entities
+	args["scores"] = scores
+	args["seeds"] = seeds
+	args["vector"] = vector
+	args["per_entity"] = perEntity
+	if minSimilarity > 0 {
+		args["min_similarity"] = minSimilarity
+	}
+	setTagFilter(args, tags)
+	setWindow(args, from, to)
+	setKnown(args, known)
+	return q.tpl.Execute("recall_facts_ppr", args)
+}
+
 // Temporal methods return the same row shape as their vector/keyword peers,
 // ordered by event/valid-time proximity within the requested window.
 func (q *Queries) RecallEpisodesTemporal(namespaceIDs []int64, limit int, asOf, from, to *time.Time, known Known, tags TagFilter) (string, []any, error) {
