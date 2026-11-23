@@ -4,14 +4,14 @@ Living page: what this build is, what is switched on, and what is still open.
 For the dated snapshot it replaces, see [handoff-2026-10-18](handoff-2026-10-18.md) —
 that file is history and is deliberately not updated.
 
-Last updated: 2026-11-23, working tree; `v0.1.98` is the last deploy.
+Last updated: 2026-11-23, `v0.1.99` is the last deploy.
 
 ## Build
 
 | | |
 |---|---|
-| Latest release | `v0.1.90`, 2026-11-17 |
-| Release commit | `6f29979` |
+| Latest release | `v0.1.99`, 2026-11-23 |
+| Release commit | `f9773e0` |
 | Every release | tagged and published; `gh release list` is the authoritative list |
 | Schema | `goose_db_version` reads `63`; migrations are append-only |
 | How to check | `docker compose exec -T cortexiq /cortexiq version` — the image has no shell and `cortexiq` is not on `PATH`, so the absolute path matters |
