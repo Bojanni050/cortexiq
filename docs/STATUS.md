@@ -546,9 +546,27 @@ MRR 0.31). On the standard set it gives up what the one-hop arm gains
 regression against production routing. The hypothesis that the walk reaches two
 and three hops here is not supported. Caveats: 14 questions, a 26-fact corpus that
 leaves top-10 almost always containing the answer, questions written by the same
-person who wrote the walk. Do not switch it on. If this is pursued, the next
-experiment is the walk *added to* the one-hop arm (union) rather than replacing
-it, and a sweep of the constants; neither is done.
+person who wrote the walk. Do not switch it on.
+
+Union tried the same day (`CORTEXIQ_GRAPH_PPR_UNION=true`, needs `GRAPH_PPR`, off): the
+one-hop facts keep their order and the walk adds at most three facts that one-hop
+did not return (`pprUnionExtras`). Fifth column "routed + union" in `eval graph`.
+
+| hit@3 / MRR | without graph | routed | routed + ppr | routed + union |
+|---|---|---|---|---|
+| multihop (14) | 0.57 / 0.43 | 0.50 / 0.31 | 0.57 / 0.44 | 0.43 / 0.35 |
+| hop3 only (4) | 0.75 / 0.40 | 0.75 / 0.38 | 0.75 / 0.38 | 0.25 / 0.27 |
+| standard (22) | 0.86 / 0.74 | 0.95 / 0.79 | 0.86 / 0.74 | 0.86 / 0.77 |
+
+Reading: no win. Union holds on topic questions (standard MRR 0.77 against 0.79) and
+beats routed on multihop MRR, but it stays under no graph at all there and hop3 gets
+worse. Uncapped, the union was identical to the walk alone: rank fusion gives every
+fact in the arm a bonus of weight/(60+rank), about 0.008 at weight 0.5, while two
+adjacent vector ranks differ by about 0.0003, so a long tail of weak extras, and on a
+26-fact corpus the walk returns nearly everything, adds a flat bonus and no signal.
+The cap of three was a guess, not swept. Open: a sweep of the cap and of the walk
+constants, and a corpus large enough that three hops is not the whole graph; until then
+the one-hop routing stays as production runs it.
 
 
 Fixed alongside it: a recall that asked for facts *and* episodes returned facts

@@ -19,6 +19,8 @@ import (
 // many edges passes little on to each. The starting values are a first guess to be
 // swept with `eval graph` on eval/multihop_queries.jsonl, not tuned numbers.
 const (
+	// pprUnionExtras caps what the walk adds to the one-hop result in the union.
+	pprUnionExtras = 3
 	// pprHops bounds the subgraph loaded around the named entities.
 	pprHops = 3
 	// pprDamping is the chance that the walk follows an edge instead of jumping
@@ -166,4 +168,31 @@ func (b *Brain) pprFactArm(ctx context.Context, nsIDs []int64, query string, vec
 		return nil, fmt.Errorf("build ppr fact query: %w", err)
 	}
 	return b.runRecall(ctx, factSQL, factArgs, "fact")
+}
+
+// unionGraphFacts is the graph arm when the walk is added to the one-hop
+// expansion (CORTEXIQ_GRAPH_PPR_UNION): every one-hop fact keeps its place, and
+// the facts only the walk reached follow in the walk's order. The one-hop result
+// stays exactly what the arm gives without the walk, so the walk can only add, and
+// it adds at most pprUnionExtras facts: rank fusion hands every fact in the arm a
+// bonus whatever its rank, so a long tail of weak extras only blurs the arm.
+func unionGraphFacts(oneHop, walked []RecallResult) []RecallResult {
+	out := make([]RecallResult, 0, len(oneHop)+pprUnionExtras)
+	seen := make(map[int64]bool, len(oneHop)+len(walked))
+	for _, r := range oneHop {
+		seen[r.ID] = true
+		out = append(out, r)
+	}
+	extras := 0
+	for _, r := range walked {
+		if extras >= pprUnionExtras {
+			break
+		}
+		if !seen[r.ID] {
+			seen[r.ID] = true
+			out = append(out, r)
+			extras++
+		}
+	}
+	return out
 }

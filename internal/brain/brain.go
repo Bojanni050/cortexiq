@@ -149,6 +149,10 @@ type Config struct {
 	// changes which facts it proposes. Needs the graph arm (GraphRecall or
 	// GraphRoute). Off by default until measured with `eval graph`.
 	GraphPPR bool
+	// GraphPPRUnion keeps the one-hop expansion and adds what the PageRank walk
+	// reaches beyond it: the one-hop facts keep their order and the walk's extra
+	// facts follow. Only has effect with GraphPPR. Off by default until measured.
+	GraphPPRUnion bool
 	// RouteRecall widens a recall that names no types with failures and/or goals
 	// when the query's wording points to them (see routeTypes). Off by default
 	// until it has been measured.

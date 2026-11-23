@@ -47,6 +47,10 @@ type RecallOptions struct {
 	// call: true forces it on, false forces the one-hop expansion, nil keeps the
 	// configuration. It has no effect when the graph arm does not run.
 	GraphPPR *bool
+	// GraphPPRUnion overrides the configured union for this call: true keeps the
+	// one-hop result and appends what the walk reaches beyond it, false lets the
+	// walk replace it, nil keeps the configuration. Only has effect with GraphPPR.
+	GraphPPRUnion *bool
 	// Route overrides the configured routing for this call, like Graph: true
 	// forces it on, false forces it off, nil keeps the configuration. Routing only
 	// applies when Types is empty.
@@ -94,7 +98,9 @@ type RecallTrace struct {
 	// the arm then counted with.
 	GraphRoute bool `json:"graph_route,omitempty"`
 	// GraphPPR says the graph arm walked the graph with PageRank instead of one hop.
-	GraphPPR        bool    `json:"graph_ppr,omitempty"`
+	GraphPPR bool `json:"graph_ppr,omitempty"`
+	// GraphPPRUnion says the walk was added to the one-hop result, not put in its place.
+	GraphPPRUnion   bool    `json:"graph_ppr_union,omitempty"`
 	GraphRelational bool    `json:"graph_relational,omitempty"`
 	GraphWeight     float64 `json:"graph_weight,omitempty"`
 	// Routed lists the extra types the query's wording added ("failure", "goal").

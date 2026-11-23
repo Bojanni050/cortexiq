@@ -182,3 +182,31 @@ func TestShippedMultihopSetLoads(t *testing.T) {
 		}
 	}
 }
+
+func TestUnionGraphFactsKeepsOneHopOrderAndAppendsOnlyNewFacts(t *testing.T) {
+	ids := func(rs []RecallResult) []int64 {
+		var out []int64
+		for _, r := range rs {
+			out = append(out, r.ID)
+		}
+		return out
+	}
+	oneHop := []RecallResult{{ID: 3}, {ID: 1}}
+	walked := []RecallResult{{ID: 1}, {ID: 7}, {ID: 3}, {ID: 5}, {ID: 8}, {ID: 9}}
+	got := ids(unionGraphFacts(oneHop, walked))
+	want := []int64{3, 1, 7, 5, 8}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+	if got := ids(unionGraphFacts(nil, walked)); len(got) != pprUnionExtras {
+		t.Errorf("an empty one-hop result keeps the whole walk: %v", got)
+	}
+	if got := ids(unionGraphFacts(oneHop, nil)); len(got) != 2 {
+		t.Errorf("an empty walk keeps the one-hop result: %v", got)
+	}
+}

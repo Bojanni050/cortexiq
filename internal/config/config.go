@@ -179,6 +179,9 @@ type Config struct {
 	// PageRank instead of expanding one hop. Needs GraphRecall or GraphRoute. Off
 	// until measured with `eval graph` on eval/multihop_queries.jsonl.
 	GraphPPR bool `env:"CORTEXIQ_GRAPH_PPR" envDefault:"false"`
+	// GraphPPRUnion runs the one-hop expansion as well and appends the walk's extra
+	// facts, instead of replacing the one-hop result. Only with GraphPPR.
+	GraphPPRUnion bool `env:"CORTEXIQ_GRAPH_PPR_UNION" envDefault:"false"`
 	// RouteRecall lets recall look at failures and goals too when no types are
 	// given and the query's wording points to them ("what did we try that failed",
 	// "what is the goal"). It only ever widens a recall. Off until measured.
