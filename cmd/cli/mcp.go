@@ -25,6 +25,7 @@ import (
 	"github.com/Bojanni050/cortexiq/internal/oauth"
 	"github.com/Bojanni050/cortexiq/internal/observability"
 	"github.com/Bojanni050/cortexiq/internal/scope"
+	"github.com/Bojanni050/cortexiq/internal/version"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -128,7 +129,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 	// only ever reaches the model through instructions, and a server that merely
 	// describes itself gets a client that waits to be asked.
 	primeDirective := render("server_description")
-	mcpServer := server.NewMCPServer("cortexiq", "0.3.0",
+	mcpServer := server.NewMCPServer("cortexiq", version.Semver(),
 		server.WithToolCapabilities(true),
 		server.WithInstructions(primeDirective),
 		server.WithDescription(primeDirective),

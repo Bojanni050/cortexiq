@@ -34,6 +34,16 @@ func String() string {
 	return "cortexiq " + Version
 }
 
+// Semver is the release tag without its leading "v", which is what a version
+// field or a metric label wants: "0.1.99", not "v0.1.99". A build from a working
+// tree answers "dev" — the same honest answer String() gives.
+func Semver() string {
+	if Version == "" || Version == "dev" {
+		return "dev"
+	}
+	return strings.TrimPrefix(Version, "v")
+}
+
 // Details returns the multi-line form printed by `cortexiq version`.
 func Details() string {
 	var b strings.Builder
