@@ -26,6 +26,28 @@ func TestStringRelease(t *testing.T) {
 	}
 }
 
+func TestSemverStripsTheLeadingV(t *testing.T) {
+	old := Version
+	t.Cleanup(func() { Version = old })
+	Version = "v0.1.99"
+
+	if got, want := Semver(), "0.1.99"; got != want {
+		t.Fatalf("Semver() = %q; want %q: a version field and a metric label read better without the v", got, want)
+	}
+}
+
+func TestSemverStaysHonestWithoutInjection(t *testing.T) {
+	old := Version
+	t.Cleanup(func() { Version = old })
+
+	for _, in := range []string{"", "dev"} {
+		Version = in
+		if got := Semver(); got != "dev" {
+			t.Fatalf("Semver() with Version=%q = %q; want dev, never an empty label", in, got)
+		}
+	}
+}
+
 func TestDetailsShortensCommit(t *testing.T) {
 	oldVersion, oldCommit, oldDate := Version, Commit, Date
 	t.Cleanup(func() { Version, Commit, Date = oldVersion, oldCommit, oldDate })

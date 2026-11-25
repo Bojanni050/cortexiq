@@ -14,6 +14,7 @@ import (
 	"github.com/Bojanni050/cortexiq/internal/bootstrap"
 	"github.com/Bojanni050/cortexiq/internal/brain"
 	"github.com/Bojanni050/cortexiq/internal/llmreg"
+	"github.com/Bojanni050/cortexiq/internal/version"
 	"github.com/Bojanni050/cortexiq/internal/webui"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -32,7 +33,7 @@ var (
 
 func init() {
 	prometheus.MustRegister(buildInfo)
-	buildInfo.WithLabelValues("0.3.0").Set(1)
+	buildInfo.WithLabelValues(version.Semver()).Set(1)
 }
 
 // metricsToken hands the dashboard's own credential to the configured metrics
