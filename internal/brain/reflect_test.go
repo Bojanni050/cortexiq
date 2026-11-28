@@ -8,6 +8,22 @@ import (
 	"time"
 )
 
+// A mental model's max_tokens used to be stored and passed along without ever
+// reaching the LLM.
+func TestLengthSuffix(t *testing.T) {
+	for _, budget := range []int{0, -1} {
+		if got := lengthSuffix(budget); got != "" {
+			t.Errorf("lengthSuffix(%d) = %q, want no instruction", budget, got)
+		}
+	}
+	if got := lengthSuffix(2048); !strings.Contains(got, "within 1024 words") {
+		t.Errorf("lengthSuffix(2048) = %q, want a 1024 word target", got)
+	}
+	if got := lengthSuffix(1); !strings.Contains(got, "within 1 words") {
+		t.Errorf("lengthSuffix(1) = %q, want at least one word", got)
+	}
+}
+
 func TestFormatMemoriesForReflect(t *testing.T) {
 	tests := []struct {
 		name    string

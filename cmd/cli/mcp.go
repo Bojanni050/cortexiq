@@ -524,7 +524,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("source_query", mcp.Description("The query to run to generate the mental model content"), mcp.Required()),
 		mcp.WithString("namespaces", mcp.Description("File the model in this namespace and scope it there (it reads that namespace and its children). Omit or / for a global model that reads every namespace and is available everywhere.")),
 		mcp.WithString("tags", mcp.Description("Comma-separated tags for scoped visibility")),
-		mcp.WithNumber("max_tokens", mcp.Description("Maximum tokens for generated content (256-8192, default 2048)")),
+		mcp.WithNumber("max_tokens", mcp.Description("Target size of the generated content in tokens (256-8192, default 2048). A length instruction to the model, not a hard cut-off.")),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		name := request.GetString("name", "")
 		query := request.GetString("source_query", "")

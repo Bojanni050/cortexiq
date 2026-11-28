@@ -761,6 +761,9 @@ What is left:
 
 ## Known rough edges
 
+- A mental model's `max_tokens` is a length instruction in the prompt (half a word
+  per token), not the API's `max_tokens`, so a model can overshoot it. Until
+  2026-11-28 the value had no effect at all (not yet released).
 - No semantic versioning history before `v0.1.0`, so nothing can depend on
   "the API as of v0.x".
 - A row without an embedding stops the whole namespace run: scanning it into a

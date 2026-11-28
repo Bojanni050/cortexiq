@@ -46,7 +46,10 @@ type ReflectOptions struct {
 	Namespaces []string
 	// Limit is how many memories are recalled to ground the answer.
 	Limit int
-	// MaxTokens caps the answer length the LLM may produce. 0 means no cap.
+	// MaxTokens is the target size of the answer, passed to the LLM as a length
+	// instruction. 0 means no target. It is deliberately not the API's
+	// max_tokens: that cuts the text mid-sentence, and a reasoning model spends
+	// the same budget on its thoughts.
 	MaxTokens int
 	// Context is additional context the caller wants included (e.g. the current
 	// conversation or task description).
@@ -265,7 +268,7 @@ func (b *Brain) Reflect(ctx context.Context, query string, opts ReflectOptions) 
 	sb.WriteString("\n")
 
 	messages := []reasoner.ChatMessage{
-		{Role: "system", Content: reflectSystemPrompt + instructionsSuffix(opts.Instructions)},
+		{Role: "system", Content: reflectSystemPrompt + instructionsSuffix(opts.Instructions) + lengthSuffix(opts.MaxTokens)},
 		{Role: "user", Content: sb.String()},
 	}
 
@@ -355,6 +358,16 @@ func instructionsSuffix(instructions string) string {
 		return ""
 	}
 	return "\n\n" + instructions
+}
+
+// lengthSuffix turns a token budget into a length instruction, or "" without a
+// budget. Models count words better than tokens, and half a word per token
+// leaves room for Markdown and for languages with long words such as Dutch.
+func lengthSuffix(maxTokens int) string {
+	if maxTokens <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("\n\nKeep the answer within %d words. When there is more to say than fits, keep what matters most and finish your sentences.", max(maxTokens/2, 1))
 }
 
 // formatMentalModelsForReflect renders curated mental models for the synthesis
