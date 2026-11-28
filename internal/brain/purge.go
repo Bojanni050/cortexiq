@@ -147,6 +147,9 @@ func (b *Brain) PurgeEpisode(ctx context.Context, episodeID int64, opts PurgeOpt
 	}
 	counts.Embeddings = int(tag.RowsAffected())
 
+	if err := purgeMentalModelVersions(ctx, tx, factTargetIDs(facts), []int64{episodeID}); err != nil {
+		return counts, err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM facts WHERE id = ANY($1)`, factTargetIDs(facts)); err != nil {
 		return counts, fmt.Errorf("purge episode: delete derived facts: %w", err)
 	}
@@ -206,6 +209,9 @@ func (b *Brain) PurgeFact(ctx context.Context, factID int64, opts PurgeOptions) 
 	counts.Embeddings = int(tag.RowsAffected())
 
 	if err := logPurge(ctx, tx, nsID, "facts", factID, opts, counts); err != nil {
+		return counts, err
+	}
+	if err := purgeMentalModelVersions(ctx, tx, []int64{factID}, nil); err != nil {
 		return counts, err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM facts WHERE id = $1`, factID); err != nil {
@@ -287,6 +293,19 @@ func (b *Brain) PurgeNamespace(ctx context.Context, slug string, opts PurgeOptio
 		return counts, fmt.Errorf("purge namespace: clear embedding cache: %w", err)
 	}
 	if err := logPurge(ctx, tx, nsID, "namespaces", nsID, opts, counts); err != nil {
+		return counts, err
+	}
+	// A global mental model survives the namespace, but its history may quote
+	// from it.
+	var factIDs, episodeIDs []int64
+	if err := tx.QueryRow(ctx,
+		`SELECT
+		   ARRAY(SELECT id FROM facts WHERE namespace_id = $1),
+		   ARRAY(SELECT id FROM episodes WHERE namespace_id = $1)`, nsID,
+	).Scan(&factIDs, &episodeIDs); err != nil {
+		return counts, fmt.Errorf("purge namespace: collect ids: %w", err)
+	}
+	if err := purgeMentalModelVersions(ctx, tx, factIDs, episodeIDs); err != nil {
 		return counts, err
 	}
 	// Everything else (facts, episodes, relationships, patterns, contexts,

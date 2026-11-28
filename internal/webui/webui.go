@@ -1956,6 +1956,7 @@ func (h *Handler) mentalModels(w http.ResponseWriter, r *http.Request) {
 			Namespaces  []string `json:"namespaces"`
 			Tags        []string `json:"tags"`
 			MaxTokens   int      `json:"max_tokens"`
+			mentalModelSettingsBody
 			// Async returns as soon as the row exists and generates its content
 			// in the background. The dashboard uses it so the dialog can close
 			// immediately instead of holding the user for a 30-second reflect.
@@ -1988,6 +1989,7 @@ func (h *Handler) mentalModels(w http.ResponseWriter, r *http.Request) {
 			Tags:        body.Tags,
 			MaxTokens:   body.MaxTokens,
 			NamespaceID: nsID,
+			Settings:    body.patch(),
 		}
 		if body.Async {
 			mm, err := h.Brain.CreateMentalModelQueued(r.Context(), opts)
@@ -2008,6 +2010,26 @@ func (h *Handler) mentalModels(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, mm)
 	default:
 		writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+	}
+}
+
+// mentalModelSettingsBody is the settings part of a create or edit request. A
+// field that is absent leaves the setting alone.
+type mentalModelSettingsBody struct {
+	AutoRefresh               *bool     `json:"auto_refresh"`
+	MinRefreshIntervalSeconds *int      `json:"min_refresh_interval_seconds"`
+	SourceTags                *[]string `json:"source_tags"`
+	SourceTypes               *[]string `json:"source_types"`
+	SourceLimit               *int      `json:"source_limit"`
+}
+
+func (b mentalModelSettingsBody) patch() brain.MentalModelSettingsPatch {
+	return brain.MentalModelSettingsPatch{
+		AutoRefresh:               b.AutoRefresh,
+		MinRefreshIntervalSeconds: b.MinRefreshIntervalSeconds,
+		SourceTags:                b.SourceTags,
+		SourceTypes:               b.SourceTypes,
+		SourceLimit:               b.SourceLimit,
 	}
 }
 
@@ -2037,6 +2059,7 @@ func (h *Handler) mentalModelItem(w http.ResponseWriter, r *http.Request) {
 				SourceQuery string   `json:"source_query"`
 				Tags        []string `json:"tags"`
 				MaxTokens   int      `json:"max_tokens"`
+				mentalModelSettingsBody
 			}
 			if err := readBody(r, &body); err != nil {
 				writeErr(w, http.StatusBadRequest, err)
@@ -2047,6 +2070,7 @@ func (h *Handler) mentalModelItem(w http.ResponseWriter, r *http.Request) {
 				SourceQuery: body.SourceQuery,
 				Tags:        body.Tags,
 				MaxTokens:   body.MaxTokens,
+				Settings:    body.patch(),
 			})
 			if !hdl(w, err) {
 				return
@@ -2082,6 +2106,26 @@ func (h *Handler) mentalModelItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, mm)
+	case "clear":
+		if r.Method != http.MethodPost {
+			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+			return
+		}
+		mm, err := h.Brain.ClearMentalModel(r.Context(), id)
+		if !hdl(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, mm)
+	case "history":
+		if r.Method != http.MethodGet {
+			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+			return
+		}
+		versions, err := h.Brain.ListMentalModelVersions(r.Context(), id)
+		if !hdl(w, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, versions)
 	case "search":
 		if r.Method != http.MethodPost {
 			writeErr(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))

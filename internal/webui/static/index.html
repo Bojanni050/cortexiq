@@ -1948,6 +1948,7 @@ function mmStale(m) {
   // this the row would show "stale" for the whole run and look stuck.
   if (state.mmBusy.has(m.id)) return '<span class="badge pending">refreshing</span>';
   if (!m.content) {
+    if (!m.last_refresh_failed_at && m.last_refreshed_at) return '<span class="badge pending">cleared</span>';
     return m.last_refresh_failed_at
       ? '<span class="badge abandoned">failed</span>'
       : '<span class="badge pending">generating</span>';
@@ -2009,7 +2010,9 @@ function mmContent(m) {
     if (m.last_refresh_failed_at) {
       return `<div class="err">generation failed</div><div class="muted wrap">${esc(m.last_refresh_error || '')}</div>`;
     }
-    return '<span class="muted">generating…</span>';
+    return m.last_refreshed_at
+      ? '<span class="muted">cleared</span>'
+      : '<span class="muted">generating…</span>';
   }
   const plain = mdPlain(c);
   const short = plain.length > 240 ? plain.slice(0, 240) + '…' : plain;
@@ -2050,8 +2053,31 @@ async function renderMentalModels() {
         `<div class="ctx-note err">${ts(m.last_refresh_failed_at)} - ${esc(m.last_refresh_error || 'unknown error')}</div>`) : ''}
       ${ctxSection('Content', m.content
         ? `<div class="md">${md(m.content)}</div>`
-        : `<div class="ctx-note">${m.last_refresh_failed_at ? 'Generation failed.' : 'Generating…'}</div>`)}`,
+        : `<div class="ctx-note">${m.last_refresh_failed_at ? 'Generation failed.' : m.last_refreshed_at ? 'Cleared.' : 'Generating…'}</div>`)}`,
   });
+}
+
+// mmSettingsFields renders the refresh and source settings shared by the create
+// and the edit dialog; m is {} for a new model.
+function mmSettingsFields(m) {
+  const minutes = m.min_refresh_interval_seconds == null ? '' : m.min_refresh_interval_seconds / 60;
+  return `
+    <label><input id="mm-auto" type="checkbox" style="width:auto" ${m.auto_refresh === false ? '' : 'checked'}> Refresh automatically after consolidation</label>
+    <label>Minimum minutes between automatic refreshes (empty = 60)</label><input id="mm-interval" type="number" min="0" max="43200" value="${minutes}">
+    <label>Source tags (comma-separated; memories with at least one, empty = all)</label><input id="mm-source-tags" value="${esc((m.source_tags || []).join(', '))}">
+    <label>Source types (fact, episode, failure, goal; empty = facts and episodes)</label><input id="mm-source-types" value="${esc((m.source_types || []).join(', '))}">
+    <label>Number of source memories</label><input id="mm-source-limit" type="number" min="1" max="100" value="${m.source_limit || 20}">`;
+}
+function mmSettingsValues() {
+  const list = id => document.getElementById(id).value.split(',').map(t => t.trim()).filter(Boolean);
+  const minutes = document.getElementById('mm-interval').value.trim();
+  return {
+    auto_refresh: document.getElementById('mm-auto').checked,
+    min_refresh_interval_seconds: minutes === '' ? -1 : Math.round(Number(minutes) * 60),
+    source_tags: list('mm-source-tags'),
+    source_types: list('mm-source-types'),
+    source_limit: parseInt(document.getElementById('mm-source-limit').value || '0', 10),
+  };
 }
 
 function mmDialog() {
@@ -2064,6 +2090,7 @@ function mmDialog() {
     <label>Use memories from</label><select id="mm-scope"><option value="all">All namespaces (global)</option>${scoped}</select>
     <p class="muted" style="margin:14px 0 0">A global model reads every namespace, is refreshed when anything changes, and is available to reflect from any namespace. A scoped model only reads the chosen namespace and its children.</p>
     <label>Max tokens</label><input id="mm-tokens" type="number" value="2048" min="256" max="8192">
+    ${mmSettingsFields({})}
     <div id="mm-status" class="muted" role="status" aria-live="polite" style="margin-top:10px;min-height:18px"></div>
     <div class="actions"><button onclick="dlgClose()">Cancel</button><button id="mm-create-btn" class="primary" onclick="mmCreate()">Create</button></div>`;
   d.showModal();
@@ -2089,7 +2116,7 @@ async function mmCreate() {
   let mm;
   try {
     mm = await api('/mental-models', { method: 'POST', body: JSON.stringify({
-      name, source_query: query, namespaces, tags, max_tokens: maxTokens, async: true }) });
+      name, source_query: query, namespaces, tags, max_tokens: maxTokens, ...mmSettingsValues(), async: true }) });
   } catch (e) {
     stop(e.message);
     return;
@@ -2174,6 +2201,7 @@ async function mmEdit(id) {
     <label>Scope</label><div class="muted" style="margin-bottom:4px">${m.namespace_id ? esc(nsSlug(m.namespace_id)) : 'all namespaces (global)'}</div>
     <p class="muted" style="margin:10px 0 0">Changing the source query makes the stored content stale until it is rebuilt.</p>
     <label>Max tokens</label><input id="mm-tokens" type="number" value="${m.max_tokens || 2048}" min="256" max="8192">
+    ${mmSettingsFields(m)}
     <div id="mm-status" class="muted" role="status" aria-live="polite" style="margin-top:10px;min-height:18px"></div>
     <div class="actions"><button onclick="dlgClose()">Cancel</button><button class="primary" onclick="mmSave(${m.id}, false)">Save</button><button id="mm-save-refresh" class="primary" onclick="mmSave(${m.id}, true)">Save &amp; refresh</button></div>`;
   if (!d.open) d.showModal();
@@ -2193,7 +2221,7 @@ async function mmSave(id, rebuild) {
   btn.disabled = true;
   try {
     await api(`/mental-models/${id}`, { method: 'PATCH', body: JSON.stringify({
-      name, source_query: query, tags, max_tokens: maxTokens }) });
+      name, source_query: query, tags, max_tokens: maxTokens, ...mmSettingsValues() }) });
   } catch (e) {
     status.className = 'err'; status.textContent = e.message; btn.disabled = false;
     return;
@@ -2214,13 +2242,21 @@ async function mmSave(id, rebuild) {
   if (rebuild) mmWait(id, base);
 }
 async function mmView(id) {
-  const m = await api(`/mental-models/${id}`);
+  const [m, versions] = await Promise.all([
+    api(`/mental-models/${id}`),
+    api(`/mental-models/${id}/history`).catch(() => []),
+  ]);
+  const history = (versions || []).length
+    ? `<label>Previous versions</label><div style="margin-bottom:12px">${versions.map(v =>
+        `<details style="margin-bottom:4px"><summary class="muted" style="cursor:pointer">replaced ${ts(v.replaced_at)} by ${esc(v.replaced_by)}</summary><div class="md" style="margin-top:4px">${md(v.content)}</div></details>`).join('')}</div>`
+    : '';
   const d = document.getElementById('dlg');
   d.innerHTML = `<h3>${esc(m.name)} <span class="mono muted">#${m.id}</span></h3>
     <label>Source query</label><div class="muted" style="margin-bottom:12px">${esc(m.source_query)}</div>
     <label>Tags</label><div style="margin-bottom:12px">${mmTags(m.tags)}</div>
     <label>Scope</label><div class="muted" style="margin-bottom:12px">${m.namespace_id ? esc(nsSlug(m.namespace_id)) : 'all namespaces (global)'}</div>
-    <label>Content</label>${m.content ? `<div class="md" style="background:var(--panel-2);padding:12px;border-radius:6px;margin-bottom:12px">${md(m.content)}</div>` : `<div class="muted" style="margin-bottom:12px">generating…</div>`}
+    <label>Content</label>${m.content ? `<div class="md" style="background:var(--panel-2);padding:12px;border-radius:6px;margin-bottom:12px">${md(m.content)}</div>` : `<div class="muted" style="margin-bottom:12px">${m.last_refreshed_at ? 'cleared' : 'generating…'}</div>`}
+    ${history}
     ${m.last_refresh_failed_at ? `<div class="err" style="margin-bottom:12px">Last refresh failed ${ts(m.last_refresh_failed_at)}: ${esc(m.last_refresh_error || 'unknown error')}</div>` : ''}
     <div class="muted" style="margin-bottom:12px">Last refreshed: ${m.last_refreshed_at ? ts(m.last_refreshed_at) : 'never'} · Created: ${ts(m.created_at)}</div>
     <div class="actions"><button onclick="dlgClose()">Close</button><button onclick="mmEdit(${m.id})">Edit</button><button onclick="dlgClose();mmRefresh(${m.id})">Refresh</button><button class="danger" onclick="del('mental-models', ${m.id});dlgClose()">Delete</button></div>`;

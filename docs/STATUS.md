@@ -761,6 +761,10 @@ What is left:
 
 ## Known rough edges
 
+- Mental models have per-model settings (`auto_refresh`, interval, `source_tags`,
+  `source_types`, `source_limit`) and a history of 50 replaced versions (migration
+  `00064`, not yet released). Staleness still follows every memory in the scope,
+  so a filtered model can refresh without anything relevant having changed.
 - A mental model's `max_tokens` is a length instruction in the prompt (half a word
   per token), not the API's `max_tokens`, so a model can overshoot it. Until
   2026-11-28 the value had no effect at all (not yet released).

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -40,7 +41,8 @@ const mentalModelInstructions = `You are writing a durable reference document ab
 
 const mentalModelColumns = `id, namespace_id, name, source_query, content, embedding,
 	embedding_model, tags, max_tokens, last_refreshed_at, last_refreshed_source_query, last_memory_seen_at,
-	last_refresh_failed_at, last_refresh_error, based_on, created_at, updated_at, deleted_at`
+	last_refresh_failed_at, last_refresh_error, based_on, created_at, updated_at, deleted_at,
+	auto_refresh, min_refresh_interval_seconds, source_tags, source_types, source_limit`
 
 // maxMentalModelRefreshesPerConsolidation bounds the LLM work one consolidation
 // run may add. Mental models are refreshed oldest-first, so a backlog drains
@@ -82,6 +84,8 @@ type CreateMentalModelOptions struct {
 	// namespace's subtree. Nil makes it global: it reads every namespace and is
 	// available to reflect from every namespace.
 	NamespaceID *int64
+	// Settings overrides the default refresh and source settings.
+	Settings MentalModelSettingsPatch
 }
 
 // MentalModelRefreshSummary reports what an automatic sweep did. Individual
@@ -109,6 +113,7 @@ func scanMentalModel(m *models.MentalModel, row rowScanner) error {
 		&m.EmbeddingModel, &m.Tags, &m.MaxTokens, &m.LastRefreshedAt, &m.LastRefreshedSourceQuery,
 		&m.LastMemorySeenAt, &m.LastRefreshFailedAt, &lastRefreshErr, &basedOn,
 		&m.CreatedAt, &m.UpdatedAt, &m.DeletedAt,
+		&m.AutoRefresh, &m.MinRefreshIntervalSeconds, &m.SourceTags, &m.SourceTypes, &m.SourceLimit,
 	); err != nil {
 		return err
 	}
@@ -206,6 +211,10 @@ func (b *Brain) CreateMentalModel(ctx context.Context, opts CreateMentalModelOpt
 	if err != nil {
 		return nil, err
 	}
+	settings, err := defaultMentalModelSettings().apply(opts.Settings)
+	if err != nil {
+		return nil, err
+	}
 
 	// "/" is the whole store; it needs no namespace row and works on an install
 	// that never created one (prod has no "/" namespace).
@@ -226,18 +235,7 @@ func (b *Brain) CreateMentalModel(ctx context.Context, opts CreateMentalModelOpt
 		return nil, err
 	}
 
-	reflectResult, err := b.Reflect(ctx, query, ReflectOptions{
-		Namespaces: scope,
-		Limit:      20,
-		MaxTokens:  maxTokens,
-		// A mental model is synthesized from raw memories. Its siblings would
-		// make it a copy of what other models already believe.
-		SkipMentalModels: true,
-		// A curated summary holds settled knowledge; an open belief is exactly
-		// what it must not contain, or it would launder a guess into a fact.
-		SkipHypotheses: true,
-		Instructions:   mentalModelInstructions,
-	})
+	reflectResult, err := b.Reflect(ctx, query, settings.reflectOptions(scope, maxTokens))
 	if err != nil {
 		return nil, fmt.Errorf("generate mental model content: %w", err)
 	}
@@ -257,11 +255,13 @@ func (b *Brain) CreateMentalModel(ctx context.Context, opts CreateMentalModelOpt
 
 	var m models.MentalModel
 	err = scanMentalModel(&m, b.pool.QueryRow(ctx, `
-		INSERT INTO mental_models (namespace_id, name, source_query, content, embedding, embedding_model, tags, max_tokens, last_refreshed_at, last_refreshed_source_query, last_memory_seen_at, based_on)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), $3, $9, $10)
+		INSERT INTO mental_models (namespace_id, name, source_query, content, embedding, embedding_model, tags, max_tokens, last_refreshed_at, last_refreshed_source_query, last_memory_seen_at, based_on,
+			auto_refresh, min_refresh_interval_seconds, source_tags, source_types, source_limit)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), $3, $9, $10, $11, $12, $13, $14, $15)
 		RETURNING `+mentalModelColumns,
 		opts.NamespaceID, name, query, reflectResult.Answer,
-		pgvector.NewVector(vec), b.embedder.Model(), tags, maxTokens, cutoff, basedOn))
+		pgvector.NewVector(vec), b.embedder.Model(), tags, maxTokens, cutoff, basedOn,
+		settings.AutoRefresh, settings.MinRefreshIntervalSeconds, settings.SourceTags, settings.SourceTypes, settings.SourceLimit))
 	if err != nil {
 		return nil, fmt.Errorf("insert mental model: %w", err)
 	}
@@ -305,6 +305,10 @@ func (b *Brain) CreateMentalModelQueued(ctx context.Context, opts CreateMentalMo
 	if err != nil {
 		return nil, err
 	}
+	settings, err := defaultMentalModelSettings().apply(opts.Settings)
+	if err != nil {
+		return nil, err
+	}
 	// Fail a bad namespace at the call, not in the background where nobody sees it.
 	if opts.NamespaceID != nil {
 		if _, err := b.namespaceSlug(ctx, *opts.NamespaceID); err != nil {
@@ -319,10 +323,12 @@ func (b *Brain) CreateMentalModelQueued(ctx context.Context, opts CreateMentalMo
 
 	var m models.MentalModel
 	err = scanMentalModel(&m, b.pool.QueryRow(ctx, `
-		INSERT INTO mental_models (namespace_id, name, source_query, embedding, embedding_model, tags, max_tokens)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO mental_models (namespace_id, name, source_query, embedding, embedding_model, tags, max_tokens,
+			auto_refresh, min_refresh_interval_seconds, source_tags, source_types, source_limit)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING `+mentalModelColumns,
-		opts.NamespaceID, name, query, pgvector.NewVector(vec), b.embedder.Model(), tags, maxTokens))
+		opts.NamespaceID, name, query, pgvector.NewVector(vec), b.embedder.Model(), tags, maxTokens,
+		settings.AutoRefresh, settings.MinRefreshIntervalSeconds, settings.SourceTags, settings.SourceTypes, settings.SourceLimit))
 	if err != nil {
 		return nil, fmt.Errorf("insert mental model: %w", err)
 	}
@@ -437,7 +443,7 @@ func (b *Brain) SearchMentalModels(ctx context.Context, namespaceSlugs []string,
 		return nil, fmt.Errorf("embed mental model query: %w", err)
 	}
 
-	where := "deleted_at IS NULL AND (namespace_id IS NULL OR namespace_id = ANY($1)) AND embedding IS NOT NULL"
+	where := "deleted_at IS NULL AND (namespace_id IS NULL OR namespace_id = ANY($1)) AND embedding IS NOT NULL AND content <> ''"
 	args := []any{nsIDs, pgvector.NewVector(vec)}
 	argIdx := 3
 	if len(tags) > 0 {
@@ -521,14 +527,8 @@ func (b *Brain) RefreshMentalModel(ctx context.Context, id int64) (*models.Menta
 		return nil, err
 	}
 
-	reflectResult, err := b.Reflect(ctx, m.SourceQuery, ReflectOptions{
-		Namespaces:       scope,
-		Limit:            20,
-		MaxTokens:        m.MaxTokens,
-		SkipMentalModels: true,
-		SkipHypotheses:   true,
-		Instructions:     mentalModelInstructions,
-	})
+	settings := mentalModelSettingsOf(*m)
+	reflectResult, err := b.Reflect(ctx, m.SourceQuery, settings.reflectOptions(scope, m.MaxTokens))
 	if err != nil {
 		return nil, fmt.Errorf("refresh mental model content: %w", err)
 	}
@@ -542,20 +542,37 @@ func (b *Brain) RefreshMentalModel(ctx context.Context, id int64) (*models.Menta
 		return nil, err
 	}
 
+	tx, err := b.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("update mental model: begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := archiveMentalModelContent(ctx, tx, id, reflectResult.Answer, "refresh"); err != nil {
+		return nil, err
+	}
+
+	// When the source settings were edited while the synthesis ran, the content
+	// answers the old definition: leave the model stale.
 	var updated models.MentalModel
-	err = scanMentalModel(&updated, b.pool.QueryRow(ctx, `
+	err = scanMentalModel(&updated, tx.QueryRow(ctx, `
 		UPDATE mental_models
 		SET content = $1, based_on = $2, last_refreshed_at = now(), last_memory_seen_at = $3,
-		    last_refreshed_source_query = $5,
+		    last_refreshed_source_query = CASE
+		        WHEN source_tags = $6::text[] AND source_types = $7::text[] AND source_limit = $8 THEN $5::text
+		        ELSE '' END,
 		    last_refresh_failed_at = NULL, last_refresh_error = NULL, updated_at = now()
 		WHERE id = $4 AND deleted_at IS NULL
 		RETURNING `+mentalModelColumns,
-		reflectResult.Answer, basedOn, cutoff, id, m.SourceQuery))
+		reflectResult.Answer, basedOn, cutoff, id, m.SourceQuery,
+		settings.SourceTags, settings.SourceTypes, settings.SourceLimit))
 	if err == pgx.ErrNoRows {
 		return nil, ErrMentalModelNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("update mental model: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("update mental model: commit: %w", err)
 	}
 	return &updated, nil
 }
@@ -628,7 +645,7 @@ func (b *Brain) refreshStaleMentalModels(ctx context.Context, nsID int64) (Menta
 	var out MentalModelRefreshSummary
 	for i := range items {
 		m := &items[i]
-		if !m.IsStale || mentalModelAutoRefreshPaused(*m) || !automaticRefreshDue(*m, now) {
+		if !m.AutoRefresh || !m.IsStale || mentalModelAutoRefreshPaused(*m) || !automaticRefreshDue(*m, now) {
 			out.Skipped++
 			continue
 		}
@@ -660,10 +677,14 @@ func mentalModelAutoRefreshPaused(m models.MentalModel) bool {
 	return m.LastRefreshedAt == nil || m.LastRefreshFailedAt.After(*m.LastRefreshedAt)
 }
 
-// automaticRefreshDue reports whether the sweep may refresh this model again.
-// Explicit refreshes do not consult it.
+// automaticRefreshDue reports whether enough time has passed for the sweep to
+// refresh this model again. Explicit refreshes do not consult it.
 func automaticRefreshDue(m models.MentalModel, now time.Time) bool {
-	return m.LastRefreshedAt == nil || now.Sub(*m.LastRefreshedAt) >= minAutomaticMentalModelRefresh
+	floor := minAutomaticMentalModelRefresh
+	if m.MinRefreshIntervalSeconds != nil {
+		floor = time.Duration(*m.MinRefreshIntervalSeconds) * time.Second
+	}
+	return m.LastRefreshedAt == nil || now.Sub(*m.LastRefreshedAt) >= floor
 }
 
 // listMentalModelsForSweep returns the models a namespace's consolidation is
@@ -706,11 +727,14 @@ type UpdateMentalModelOptions struct {
 	SourceQuery string
 	Tags        []string
 	MaxTokens   int
+	// Settings changes only what it sets, so a caller that does not know about
+	// the settings cannot reset them.
+	Settings MentalModelSettingsPatch
 }
 
-// UpdateMentalModel edits a model's name, source query, tags and token budget.
-// Content and watermarks are left alone: a changed query is detected as
-// source_changed and the next refresh rebuilds the document. The embedding
+// UpdateMentalModel edits a model's definition. Content and watermarks are left
+// alone: a changed query or source setting is detected as source_changed and
+// the next refresh rebuilds the document. The embedding
 // follows the query, because search matches the question a model answers.
 func (b *Brain) UpdateMentalModel(ctx context.Context, id int64, opts UpdateMentalModelOptions) (*models.MentalModel, error) {
 	name, query, tags, maxTokens, err := createMentalModelInput(CreateMentalModelOptions{
@@ -727,26 +751,39 @@ func (b *Brain) UpdateMentalModel(ctx context.Context, id int64, opts UpdateMent
 		return nil, err
 	}
 
-	var updated models.MentalModel
-	if query == current.SourceQuery {
-		err = scanMentalModel(&updated, b.pool.QueryRow(ctx, `
-			UPDATE mental_models
-			SET name = $1, source_query = $2, tags = $3, max_tokens = $4, updated_at = now()
-			WHERE id = $5 AND deleted_at IS NULL
-			RETURNING `+mentalModelColumns, name, query, tags, maxTokens, id))
-	} else {
-		vec, embedErr := b.embedder.Embed(ctx, query)
-		if embedErr != nil {
-			return nil, fmt.Errorf("embed mental model query: %w", embedErr)
-		}
-		err = scanMentalModel(&updated, b.pool.QueryRow(ctx, `
-			UPDATE mental_models
-			SET name = $1, source_query = $2, tags = $3, max_tokens = $4,
-			    embedding = $5, embedding_model = $6, updated_at = now()
-			WHERE id = $7 AND deleted_at IS NULL
-			RETURNING `+mentalModelColumns,
-			name, query, tags, maxTokens, pgvector.NewVector(vec), b.embedder.Model(), id))
+	settings, err := mentalModelSettingsOf(*current).apply(opts.Settings)
+	if err != nil {
+		return nil, err
 	}
+	// The stored document answers the old definition when its sources change,
+	// exactly as it does when its question changes.
+	sourcesChanged := !slices.Equal(settings.SourceTags, current.SourceTags) ||
+		!slices.Equal(settings.SourceTypes, current.SourceTypes) ||
+		settings.SourceLimit != current.SourceLimit
+
+	embedding, embeddingModel := current.Embedding, current.EmbeddingModel
+	if query != current.SourceQuery {
+		vec, err := b.embedder.Embed(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("embed mental model query: %w", err)
+		}
+		embedding, embeddingModel = pgvector.NewVector(vec), b.embedder.Model()
+	}
+
+	var updated models.MentalModel
+	err = scanMentalModel(&updated, b.pool.QueryRow(ctx, `
+		UPDATE mental_models
+		SET name = $1, source_query = $2, tags = $3, max_tokens = $4,
+		    embedding = $5, embedding_model = $6,
+		    auto_refresh = $8, min_refresh_interval_seconds = $9,
+		    source_tags = $10, source_types = $11, source_limit = $12,
+		    last_refreshed_source_query = CASE WHEN $13::boolean THEN '' ELSE last_refreshed_source_query END,
+		    updated_at = now()
+		WHERE id = $7 AND deleted_at IS NULL
+		RETURNING `+mentalModelColumns,
+		name, query, tags, maxTokens, embedding, embeddingModel, id,
+		settings.AutoRefresh, settings.MinRefreshIntervalSeconds,
+		settings.SourceTags, settings.SourceTypes, settings.SourceLimit, sourcesChanged))
 	if err == pgx.ErrNoRows {
 		return nil, ErrMentalModelNotFound
 	}

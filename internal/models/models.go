@@ -431,8 +431,33 @@ type MentalModel struct {
 	UpdatedAt time.Time  `db:"updated_at" json:"updated_at"`
 	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at,omitempty"`
 
+	// AutoRefresh lets consolidation rewrite the model;
+	// MinRefreshIntervalSeconds is the floor between two such rewrites (nil is
+	// the default of one hour).
+	AutoRefresh               bool `db:"auto_refresh" json:"auto_refresh"`
+	MinRefreshIntervalSeconds *int `db:"min_refresh_interval_seconds" json:"min_refresh_interval_seconds,omitempty"`
+	// SourceTags (any of), SourceTypes and SourceLimit select the memories the
+	// content is written from.
+	SourceTags  []string `db:"source_tags" json:"source_tags"`
+	SourceTypes []string `db:"source_types" json:"source_types"`
+	SourceLimit int      `db:"source_limit" json:"source_limit"`
+
 	// The fields below are computed on read, never stored.
 	IsStale        bool       `db:"-" json:"is_stale"`
 	StaleReason    string     `db:"-" json:"stale_reason,omitempty"`
 	LatestMemoryAt *time.Time `db:"-" json:"latest_memory_at,omitempty"`
+}
+
+// MentalModelVersion is content a mental model held before it was replaced.
+type MentalModelVersion struct {
+	ID            int64  `db:"id" json:"id"`
+	MentalModelID int64  `db:"mental_model_id" json:"mental_model_id"`
+	Content       string `db:"content" json:"content"`
+	// SourceQuery is the question this version answered.
+	SourceQuery string     `db:"source_query" json:"source_query"`
+	BasedOn     BasedOn    `db:"based_on" json:"based_on"`
+	RefreshedAt *time.Time `db:"refreshed_at" json:"refreshed_at,omitempty"`
+	ReplacedAt  time.Time  `db:"replaced_at" json:"replaced_at"`
+	// ReplacedBy is "refresh" or "clear".
+	ReplacedBy string `db:"replaced_by" json:"replaced_by"`
 }

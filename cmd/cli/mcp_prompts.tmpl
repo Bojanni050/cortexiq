@@ -535,13 +535,17 @@ WHEN TO REFRESH:
 - A mental model is marked is_stale: true (stale_reason says why: new_memories or retracted_grounding)
 - New memories arrived that change the topic's answer
 - The user says "update what you know about X"
-- Automatic: consolidation refreshes stale models after every run, oldest first, at most three per namespace. A model whose refresh found no memories is paused; its content was kept and needs an explicit refresh once there is something to ground on.
+- Automatic: consolidation refreshes stale models after every run, oldest first, at most three per namespace, each at most once an hour unless the model sets min_refresh_interval_seconds. auto_refresh=false switches it off per model. A model whose refresh found no memories is paused; its content was kept and needs an explicit refresh once there is something to ground on.
 
 WORKFLOW:
 1. mental_model_search "topic" → check if one exists
 2. If not: mental_model_create name="Topic" source_query="What do we know about topic?" (fails when the namespace has no memories)
 3. On repeat questions: mental_model_search first, use the result directly
 4. On is_stale: mental_model_refresh <id>, or rely on the automatic refresh after consolidation
+
+SETTINGS (mental_model_create and mental_model_update):
+- source_tags, source_types and source_limit choose which memories the content is written from.
+- A refresh replaces the content; mental_model_history returns what it said before.
 {{end}}
 
 {{define "forget_description"}}

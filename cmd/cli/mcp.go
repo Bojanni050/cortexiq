@@ -73,6 +73,44 @@ func splitList(raw string) []string {
 	return out
 }
 
+const (
+	mmAutoRefreshHelp = "Let consolidation refresh the model when it is stale (default true). mental_model_refresh works either way."
+	mmIntervalHelp    = "Shortest time between two automatic refreshes (default 3600, at most 2592000). -1 restores the default."
+	mmSourceTagsHelp  = "Comma-separated tags: write the content only from memories carrying at least one of them. Empty means no tag filter."
+	mmSourceTypesHelp = "Comma-separated memory types to write from: fact, episode, failure, goal. Empty means facts and episodes."
+	mmSourceLimitHelp = "How many memories are recalled to write the content (1-100, default 20)."
+)
+
+// mentalModelSettingsPatch reads the settings arguments. Only arguments the
+// caller actually passed are set, so an update leaves the rest alone.
+func mentalModelSettingsPatch(request mcp.CallToolRequest) brain.MentalModelSettingsPatch {
+	args := request.GetArguments()
+	has := func(key string) bool { _, ok := args[key]; return ok }
+
+	var p brain.MentalModelSettingsPatch
+	if has("auto_refresh") {
+		v := request.GetBool("auto_refresh", true)
+		p.AutoRefresh = &v
+	}
+	if has("min_refresh_interval_seconds") {
+		v := request.GetInt("min_refresh_interval_seconds", -1)
+		p.MinRefreshIntervalSeconds = &v
+	}
+	if has("source_tags") {
+		v := splitList(request.GetString("source_tags", ""))
+		p.SourceTags = &v
+	}
+	if has("source_types") {
+		v := splitList(request.GetString("source_types", ""))
+		p.SourceTypes = &v
+	}
+	if has("source_limit") {
+		v := request.GetInt("source_limit", 0)
+		p.SourceLimit = &v
+	}
+	return p
+}
+
 // optionalID turns an optional numeric argument into a pointer, so "not set" and
 // "set to zero" stay different things. Ids start at 1, so 0 or less is absent.
 func optionalID(id int) *int64 {
@@ -525,6 +563,11 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 		mcp.WithString("namespaces", mcp.Description("File the model in this namespace and scope it there (it reads that namespace and its children). Omit or / for a global model that reads every namespace and is available everywhere.")),
 		mcp.WithString("tags", mcp.Description("Comma-separated tags for scoped visibility")),
 		mcp.WithNumber("max_tokens", mcp.Description("Target size of the generated content in tokens (256-8192, default 2048). A length instruction to the model, not a hard cut-off.")),
+		mcp.WithBoolean("auto_refresh", mcp.Description(mmAutoRefreshHelp)),
+		mcp.WithNumber("min_refresh_interval_seconds", mcp.Description(mmIntervalHelp)),
+		mcp.WithString("source_tags", mcp.Description(mmSourceTagsHelp)),
+		mcp.WithString("source_types", mcp.Description(mmSourceTypesHelp)),
+		mcp.WithNumber("source_limit", mcp.Description(mmSourceLimitHelp)),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		name := request.GetString("name", "")
 		query := request.GetString("source_query", "")
@@ -556,6 +599,7 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			Tags:        tags,
 			MaxTokens:   maxTokens,
 			NamespaceID: nsID,
+			Settings:    mentalModelSettingsPatch(request),
 		})
 		if err != nil {
 			return nil, err
@@ -626,6 +670,77 @@ func newMCPServer(bc *bootstrap.Context) *server.MCPServer {
 			return nil, err
 		}
 		b, _ := json.Marshal(mm)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
+	mcpServer.AddTool(mcp.NewTool("mental_model_update",
+		mcp.WithDescription("Edit a mental model. Only the arguments you pass change. A new source_query or source setting makes the content stale until it is refreshed. The scope (namespace) is fixed at creation."),
+		mcp.WithNumber("id", mcp.Description("Mental model ID"), mcp.Required()),
+		mcp.WithString("name", mcp.Description("New name")),
+		mcp.WithString("source_query", mcp.Description("New source query")),
+		mcp.WithString("tags", mcp.Description("Comma-separated tags; replaces the current ones, empty removes them")),
+		mcp.WithNumber("max_tokens", mcp.Description("Target size of the content in tokens (256-8192)")),
+		mcp.WithBoolean("auto_refresh", mcp.Description(mmAutoRefreshHelp)),
+		mcp.WithNumber("min_refresh_interval_seconds", mcp.Description(mmIntervalHelp)),
+		mcp.WithString("source_tags", mcp.Description(mmSourceTagsHelp)),
+		mcp.WithString("source_types", mcp.Description(mmSourceTypesHelp)),
+		mcp.WithNumber("source_limit", mcp.Description(mmSourceLimitHelp)),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id := int64(request.GetInt("id", 0))
+		if id <= 0 {
+			return nil, fmt.Errorf("id is required")
+		}
+		current, err := bc.Brain.GetMentalModel(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		opts := brain.UpdateMentalModelOptions{
+			Name:        request.GetString("name", current.Name),
+			SourceQuery: request.GetString("source_query", current.SourceQuery),
+			Tags:        current.Tags,
+			MaxTokens:   request.GetInt("max_tokens", current.MaxTokens),
+			Settings:    mentalModelSettingsPatch(request),
+		}
+		if _, ok := request.GetArguments()["tags"]; ok {
+			opts.Tags = splitList(request.GetString("tags", ""))
+		}
+		mm, err := bc.Brain.UpdateMentalModel(ctx, id, opts)
+		if err != nil {
+			return nil, err
+		}
+		b, _ := json.Marshal(mm)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
+	mcpServer.AddTool(mcp.NewTool("mental_model_clear",
+		mcp.WithDescription("Empty a mental model's content and keep its definition. The old content goes to the history; the next refresh writes it from nothing."),
+		mcp.WithNumber("id", mcp.Description("Mental model ID"), mcp.Required()),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id := int64(request.GetInt("id", 0))
+		if id <= 0 {
+			return nil, fmt.Errorf("id is required")
+		}
+		mm, err := bc.Brain.ClearMentalModel(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		b, _ := json.Marshal(mm)
+		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
+	})
+
+	mcpServer.AddTool(mcp.NewTool("mental_model_history",
+		mcp.WithDescription("List the content a mental model held before it was refreshed or cleared, newest first."),
+		mcp.WithNumber("id", mcp.Description("Mental model ID"), mcp.Required()),
+	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id := int64(request.GetInt("id", 0))
+		if id <= 0 {
+			return nil, fmt.Errorf("id is required")
+		}
+		versions, err := bc.Brain.ListMentalModelVersions(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		b, _ := json.Marshal(map[string]any{"versions": versions, "count": len(versions)})
 		return &mcp.CallToolResult{Content: []mcp.Content{mcp.TextContent{Type: "text", Text: string(b)}}}, nil
 	})
 
